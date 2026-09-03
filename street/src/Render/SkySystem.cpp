@@ -215,18 +215,26 @@ Vector3 CubeDirection(CubeMapFace face, float u, float v)
     return Vector3::Up;
 }
 
-std::uint8_t Encode(float linear)
+/// Quantises one channel of the environment cube.
+///
+/// **Linearly, and scaled** -- and getting that wrong is what made the whole
+/// street look washed out for the first version of this project. `TextureCube`
+/// is 8-bit, so a sky whose horizon radiance is 1.25 cannot be stored in it
+/// directly. The first attempt compressed it with a Reinhard knee and then an
+/// sRGB curve; `EnvironmentProcessor` reads the texels as *linear radiance*
+/// (see its `ToColor`, which clamps and scales and nothing else), so the values
+/// that came back were `srgb(reinhard(L))` where the split sum wanted `L`. That
+/// function lifts every dark direction and crushes every bright one -- a zenith
+/// at 0.36 arrived as 0.56 and a horizon at 1.25 arrived as 0.77 -- so the
+/// ambient light had almost no gradient left and every surface in shade was
+/// lit by the same flat grey.
+///
+/// `ImageBasedLightEXT::Intensity` is the field CNA provides for exactly this:
+/// the cube holds `L / scale` and the effect multiplies by `scale` again.
+std::uint8_t Encode(float linear, float scale)
 {
-    // The environment cube is an ordinary 8-bit texture, so the sky's very wide
-    // range has to be compressed into it. A plain sRGB curve after a Reinhard
-    // knee keeps both the horizon and the deep zenith distinguishable, which is
-    // what the irradiance integral needs; clipping at 1.0 instead would make
-    // every ambient term come out the same grey.
-    const float mapped = linear / (1.0f + linear);
-    const float encoded = mapped <= 0.0031308f
-                              ? mapped * 12.92f
-                              : 1.055f * std::pow(mapped, 1.0f / 2.4f) - 0.055f;
-    return static_cast<std::uint8_t>(std::lround(std::clamp(encoded, 0.0f, 1.0f) * 255.0f));
+    const float mapped = linear / std::max(scale, 1e-4f);
+    return static_cast<std::uint8_t>(std::lround(std::clamp(mapped, 0.0f, 1.0f) * 255.0f));
 }
 
 }  // namespace
@@ -311,19 +319,43 @@ void SkySystem::updateSun(const RenderSettings& settings)
 
 void SkySystem::computeLighting(const RenderSettings& settings)
 {
-    // Sun colour: the model's own radiance a fraction of a degree off the solar
-    // direction, normalised so that a high sun is white and a low one reddens by
-    // itself. Reading it from the model rather than choosing a colour is what
-    // keeps the direct light and the sky agreeing at every sun angle.
-    const Vector3 nearSun = Normalise(
-        Vector3(sunDirection_.X, sunDirection_.Y + 0.02f, sunDirection_.Z), Vector3::Up);
-    Vector3 radiance = AtmosphericSky::radiance(nearSun, lightDirection(), turbidity_);
-    const float peak = std::max(std::max(radiance.X, radiance.Y), std::max(radiance.Z, 1e-4f));
-    sunColour_ = Vector3(radiance.X / peak, radiance.Y / peak, radiance.Z / peak)
-                 * settings.sunIntensity
-                 * std::clamp(std::sin(MathHelper::ToRadians(settings.sunElevationDegrees)) * 1.15f
-                                  + 0.10f,
-                              0.0f, 1.0f);
+    // Sun colour: atmospheric *transmittance* along the solar path, which is
+    // what is left of the disc after the sky has taken its share.
+    //
+    // The first version read the sky model's radiance a fraction of a degree off
+    // the sun and normalised that. It is the wrong quantity, and wrong in the
+    // one direction that matters: the sky near the sun is bright because it is
+    // *scattered* light, and scattering goes as 1/λ⁴, so that colour is blue.
+    // The demo therefore lit the street with a blue sun under a blue sky, every
+    // surface came back the same cold grey, and no amount of exposure could put
+    // warmth back into a frame that never had any. Sunlight is what survives the
+    // same scattering, so it is its complement: warm, and warmer the lower the
+    // sun.
+    //
+    // Rayleigh coefficients at 680/550/440 nm and a 8 km scale height give the
+    // vertical optical depth; Kasten-Young's air mass, which does not diverge at
+    // the horizon the way 1/sin does, scales it along the path. Mie is nearly
+    // grey and carries the turbidity.
+    const float elevationDeg = std::clamp(settings.sunElevationDegrees, -3.0f, 89.0f);
+    const float airMass = 1.0f
+                          / (std::max(std::sin(MathHelper::ToRadians(elevationDeg)), 0.0f)
+                             + 0.50572f * std::pow(elevationDeg + 6.07995f, -1.6364f));
+    const Vector3 rayleighDepth(0.0465f, 0.1085f, 0.2646f);
+    const float   mieDepth = 0.0252f * std::max(turbidity_ - 1.0f, 0.2f);
+    Vector3 transmittance(
+        std::exp(-rayleighDepth.X * airMass - mieDepth * airMass),
+        std::exp(-rayleighDepth.Y * airMass - mieDepth * airMass),
+        std::exp(-rayleighDepth.Z * airMass - mieDepth * airMass));
+    // Normalised on its brightest channel, so `sunIntensity` means the same
+    // thing at every hour and only the *hue* moves.
+    const float peak = std::max(std::max(transmittance.X, transmittance.Y),
+                                std::max(transmittance.Z, 1e-4f));
+    // How much of the disc is above the horizon, so that the light goes out
+    // smoothly at dusk instead of snapping off.
+    const float altitude = std::clamp(
+        std::sin(MathHelper::ToRadians(elevationDeg)) * 3.2f + 0.06f, 0.0f, 1.0f);
+    sunColour_ = Vector3(transmittance.X / peak, transmittance.Y / peak, transmittance.Z / peak)
+                 * settings.sunIntensity * altitude;
 
     // Ambient: the hemisphere average of the same model, cosine weighted. This
     // is the fallback for renderers with no image based lighting; where IBL is
@@ -373,13 +405,19 @@ void SkySystem::computeLighting(const RenderSettings& settings)
 void SkySystem::bakeEnvironment(const RenderSettings& settings)
 {
     (void)settings;
-    // 64 px faces: the irradiance integral and the prefiltered specular are both
-    // low-frequency, and a bigger source would only make the bake slower without
-    // changing what the materials see.
-    constexpr int kFaceSize = 64;
+    // 96 px faces. The irradiance integral is low-frequency and 64 was plenty
+    // for it, but the *prefiltered specular* is not: its top mip is what a shop
+    // window and a car roof reflect, and at 64 px the sky's horizon gradient
+    // arrives as four bands. This is the source both are convolved from.
+    constexpr int kFaceSize = 96;
     environment_ = std::make_unique<TextureCube>(device_, kFaceSize, false, SurfaceFormat::Color);
 
-    std::vector<Color> face(static_cast<std::size_t>(kFaceSize) * kFaceSize);
+    // Radiance first, scale second, quantise third. The scale has to be known
+    // before any texel is written, and it cannot be guessed: at low sun the sky
+    // peaks near 3 and at high sun near 1.4, and a fixed divisor would either
+    // clip the horizon or throw away three quarters of the precision.
+    std::vector<Vector3> faces(6 * static_cast<std::size_t>(kFaceSize) * kFaceSize);
+    float peak = 1e-3f;
     for (int index = 0; index < 6; ++index)
     {
         const CubeMapFace which = static_cast<CubeMapFace>(index);
@@ -400,7 +438,7 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
                     // cloudy sky lights the street the way a cloudy sky does.
                     if (cloudsEnabled_)
                     {
-                                    const float lit = std::clamp(sunDirection_.Y, 0.0f, 1.0f);
+                        const float lit = std::clamp(sunDirection_.Y, 0.0f, 1.0f);
                         const Vector3 cloud(0.72f + 0.5f * lit, 0.74f + 0.5f * lit,
                                             0.80f + 0.5f * lit);
                         const float mixAmount = cloudCoverage_ * 0.55f
@@ -418,7 +456,7 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
                                                                 lightDirection(), turbidity_)
                                        * skyIntensity_;
                     const float fade = std::clamp(-direction.Y * 2.2f, 0.0f, 1.0f);
-                    radiance = up * (0.20f + 0.06f * (1.0f - fade));
+                    radiance = up * (0.17f + 0.05f * (1.0f - fade));
                 }
 
                 // Urban inter-reflection. Half a street's ambient light is the
@@ -435,15 +473,41 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
                     const float lit = std::clamp(sunDirection_.Y, 0.0f, 1.0f);
                     const Vector3 bounce = Vector3(sunColour_.X * facade.X, sunColour_.Y * facade.Y,
                                                    sunColour_.Z * facade.Z)
-                                           * (0.13f * lit);
+                                           * (0.10f * lit);
                     radiance = radiance + bounce * horizonBand;
                 }
 
-                face[static_cast<std::size_t>(y) * kFaceSize + static_cast<std::size_t>(x)] =
-                    Color(static_cast<int>(Encode(radiance.X)), static_cast<int>(Encode(radiance.Y)),
-                          static_cast<int>(Encode(radiance.Z)), 255);
+                const std::size_t at = (static_cast<std::size_t>(index) * kFaceSize
+                                        + static_cast<std::size_t>(y))
+                                           * kFaceSize
+                                       + static_cast<std::size_t>(x);
+                faces[at] = radiance;
+                peak = std::max(peak, std::max(radiance.X, std::max(radiance.Y, radiance.Z)));
             }
-        environment_->SetData(which, face.data(), static_cast<int>(face.size()));
+    }
+
+    // A little headroom above the peak so the brightest texel is not pinned at
+    // 255, and a floor so a night sky does not amplify its own quantisation.
+    environmentScale_ = std::max(peak * 1.02f, 0.25f);
+
+    std::vector<Color> face(static_cast<std::size_t>(kFaceSize) * kFaceSize);
+    for (int index = 0; index < 6; ++index)
+    {
+        for (int y = 0; y < kFaceSize; ++y)
+            for (int x = 0; x < kFaceSize; ++x)
+            {
+                const std::size_t at = (static_cast<std::size_t>(index) * kFaceSize
+                                        + static_cast<std::size_t>(y))
+                                           * kFaceSize
+                                       + static_cast<std::size_t>(x);
+                const Vector3& radiance = faces[at];
+                face[static_cast<std::size_t>(y) * kFaceSize + static_cast<std::size_t>(x)] =
+                    Color(static_cast<int>(Encode(radiance.X, environmentScale_)),
+                          static_cast<int>(Encode(radiance.Y, environmentScale_)),
+                          static_cast<int>(Encode(radiance.Z, environmentScale_)), 255);
+            }
+        environment_->SetData(static_cast<CubeMapFace>(index), face.data(),
+                              static_cast<int>(face.size()));
     }
 
     if (!device_.SupportsImageBasedLightingEXT())
@@ -457,10 +521,16 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
     }
 
     EnvironmentProcessor processor(device_);
-    irradiance_  = processor.generateIrradiance(environment_.get(), 32, 48);
-    prefiltered_ = processor.generatePrefilteredSpecular(environment_.get(), 64,
-                                                         prefilteredMips_, 48);
-    brdfLut_     = processor.generateBrdfLut(64, 96);
+    irradiance_  = processor.generateIrradiance(environment_.get(), 32, 64);
+    // 96 px and six mips: the top mip is a mirror and the bottom is a
+    // hemisphere, and the roughness ramp between them is what a car's paint,
+    // a shop window and a wet kerb all read their reflection from.
+    prefiltered_ = processor.generatePrefilteredSpecular(environment_.get(), 96,
+                                                         prefilteredMips_, 64);
+    brdfLut_     = processor.generateBrdfLut(96, 128);
+
+    CNA::Logger::Info("cna-street: environment baked -- peak radiance "
+                      + std::to_string(peak) + ", stored at 1/" + std::to_string(environmentScale_));
 }
 
 void SkySystem::draw(const Matrix& view, const Matrix& projection, int width, int height,

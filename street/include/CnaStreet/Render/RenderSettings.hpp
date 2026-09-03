@@ -78,6 +78,12 @@ struct RenderSettings
     /// Image based lighting from the baked sky cubemap. Off falls back to a
     /// hemisphere ambient term, which is also what a renderer without IBL gets.
     bool  imageBasedLighting  = true;
+    /// Multiplies the whole image-based ambient term. 1.0 is the physically
+    /// consistent value -- the sky really is that bright next to the sun -- and
+    /// it is exposed because a street canyon's real ambient is *less* than an
+    /// open hemisphere's, and this is the one number that says by how much
+    /// without lying about the sky itself.
+    float iblIntensity        = 0.86f;
     float skyTurbidity        = 2.9f;
     float skyIntensity        = 1.0f;
     bool  clouds = true;
@@ -109,6 +115,10 @@ struct RenderSettings
     bool vegetation = true;
     bool streetFurniture = true;
     bool debugOverlay = true;
+    /// Development mode: one of every vehicle variant parked in a row, nothing
+    /// moving, and a viewpoint aimed at each. Not a preset and not in the
+    /// settings file -- `--lineup` on the command line and nothing else.
+    bool vehicleLineup = false;
     /// Distance past which small props stop being drawn at all.
     float propCullDistance = 210.0f;
     /// Distance past which a prop stops being written into the shadow map.

@@ -442,6 +442,10 @@ void SceneRenderer::applyLighting(const RenderSettings& settings)
         environment.PrefilteredSpecular = sky_.prefiltered();
         environment.BrdfLut             = sky_.brdfLut();
         environment.PrefilteredMipCount = sky_.prefilteredMipCount();
+        // The cube holds radiance divided by this; the effect multiplies it
+        // back. Leaving it at 1 is what makes an HDR sky light a scene as if it
+        // were a photograph of one.
+        environment.Intensity           = sky_.environmentScale() * settings.iblIntensity;
         effect.setImageBasedLightEXT(environment);
     }
     else

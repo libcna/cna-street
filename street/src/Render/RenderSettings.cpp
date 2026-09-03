@@ -111,6 +111,7 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"sunAzimuthDegrees", &s.sunAzimuthDegrees},
         {"sunIntensity", &s.sunIntensity},
         {"imageBasedLighting", &s.imageBasedLighting},
+        {"iblIntensity", &s.iblIntensity},
         {"skyTurbidity", &s.skyTurbidity}, {"skyIntensity", &s.skyIntensity},
         {"clouds", &s.clouds}, {"cloudCoverage", &s.cloudCoverage},
         {"cloudSpeed", &s.cloudSpeed},

@@ -107,6 +107,12 @@ public:
         return brdfLut_.get();
     }
     [[nodiscard]] int prefilteredMipCount() const { return prefilteredMips_; }
+    /// What the environment cube's texels have to be multiplied by to be
+    /// radiance again. Goes into `ImageBasedLightEXT::Intensity`, which is the
+    /// field CNA provides for exactly this: the products of the split sum are
+    /// 8-bit, so a sky brighter than 1.0 lives half in the texture and half in
+    /// this number.
+    [[nodiscard]] float environmentScale() const { return environmentScale_; }
     [[nodiscard]] bool hasImageBasedLighting() const;
 
 private:
@@ -122,6 +128,7 @@ private:
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> irradiance_;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> prefiltered_;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::Texture2D>   brdfLut_;
+    float environmentScale_ = 1.0f;
     int prefilteredMips_ = 5;
 
     Microsoft::Xna::Framework::Vector3 sunDirection_{0.0f, 1.0f, 0.0f};
