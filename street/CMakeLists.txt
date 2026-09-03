@@ -32,3 +32,4 @@ set(CNA_STREET_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets" CACHE PATH
     "Directory the application loads its assets from")
 target_compile_definitions(cna_street_core PUBLIC
     CNA_STREET_DEFAULT_ASSET_DIR="${CNA_STREET_ASSET_DIR}")
+
