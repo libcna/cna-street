@@ -1751,8 +1751,12 @@ void CityScene::buildViewpoints()
     viewpoints_.push_back(Viewpoint{"Car, three metres",
                                     Vector3(0.6f, 1.42f, 34.6f), kSouth + 0.36f, -0.075f, 0.90f});
     // A pedestrian at four metres on the far footway, from a normal eye height.
+    // Off the building line and out from under the trees: at x = -6.4 the
+    // camera stood 80 cm from a tree pit, and a plane tree's trunk at 80 cm
+    // fills a third of a 66-degree frame. The subject of a viewpoint has to be
+    // the thing it is named after.
     viewpoints_.push_back(Viewpoint{"Pedestrian, four metres",
-                                    Vector3(-6.4f, eye, 24.0f), kSouth - 0.06f, -0.055f, 0.80f});
+                                    Vector3(-7.6f, eye, 22.6f), kSouth + 0.10f, -0.045f, 0.80f});
     // Close enough to a shop window to see the glass, what is behind it, and
     // what is reflected in it, all at once.
     viewpoints_.push_back(Viewpoint{"Shop window",

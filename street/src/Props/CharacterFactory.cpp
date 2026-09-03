@@ -188,7 +188,11 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
 {
     const Figure f = Proportions(look);
     const float h  = f.height;
-    const int   sides = fullDetail ? 12 : 7;
+    // Fourteen, not twelve. A limb is the one place a low section count shows
+    // as a *silhouette*: a dodecagonal upper arm at three metres has visible
+    // flats down its edge, and the two extra sections cost about 250 triangles
+    // on a figure that now costs three draw calls at distance instead of six.
+    const int   sides = fullDetail ? 14 : 7;
 
     Character out;
 
@@ -334,24 +338,45 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
         eyes.setTileSize(0.05f);
         for (const float side : {-1.0f, 1.0f})
         {
-            const Vector3 at(side * h * 0.0172f, f.headCentre + h * 0.0030f, h * 0.0500f);
-            eyes.addDiscFacing(at, Vector3(side * 0.30f, -0.10f, 1.0f), h * 0.0040f, 5);
+            const Vector3 at(side * h * 0.0195f, f.headCentre + h * 0.0030f, h * 0.0500f);
+            eyes.addDiscFacing(at, Vector3(side * 0.30f, -0.10f, 1.0f), h * 0.0038f, 5);
             // A brow, as a short bar rather than a second eye: the shadow under
             // a brow ridge is what puts an expression on a face at ten metres,
             // and a disc there gives the figure four eyes.
-            const Vector3 brow(at.X, at.Y + h * 0.0115f, at.Z - h * 0.0040f);
-            eyes.addBox(Vector3(brow.X - h * 0.0105f, brow.Y - h * 0.0016f, brow.Z),
-                        Vector3(brow.X + h * 0.0105f, brow.Y + h * 0.0016f, brow.Z + h * 0.0035f));
+            //
+            // Short. A brow half as long as the face is wide leaves a 2 cm gap
+            // between the pair, and two dark bars 2 cm apart on a 15 cm head
+            // are not two brows -- they are one band across the eyes, which is
+            // a welding mask. A real brow is about 4.5 cm on a 15 cm face, so
+            // the pair covers a third of it and the gap is as wide as either.
+            const Vector3 brow(at.X, at.Y + h * 0.0118f, at.Z - h * 0.0040f);
+            eyes.addBox(Vector3(brow.X - h * 0.0080f, brow.Y - h * 0.0014f, brow.Z),
+                        Vector3(brow.X + h * 0.0080f, brow.Y + h * 0.0014f, brow.Z + h * 0.0032f));
         }
     }
 
     // Hair: a cap over the cranium, thicker at the back, plus a mass at the
     // nape when it is long.
+    // The hairline. Its lowest ring used to sit at headCentre - 0.020h with
+    // enough depth to reach the front of the face, so what a horizontal ring
+    // drew there was a dark band straight across the eyes: every pedestrian in
+    // the city was wearing a visor. A hairline is *above* the brow at the front
+    // and comes down over the temples at the sides, and a ring cannot say both
+    // -- so the lowest ring is raised to brow height and pulled back, which
+    // covers the temples and leaves the face clear. Getting the front edge
+    // right matters more than the sides, because the front is the part with a
+    // face under it.
+    //
+    // The other half is thickness. At 1.045 times the cranium the cap was a
+    // 3 mm shell, which is what a hair *fibre* is and not what a head of hair
+    // is: from the front it disappeared inside the skull and left a bald egg
+    // with a dark rim at the temples. Hair stands 1 to 2 cm off a cranium, and
+    // at 1.14 it protrudes 11 mm at the temples and passes in front of the
+    // forehead above the hairline, which is where hair is.
     std::vector<Ring> cap = {
-        {Vector3(0.0f, f.headCentre - h * 0.020f, -h * 0.006f), headHalf * 1.045f, h * 0.0510f},
-        {Vector3(0.0f, f.headCentre + h * 0.010f, -h * 0.006f), headHalf * 1.055f, h * 0.0545f},
-        {Vector3(0.0f, f.headCentre + h * 0.040f, -h * 0.010f), headHalf * 1.00f, h * 0.0510f},
-        {Vector3(0.0f, f.crown - h * 0.008f, -h * 0.012f), headHalf * 0.68f, h * 0.0350f},
+        {Vector3(0.0f, f.headCentre + h * 0.014f, -h * 0.008f), headHalf * 1.14f, h * 0.0520f},
+        {Vector3(0.0f, f.headCentre + h * 0.038f, -h * 0.008f), headHalf * 1.15f, h * 0.0555f},
+        {Vector3(0.0f, f.crown - h * 0.006f, -h * 0.010f), headHalf * 0.78f, h * 0.0400f},
     };
     Sweep(hair, cap, sides, false, true, 1.35f);
     if (look.hairLength > 0.30f)
@@ -359,9 +384,9 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
         const float drop = Lerp(f.headCentre - h * 0.030f, f.shoulderY - h * 0.010f,
                                 look.hairLength);
         std::vector<Ring> tail = {
-            {Vector3(0.0f, f.headCentre + h * 0.020f, -h * 0.016f), headHalf * 0.94f, h * 0.0330f},
-            {Vector3(0.0f, f.headCentre - h * 0.020f, -h * 0.026f), headHalf * 0.98f, h * 0.0290f},
-            {Vector3(0.0f, drop, -h * 0.030f), headHalf * 0.86f, h * 0.0215f},
+            {Vector3(0.0f, f.headCentre + h * 0.022f, -h * 0.022f), headHalf * 0.96f, h * 0.0340f},
+            {Vector3(0.0f, f.headCentre - h * 0.018f, -h * 0.030f), headHalf * 1.00f, h * 0.0300f},
+            {Vector3(0.0f, drop, -h * 0.034f), headHalf * 0.88f, h * 0.0225f},
         };
         Sweep(hair, tail, sides, false, true, 1.35f);
     }
@@ -372,15 +397,44 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
         // belly and the narrow wrist. Sleeve to the wrist when a coat is worn,
         // so the skin starts at the hand.
         // The arm hangs *inside* the acromion, not on it.
-        const float armX = side * f.shoulderHalf * 0.83f;
+        const float armX = side * f.shoulderHalf * 0.86f;
         const float upperR = h * 0.0300f * f.limb;
+        // The arm starts at the acromion and goes *down*. It used to start
+        // 2.6 cm above the shoulder line and 12 cm from the centreline -- which
+        // is on top of the trapezius and beside the neck -- and then sweep out
+        // and down. Two things went wrong with that and both were visible from
+        // across the street.
+        //
+        // The shape: a capped section rising above the shoulder next to the neck
+        // and tapering outward is a wing. Every figure on the street had a pair
+        // of pointed shoulder pads reaching to ear height, which is the single
+        // loudest thing a human silhouette can get wrong -- and it made the
+        // shoulders read as pinched, which in turn made the head look enormous.
+        //
+        // The frame: `Sweep` picks its reference axis from the spine direction
+        // and switches when the spine is within 25 degrees of world X. From a
+        // ring above the shoulder to one outboard of it, the spine *is* nearly
+        // horizontal, so the deltoid's section was built on a different frame
+        // from the rest of the arm and rotated a quarter turn against it. Now
+        // every segment of the arm descends more than it spreads, so the whole
+        // limb shares one frame.
+        //
+        // The joint itself is covered by the trunk: the torso's top rings
+        // already carry a shoulder cap and a trapezius slope, and the arm's
+        // start cap sits inside them.
         std::vector<Ring> arm = {
-            {Vector3(armX * 0.62f, f.shoulderY + h * 0.026f, 0.0f), upperR * 1.02f, upperR * 1.06f},
-            {Vector3(armX * 0.90f, f.shoulderY + h * 0.004f, 0.0f), upperR * 1.36f, upperR * 1.34f},
-            {Vector3(armX * 1.03f, f.shoulderY - h * 0.044f, 0.0f), upperR * 1.18f, upperR * 1.22f},
-            {Vector3(armX * 1.01f, Lerp(f.shoulderY, f.elbowY, 0.55f), h * 0.002f),
-             upperR * 0.98f, upperR * 1.02f},
-            {Vector3(armX * 0.98f, f.elbowY - h * 0.010f, h * 0.004f), upperR * 0.84f,
+            {Vector3(armX * 0.88f, f.shoulderY - h * 0.006f, 0.0f), upperR * 1.22f,
+             upperR * 1.26f},
+            // A third ring across the deltoid, because two describe a cone and
+            // a shoulder is not one: the transition read as a pair of flat
+            // plates set at an angle to each other.
+            {Vector3(armX * 0.97f, f.shoulderY - h * 0.022f, 0.0f), upperR * 1.32f,
+             upperR * 1.33f},
+            {Vector3(armX * 1.02f, f.shoulderY - h * 0.040f, 0.0f), upperR * 1.34f,
+             upperR * 1.32f},
+            {Vector3(armX * 1.02f, Lerp(f.shoulderY, f.elbowY, 0.50f), h * 0.002f),
+             upperR * 1.00f, upperR * 1.04f},
+            {Vector3(armX * 0.99f, f.elbowY - h * 0.010f, h * 0.004f), upperR * 0.84f,
              upperR * 0.90f},
         };
         Sweep(look.wearsCoat ? body : flesh, arm, sides, true, false, 1.55f);
@@ -401,15 +455,21 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
         // The hand: a flattened mitt with a thumb mass. At the three to six
         // metres these are seen from, a mitt with a thumb is a hand and five
         // fingers are four hundred wasted triangles.
+        // Flattened the right way round. A hand hanging beside a thigh presents
+        // its edge to the viewer: about 3.5 cm across the figure and 10 cm from
+        // knuckles to heel of the palm. The old sections were 8 cm across and
+        // 10 cm deep, which is a boxing glove, and a pale boxing glove at each
+        // hip was one of the two things that made these figures read as
+        // mannequins.
         std::vector<Ring> hand = {
-            {Vector3(armX * 0.90f, f.wristY + h * 0.010f, h * 0.018f), foreR * 0.74f,
-             foreR * 0.82f},
-            {Vector3(armX * 0.89f, f.wristY - h * 0.012f, h * 0.020f), foreR * 0.96f,
-             foreR * 1.24f},
-            {Vector3(armX * 0.88f, f.wristY - h * 0.046f, h * 0.022f), foreR * 0.84f,
+            {Vector3(armX * 0.90f, f.wristY + h * 0.010f, h * 0.018f), foreR * 0.66f,
+             foreR * 0.80f},
+            {Vector3(armX * 0.89f, f.wristY - h * 0.012f, h * 0.022f), foreR * 0.54f,
              foreR * 1.20f},
-            {Vector3(armX * 0.87f, f.wristY - h * 0.068f, h * 0.020f), foreR * 0.46f,
-             foreR * 0.68f},
+            {Vector3(armX * 0.88f, f.wristY - h * 0.046f, h * 0.024f), foreR * 0.50f,
+             foreR * 1.16f},
+            {Vector3(armX * 0.87f, f.wristY - h * 0.068f, h * 0.020f), foreR * 0.32f,
+             foreR * 0.66f},
         };
         Sweep(flesh, hand, sides, true, true, 1.35f);
 
