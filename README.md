@@ -460,18 +460,23 @@ fraction of this.
 
 | | |
 | --- | --- |
-| Scene build | 7.7 s generating, about 1 s of that from compiled content |
+| Scene build | 7.8 s, of which the material stage is about 6 s generating or 1 s from compiled content |
 | Static batches | 780 |
 | Triangles in the scene | 499 406 |
 | Geometry memory | 35 MiB |
-| Textures | 313 (145 catalogue surfaces plus per-shop signage) |
+| Textures | 313 (145 catalogue surfaces plus the per-shop signage) |
 | Texture memory | 291 MiB |
-| Draw calls per frame | ~1 030 opaque and transparent, ~1 650 shadow, 54 instanced |
-| Visible batches | 978 of 1 529 |
-| Visible instances | 277 of 408 |
+| Plots, vehicles, people | 42, 74, 78 |
+| Draw calls per frame | ~880 opaque and transparent, ~2 730 shadow, 53 instanced |
+| Triangles drawn | 377 000 of 499 000 |
+| Visible batches | 825 of 1 730 |
+| Visible instances | 192 of 408 |
+| Frame | ~127 ms (7.9 fps) at 1280×720 on llvmpipe |
 
-Where the frame goes, on llvmpipe: shadows and the opaque pass dominate, the
-prepass is a fifth of the opaque pass, culling is 0.2 ms, and the sky is free.
+Where the frame goes, on llvmpipe: the shadow pass (131 ms over four cascades)
+and the opaque pass (93 ms) dominate, the post chain's six passes are the rest,
+the prepass is a sixth of the opaque pass, culling is 0.2 ms for 1 730 batches
+and 408 instance groups, and the sky is free.
 The overlay shows the same breakdown live, and its parts sum to the frame by
 construction — they did not always, and a breakdown that does not add up is
 worse than none.
