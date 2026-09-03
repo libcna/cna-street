@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "CnaStreet/Scene/CityScene.hpp"
+#include "Microsoft/Xna/Framework/Graphics/AnimationPlayer.hpp"
+#include "CnaStreet/Render/SkinnedGpuMesh.hpp"
 
 #include "CnaStreet/Assets/SignFactory.hpp"
 #include "CnaStreet/Geometry/Transform.hpp"
@@ -296,12 +298,12 @@ void CityScene::placeProp(const PropMesh& prop, const std::vector<Matrix>& trans
 }
 
 void CityScene::submitProp(const PropMesh& prop, const Matrix& transform,
-                           const Material* overrideMaterial)
+                           const Material* overrideMaterial, bool shadowOnly)
 {
     for (const PropMesh::Part& part : prop.parts)
         renderer_.submitDynamic(part.mesh,
                                 overrideMaterial != nullptr ? overrideMaterial : part.material,
-                                transform);
+                                transform, shadowOnly);
 }
 
 void CityScene::update(float deltaSeconds, const RenderSettings& settings)
@@ -400,21 +402,86 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
     }
 
     // --- people -------------------------------------------------------------
-    if (settings.pedestrians && pedestrianPoseCount_ > 0)
-        for (const Pedestrian& person : pedestrians_.people())
+    submitPeople(settings);
+}
+
+void CityScene::submitPeople(const RenderSettings& settings)
+{
+    if (!settings.pedestrians || characterMeshes_.empty()) return;
+
+    const std::vector<Pedestrian>& crowd = pedestrians_.people();
+    if (walkers_.size() != crowd.size())
+    {
+        walkers_.clear();
+        walkers_.reserve(crowd.size());
+        for (const Pedestrian& person : crowd)
         {
-            const int pose = PedestrianSystem::poseFor(person, pedestrianPoseCount_);
-            const int variant = std::clamp(person.variant, 0,
-                                           PedestrianSystem::kVariantCount - 1);
-            const std::size_t index = static_cast<std::size_t>(variant)
-                                          * static_cast<std::size_t>(pedestrianPoseCount_ + 1)
-                                      + static_cast<std::size_t>(
-                                            std::min(pose, pedestrianPoseCount_));
-            if (index >= pedestrianMeshes_.size()) continue;
-            const Vector2 at = person.position(pedestrians_.nodes(), pedestrians_.edges());
-            submitProp(pedestrianMeshes_[index],
-                       pedestrians_.transform(person, layout_.groundHeight(at.X, at.Y)));
+            const std::size_t variant = static_cast<std::size_t>(
+                std::clamp(person.variant, 0, static_cast<int>(characterMeshes_.size()) - 1));
+            walkers_.push_back(std::make_unique<Graphics::AnimationPlayer>(
+                characterMeshes_[variant]->skinning));
         }
+    }
+
+    const Vector3& eye = cameraPosition_;
+    for (std::size_t i = 0; i < crowd.size(); ++i)
+    {
+        const Pedestrian& person = crowd[i];
+        const std::size_t variant = static_cast<std::size_t>(
+            std::clamp(person.variant, 0, static_cast<int>(characterMeshes_.size()) - 1));
+        const CharacterMesh& character = *characterMeshes_[variant];
+
+        const Vector2 at = person.position(pedestrians_.nodes(), pedestrians_.edges());
+        const float distance = std::sqrt((at.X - eye.X) * (at.X - eye.X)
+                                         + (at.Y - eye.Z) * (at.Y - eye.Z));
+        if (distance > settings.propCullDistance) continue;
+
+        // Scale *before* the placement: XNA composes row-vector-first, so the
+        // other order scales the person's position in the world rather than the
+        // person.
+        const Matrix world =
+            Matrix::CreateScale(person.height / character.height)
+            * pedestrians_.transform(person, layout_.groundHeight(at.X, at.Y));
+
+        Graphics::AnimationPlayer& player = *walkers_[i];
+        // Absolute time rather than a delta, and taken from how far this person
+        // has actually walked: a stride is 1.42 m, so the cycle follows the
+        // ground speed and the feet do not slide. Someone waiting at a kerb runs
+        // the idle clip on their own offset, which is what stops a queue of
+        // pedestrians breathing in unison.
+        if (person.waiting)
+        {
+            const auto& clip = character.skinning.AnimationClips.at("idle");
+            if (player.getCurrentClipProperty() != &clip) player.StartClip(clip);
+            player.Update(System::TimeSpan::FromTicks(static_cast<std::int64_t>(
+                              static_cast<double>(person.waitTime
+                                                  + static_cast<float>(i) * 0.53f)
+                              * 1.0e7)),
+                          false, true);
+        }
+        else
+        {
+            const auto& clip = character.skinning.AnimationClips.at("walk");
+            if (player.getCurrentClipProperty() != &clip) player.StartClip(clip);
+            const float cycles = PedestrianSystem::cyclesWalked(person);
+            player.Update(System::TimeSpan::FromTicks(static_cast<std::int64_t>(
+                              static_cast<double>(cycles * 1.06f) * 1.0e7)),
+                          false, true);
+        }
+
+        for (const CharacterMesh::Part& part : character.parts)
+        {
+            SkinnedItem item;
+            item.mesh     = part.mesh.get();
+            item.material = part.material;
+            item.world    = world;
+            item.bones    = &player.GetSkinTransforms();
+            renderer_.submitSkinned(std::move(item));
+        }
+        // The rigid stand-in, for the shadow pass only.
+        if (distance < settings.propShadowDistance)
+            submitProp(character.shadowProxy, world, nullptr, true);
+    }
 }
 
 float CityScene::groundHeight(float x, float z) const
@@ -1220,10 +1287,6 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
     }
 
     // --- the people ---------------------------------------------------------
-    // Eight figures, each built once per walk-cycle phase plus a standing pose.
-    // That is 72 small meshes, which sounds like a lot until you notice it is
-    // 72 × ~900 triangles: less geometry than one building, and it buys motion
-    // without a skinning pipeline.
     static const Vector3 kSkinTones[] = {
         Vector3(0.76f, 0.60f, 0.50f), Vector3(0.60f, 0.44f, 0.34f),
         Vector3(0.42f, 0.29f, 0.22f), Vector3(0.27f, 0.18f, 0.13f),
@@ -1238,42 +1301,89 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         Vector3(0.15f, 0.17f, 0.24f), Vector3(0.10f, 0.10f, 0.11f),
         Vector3(0.30f, 0.28f, 0.25f), Vector3(0.19f, 0.22f, 0.30f),
     };
+    static const Vector3 kHairColours[] = {
+        Vector3(0.035f, 0.030f, 0.028f), Vector3(0.075f, 0.052f, 0.038f),
+        Vector3(0.135f, 0.088f, 0.052f), Vector3(0.235f, 0.175f, 0.098f),
+        Vector3(0.330f, 0.315f, 0.300f), Vector3(0.145f, 0.075f, 0.045f),
+    };
 
-    const PedestrianFactory people(materials_);
-    pedestrianPoseCount_ = PedestrianFactory::kPhaseCount;
-    pedestrianMeshes_.clear();
-    pedestrianMeshes_.reserve(static_cast<std::size_t>(PedestrianSystem::kVariantCount)
-                              * static_cast<std::size_t>(pedestrianPoseCount_ + 1));
+    // Every figure is one skinned mesh with a nineteen-bone rig, animated on the
+    // GPU. The version this replaces baked eight poses of a stride plus a
+    // standing one -- 72 meshes for eight people -- and the pose changed in
+    // eight discrete steps. One mesh each and a clip is less geometry, smoother
+    // motion, and it is the skeletal path CNA actually has.
+    const CharacterFactory characters(materials_);
+    characterMeshes_.clear();
+    characterMeshes_.reserve(static_cast<std::size_t>(PedestrianSystem::kVariantCount));
 
     for (int variant = 0; variant < PedestrianSystem::kVariantCount; ++variant)
     {
         const std::string suffix = std::to_string(variant);
         Rng pick = Rng::derive(settings.seed, "person-" + suffix);
-        const float height = M::kPersonHeightMin
-                             + (M::kPersonHeightMax - M::kPersonHeightMin) * pick.unit();
-        const Material* skin = materials_.deriveTinted(
-            "skin-" + suffix, MaterialId::Skin,
-            kSkinTones[pick.index(std::size(kSkinTones))]);
-        const Material* coat = materials_.deriveTinted(
+
+        CharacterLook look = characters.look(pick, variant);
+        look.skin = materials_.deriveTinted("skin-" + suffix, MaterialId::Skin,
+                                            kSkinTones[pick.index(std::size(kSkinTones))]);
+        look.coat = materials_.deriveTinted(
             "coat-" + suffix, MaterialId::Clothing,
             kCoatColours[static_cast<std::size_t>(variant) % std::size(kCoatColours)]);
-        const Material* trousers = materials_.deriveTinted(
+        look.trousers = materials_.deriveTinted(
             "trousers-" + suffix, MaterialId::Clothing,
             kTrouserColours[pick.index(std::size(kTrouserColours))]);
+        look.hair = materials_.deriveTinted("hair-" + suffix, MaterialId::Clothing,
+                                            kHairColours[pick.index(std::size(kHairColours))]);
+        look.shoes = materials_.deriveTinted("shoes-" + suffix, MaterialId::Clothing,
+                                             Vector3(0.030f, 0.030f, 0.034f));
 
-        // Every pose of one person is built from the same generator state, so
-        // the figure keeps its build, its bag and its hat across the whole walk
-        // cycle instead of changing shape eight times a second.
-        for (int pose = 0; pose <= pedestrianPoseCount_; ++pose)
+        auto entry = std::make_unique<CharacterMesh>();
+        entry->height = look.height;
+
+        const CharacterFactory::Character full = characters.build(look, true);
+        for (std::size_t part = 0; part < full.parts.size(); ++part)
         {
-            const bool standing = pose == pedestrianPoseCount_;
-            Rng rng = Rng::derive(settings.seed, "person-body-" + suffix);
-            pedestrianMeshes_.push_back(makeProp(
-                "person-" + suffix + "." + std::to_string(pose), [&](GeometryCollector& c) {
-                    people.build(c, height, standing ? 0 : pose, standing, skin, coat, trousers,
-                                 rng);
-                }));
+            auto mesh = std::make_unique<SkinnedGpuMesh>(
+                device_, full.parts[part].mesh,
+                "person-" + suffix + "." + std::to_string(part));
+            buildStats_.meshBytes += mesh->gpuBytes();
+            buildStats_.triangles += static_cast<std::size_t>(mesh->triangleCount());
+            entry->parts.push_back(
+                CharacterMesh::Part{full.parts[part].material, std::move(mesh)});
         }
+
+        // The skeleton, in the form AnimationPlayer wants. Held by unique_ptr
+        // because every player holds a reference to it for its whole life.
+        entry->skinning.BoneCount         = full.skeleton.count();
+        entry->skinning.SkeletonHierarchy = full.skeleton.hierarchy();
+        entry->skinning.BindPose          = full.skeleton.bindPose();
+        entry->skinning.InverseBindPose   = full.skeleton.inverseBindPose();
+        const CharacterFactory::Clips clips =
+            CharacterFactory::clips(full.skeleton, look.height, 1.06f);
+        entry->skinning.AnimationClips["walk"] = clips.walk;
+        entry->skinning.AnimationClips["idle"] = clips.idle;
+
+        // A rigid stand-in for the shadow pass. CNA's cascade caster takes its
+        // world matrix from a uniform and knows nothing about bones, so a
+        // skinned figure cannot cast its own shadow; see docs/cna-findings.md
+        // CNA-F14. This is the same figure in its bind pose at half the ring
+        // count, which at the sun angles a street is lit by is a long thin blob
+        // on the pavement either way -- and a person with no shadow at all
+        // floats.
+        entry->shadowProxy = makeProp("person-shadow-" + suffix, [&](GeometryCollector& c) {
+            const CharacterFactory::Character proxy = characters.build(look, false);
+            for (const CharacterFactory::Character::Part& part : proxy.parts)
+            {
+                Geometry::MeshBuilder& builder = c.builder(part.material);
+                Geometry::MeshData plain;
+                plain.indices = part.mesh.indices;
+                plain.vertices.reserve(part.mesh.vertices.size());
+                for (const Geometry::SkinnedVertex& v : part.mesh.vertices)
+                    plain.vertices.emplace_back(v.Position, v.Normal, v.Tangent,
+                                                v.TextureCoordinate);
+                builder.append(plain);
+            }
+        });
+
+        characterMeshes_.push_back(std::move(entry));
     }
 
     // --- the simulations ----------------------------------------------------
@@ -1288,7 +1398,10 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         traffic_.buildLineup(settings.seed);
     else
         traffic_.build(settings.seed, 30, 44);
-    pedestrians_.build(layout_, crossings_, settings.seed, 78);
+    if (settings.vehicleLineup)
+        pedestrians_.buildLineup(layout_, crossings_, settings.seed);
+    else
+        pedestrians_.build(layout_, crossings_, settings.seed, 78);
     buildStats_.vehicles = static_cast<int>(traffic_.vehicles().size());
     buildStats_.people   = static_cast<int>(pedestrians_.people().size());
 }
@@ -1382,6 +1495,15 @@ void CityScene::buildViewpoints()
         viewpoints_.push_back(Viewpoint{"Front " + tag,
                                         Vector3(at.X - 5.4f, 1.45f, at.Y + 5.6f),
                                         kEast + 0.72f, -0.16f, 0.62f});
+    }
+    for (int variant = 0; variant < PedestrianSystem::kVariantCount; ++variant)
+    {
+        const Vector2 at = PedestrianSystem::lineupPlace(variant);
+        // Square in front of a figure that is facing the road, at three
+        // metres: the distance a person on the far pavement is seen from.
+        viewpoints_.push_back(Viewpoint{"Person " + std::to_string(variant),
+                                        Vector3(at.X + 3.0f, 1.06f, at.Y),
+                                        -kEast, 0.0f, 0.52f});
     }
 }
 

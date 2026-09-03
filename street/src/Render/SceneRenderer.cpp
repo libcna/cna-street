@@ -2,6 +2,7 @@
 #include "CnaStreet/Render/SceneRenderer.hpp"
 
 #include "CnaStreet/Render/GpuMesh.hpp"
+#include "CnaStreet/Render/SkinnedGpuMesh.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
 
 #include "CNA/Graphics/CascadedShadowMap.hpp"
@@ -23,6 +24,7 @@
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ImageBasedLightEXT.hpp"
 #include "Microsoft/Xna/Framework/Graphics/PbrEffect.hpp"
+#include "Microsoft/Xna/Framework/Graphics/SkinnedPbrEffect.hpp"
 #include "Microsoft/Xna/Framework/Graphics/RasterizerState.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SamplerState.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ShaderEffect.hpp"
@@ -135,6 +137,21 @@ void SceneRenderer::initialise(const RenderSettings& settings)
         limitations_.emplace_back("the renderer has no 3D pipeline; nothing will be drawn");
 
     effect_ = std::make_unique<PbrEffect>(device_);
+
+    // The skinned sibling of the same material model, for the pedestrians.
+    // Probed like everything else: a renderer with a PbrEffect but no skinning
+    // shader would otherwise draw every character in its bind pose at the
+    // origin, which is a far worse failure than not drawing them.
+    try
+    {
+        skinnedEffect_ = std::make_unique<SkinnedPbrEffect>(device_);
+        skinnedEffect_->setWeightsPerVertexProperty(4);
+    }
+    catch (const std::exception& failure)
+    {
+        limitations_.emplace_back(std::string("no GPU skinning: ") + failure.what());
+        skinnedEffect_.reset();
+    }
 
     pipeline_ = std::make_unique<RenderPipeline>(device_);
     pipeline_->resize(std::max(1, width_), std::max(1, height_));
@@ -309,19 +326,29 @@ void SceneRenderer::clearScene()
 void SceneRenderer::beginFrame()
 {
     dynamic_.clear();
+    skinned_.clear();
 }
 
 void SceneRenderer::submitDynamic(const GpuMesh* mesh, const Material* material,
-                                  const Matrix& world)
+                                  const Matrix& world, bool shadowOnly)
 {
     if (mesh == nullptr || material == nullptr) return;
     SceneItem item;
+    item.shadowOnly  = shadowOnly;
     item.mesh        = mesh;
     item.material    = material;
     item.world       = world;
     item.worldBounds = TransformBox(mesh->bounds(), world);
     item.worldSphere = BoundingSphere::CreateFromBoundingBox(item.worldBounds);
     dynamic_.push_back(item);
+}
+
+void SceneRenderer::submitSkinned(SkinnedItem item)
+{
+    if (item.mesh == nullptr || item.material == nullptr || item.bones == nullptr) return;
+    item.worldSphere = BoundingSphere::CreateFromBoundingBox(
+        TransformBox(item.mesh->bounds(), item.world));
+    skinned_.push_back(std::move(item));
 }
 
 void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
@@ -344,6 +371,17 @@ void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
     visibleOpaque_.clear();
     visibleTransparent_.clear();
     visibleDynamic_.clear();
+    visibleSkinned_.clear();
+    for (std::size_t i = 0; i < skinned_.size(); ++i)
+    {
+        const SkinnedItem& item = skinned_[i];
+        if (Vector3::Distance(eye, item.worldSphere.Center) - item.worldSphere.Radius
+            > settings.propCullDistance)
+            continue;
+        if (frustum.Contains(item.worldSphere) == ContainmentType::Disjoint) continue;
+        visibleSkinned_.push_back(i);
+    }
+    stats_.visibleCharacters = static_cast<int>(visibleSkinned_.size());
     stats_.visibleItems = 0;
     stats_.totalItems = static_cast<int>(items_.size() + dynamic_.size());
 
@@ -369,6 +407,7 @@ void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
                                     : 0.0f;
     for (std::size_t i = 0; i < dynamic_.size(); ++i)
     {
+        if (dynamic_[i].shadowOnly) continue;
         const SceneItem& item = dynamic_[i];
         if (moverDistance > 0.0f && DistanceToBox(eye, item.worldBounds) > moverDistance) continue;
         if (frustum.Contains(item.worldBounds) == ContainmentType::Disjoint) continue;
@@ -637,6 +676,95 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
     stats_.drewShadows = stats_.shadowDrawCalls > 0;
 }
 
+void SceneRenderer::drawSkinned(const Camera& camera, const RenderSettings& settings)
+{
+    if (skinnedEffect_ == nullptr || visibleSkinned_.empty()) return;
+    SkinnedPbrEffect& effect = *skinnedEffect_;
+
+    // The same lighting the rest of the frame has. Set once, because the whole
+    // crowd shares it and a per-character upload of the environment cube would
+    // be the single most expensive thing in the pass.
+    effect.setLightingEnabledProperty(true);
+    auto& sun = effect.getDirectionalLight0Property();
+    sun.setEnabledProperty(true);
+    sun.setDirectionProperty(sky_.lightDirection());
+    sun.setDiffuseColorProperty(sky_.sunColour());
+    sun.setSpecularColorProperty(sky_.sunColour());
+    effect.getDirectionalLight1Property().setEnabledProperty(false);
+    effect.getDirectionalLight2Property().setEnabledProperty(false);
+    effect.setAmbientLightColorProperty(sky_.ambientColour());
+    if (sky_.hasImageBasedLighting() && settings.imageBasedLighting)
+    {
+        ImageBasedLightEXT environment;
+        environment.Irradiance          = sky_.irradiance();
+        environment.PrefilteredSpecular = sky_.prefiltered();
+        environment.BrdfLut             = sky_.brdfLut();
+        environment.PrefilteredMipCount = sky_.prefilteredMipCount();
+        environment.Intensity           = sky_.environmentScale() * settings.iblIntensity;
+        effect.setImageBasedLightEXT(environment);
+    }
+    if (settings.heightFog)
+    {
+        effect.setFogEnabledProperty(true);
+        effect.setFogColorProperty(sky_.ambientColour());
+        effect.setFogStartProperty(settings.farPlane * 0.30f);
+        effect.setFogEndProperty(settings.farPlane * 0.98f);
+    }
+    else
+    {
+        effect.setFogEnabledProperty(false);
+    }
+    if (shadows_ != nullptr && settings.shadows)
+    {
+        shadows_->applyToReceiver(effect);
+        effect.setShadowsEnabledEXT(true);
+        effect.setShadowDepthBiasEXT(settings.shadowDepthBias);
+    }
+    else
+    {
+        effect.setShadowsEnabledEXT(false);
+    }
+    effect.setViewProperty(camera.view());
+    effect.setProjectionProperty(camera.projection());
+    effect.setEncodeOutputToSrgbEXTProperty(!usingSceneTarget_);
+    effect.setBaseColorTextureIsSrgbEXTProperty(true);
+    effect.setEmissiveTextureIsSrgbEXTProperty(true);
+
+    device_.setRasterizerStateProperty(RasterizerState::CullCounterClockwise);
+    device_.setDepthStencilStateProperty(DepthStencilState::Default);
+    device_.setBlendStateProperty(BlendState::Opaque);
+
+    for (std::size_t index : visibleSkinned_)
+    {
+        const SkinnedItem& item = skinned_[index];
+        const Material& material = *item.material;
+        effect.setWorldProperty(item.world);
+        effect.setDiffuseColorProperty(material.baseColour);
+        effect.setAlphaProperty(material.alpha);
+        effect.setMetallicFactorProperty(material.metallic);
+        effect.setRoughnessFactorProperty(material.roughness);
+        effect.setEmissiveFactorProperty(material.emissiveFactor);
+        effect.setTextureProperty(material.albedo);
+        effect.setNormalMapProperty(material.normal);
+        effect.setMetallicRoughnessMapProperty(material.orm);
+        effect.setOcclusionMapProperty(material.orm);
+        effect.setEmissiveMapProperty(material.emissive);
+        effect.setNormalScaleEXTProperty(material.normalScale);
+        effect.setOcclusionStrengthEXTProperty(material.occlusionStrength);
+        effect.setIorEXTProperty(material.ior);
+        effect.setSpecularFactorEXTProperty(material.specular);
+        effect.setAlphaModeEXTProperty(material.alphaMode);
+        effect.setAlphaCutoffEXTProperty(material.alphaCutoff);
+        effect.setDoubleSidedEXTProperty(material.doubleSided);
+        effect.SetBoneTransforms(*item.bones);
+        effect.Apply();
+        item.mesh->draw(device_);
+        ++stats_.skinnedDrawCalls;
+        ++stats_.drawCalls;
+        stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
+    }
+}
+
 void SceneRenderer::drawPrepass(const Camera& camera, const RenderSettings& settings)
 {
     if (prepass_ == nullptr || pipeline_ == nullptr || !settings.ssao) return;
@@ -717,6 +845,9 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
         stats_.triangles += static_cast<std::size_t>(mesh->triangleCount()) * visible.size();
     }
 
+    // The crowd, last among the opaque draws: a different effect, so it costs
+    // one program switch rather than one per person interleaved with the rest.
+    drawSkinned(camera, settings);
 }
 
 void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& settings)

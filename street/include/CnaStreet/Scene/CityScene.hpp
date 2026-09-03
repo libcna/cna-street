@@ -2,7 +2,7 @@
 #pragma once
 
 #include "CnaStreet/Props/BuildingBuilder.hpp"
-#include "CnaStreet/Props/PedestrianFactory.hpp"
+#include "CnaStreet/Props/CharacterFactory.hpp"
 #include "CnaStreet/Props/PropFactory.hpp"
 #include "CnaStreet/Props/RoadBuilder.hpp"
 #include "CnaStreet/Props/VehicleFactory.hpp"
@@ -26,6 +26,7 @@ namespace Microsoft::Xna::Framework::Graphics {
 namespace CnaStreet {
 
 class GpuMesh;
+class SkinnedGpuMesh;
 class SceneRenderer;
 
 /**
@@ -123,7 +124,7 @@ private:
     /// replaces every part's material, which is how a signal lens is drawn lit
     /// or dark from one mesh.
     void submitProp(const PropMesh& prop, const Microsoft::Xna::Framework::Matrix& transform,
-                    const Material* overrideMaterial = nullptr);
+                    const Material* overrideMaterial = nullptr, bool shadowOnly = false);
 
     void buildStreetFurniture(Rng& rng, const RenderSettings& settings);
     void buildVegetation(Rng& rng, const RenderSettings& settings);
@@ -132,6 +133,8 @@ private:
     /// left behind while it was building the elevations.
     void buildSignage(Rng& rng, const RenderSettings& settings);
     void buildTrafficAndPeople(const RenderSettings& settings);
+    /// Advances every pedestrian's animation and submits the crowd.
+    void submitPeople(const RenderSettings& settings);
 
     Microsoft::Xna::Framework::Graphics::GraphicsDevice& device_;
     SceneRenderer&  renderer_;
@@ -172,8 +175,27 @@ private:
         std::vector<WheelPlacement> wheels;
     };
     std::vector<VehicleMesh> vehicleMeshes_;
-    std::vector<PropMesh> pedestrianMeshes_;   ///< variant-major, then pose
-    int pedestrianPoseCount_ = 0;
+    /// One skinned figure per appearance variant: its parts, the skeleton the
+    /// clips run on, and a rigid stand-in for the shadow pass.
+    struct CharacterMesh
+    {
+        struct Part
+        {
+            const Material* material = nullptr;
+            std::unique_ptr<SkinnedGpuMesh> mesh;
+        };
+        std::vector<Part> parts;
+        Microsoft::Xna::Framework::Graphics::SkinningData skinning;
+        PropMesh shadowProxy;
+        float height = 1.75f;
+    };
+    /// Held indirectly because every AnimationPlayer keeps a reference to its
+    /// variant's SkinningData for its whole life, and a vector that reallocates
+    /// would leave every player pointing at freed memory.
+    std::vector<std::unique_ptr<CharacterMesh>> characterMeshes_;
+    /// One player per person. Advanced to that person's own animation time
+    /// every frame, so no two people in the crowd are in step.
+    std::vector<std::unique_ptr<Microsoft::Xna::Framework::Graphics::AnimationPlayer>> walkers_;
     /// Lit and dark variants of each lens colour, in the order red, amber,
     /// green, pedestrian red, pedestrian green.
     std::vector<const Material*> lensLit_, lensDark_;

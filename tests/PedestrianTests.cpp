@@ -3,7 +3,6 @@
  * @file
  * @brief The walk graph and the people on it.
  */
-#include "CnaStreet/Props/PedestrianFactory.hpp"
 #include "CnaStreet/Props/RoadBuilder.hpp"
 #include "CnaStreet/Scene/CityLayout.hpp"
 #include "CnaStreet/Scene/StreetMetrics.hpp"
@@ -190,25 +189,28 @@ int main()
         CHECK_MSG(maxWaiting > 0, "nobody ever waited at a crossing");
     }
 
-    CASE("the walk cycle advances with distance and wraps");
+    CASE("the walk cycle is driven by distance, not by the clock");
     {
-        Pedestrian person;
-        person.waiting = false;
-        const int poses = PedestrianFactory::kPhaseCount;
-        std::set<int> seen;
-        for (int i = 0; i < 200; ++i)
+        // The whole reason the animation clock is the distance walked: a cycle
+        // advanced by wall-clock time slides the feet the moment two people
+        // walk at different speeds, and they do.
+        Pedestrian slow, quick;
+        slow.phase  = 2.84f;
+        quick.phase = 2.84f;
+        CHECK_NEAR(PedestrianSystem::cyclesWalked(slow), 2.0, 1e-5);
+        CHECK_NEAR(PedestrianSystem::cyclesWalked(quick), 2.0, 1e-5);
+        quick.phase = 1.42f;
+        CHECK_NEAR(PedestrianSystem::cyclesWalked(quick), 1.0, 1e-5);
+        // Monotone, so the clip never runs backwards.
+        float previous = -1.0f;
+        for (int i = 0; i < 100; ++i)
         {
-            person.phase = static_cast<float>(i) * 0.05f;
-            const int pose = PedestrianSystem::poseFor(person, poses);
-            CHECK(pose >= 0 && pose < poses);
-            seen.insert(pose);
+            Pedestrian person;
+            person.phase = static_cast<float>(i) * 0.07f;
+            const float cycles = PedestrianSystem::cyclesWalked(person);
+            CHECK(cycles >= previous);
+            previous = cycles;
         }
-        CHECK_MSG(seen.size() == static_cast<std::size_t>(poses),
-                  "the walk cycle does not use every pose");
-
-        // A standing figure takes the idle pose, which sits after the cycle.
-        person.waiting = true;
-        CHECK(PedestrianSystem::poseFor(person, poses) == poses);
     }
 
     CASE("the same seed produces the same people");

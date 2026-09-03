@@ -46,6 +46,10 @@ struct Pedestrian
     bool  waiting = false;
     float waitTime = 0.0f;
     bool  reversed = false;    ///< traversing the edge from `to` toward `from`
+    /// Development line-up only: stand here, facing this way, and do not move.
+    bool  pinned = false;
+    Microsoft::Xna::Framework::Vector2 pinnedAt{0.0f, 0.0f};
+    float pinnedHeading = 0.0f;
 
     [[nodiscard]] Microsoft::Xna::Framework::Vector2 position(
         const std::vector<WalkNode>& nodes, const std::vector<WalkEdge>& edges) const;
@@ -75,6 +79,15 @@ public:
 
     void build(const CityLayout& layout, const std::vector<Crossing>& crossings,
                std::uint32_t seed, int count);
+    /// One of every appearance variant, standing still on a known pitch. The
+    /// development companion to TrafficSystem::buildLineup, and for the same
+    /// reason: a figure that walks off before the shutter opens cannot be
+    /// looked at.
+    void buildLineup(const CityLayout& layout, const std::vector<Crossing>& crossings,
+                     std::uint32_t seed);
+    [[nodiscard]] static Microsoft::Xna::Framework::Vector2 lineupPlace(int index);
+    /// Whether this system is in line-up mode, in which nobody moves.
+    [[nodiscard]] bool isLineup() const { return lineup_; }
     void update(float deltaSeconds, const TrafficSignalController& signals);
 
     [[nodiscard]] const std::vector<Pedestrian>& people() const { return people_; }
@@ -85,8 +98,13 @@ public:
     /// World transform for one person.
     [[nodiscard]] Microsoft::Xna::Framework::Matrix transform(const Pedestrian& person,
                                                               float groundHeight) const;
-    /// Which walk-cycle pose to draw, given how many the factory built.
-    [[nodiscard]] static int poseFor(const Pedestrian& person, int poseCount);
+    /// How many complete stride cycles this person has walked. Drives the
+    /// animation clock directly, so the feet keep up with the ground: a walk
+    /// cycle advanced by wall-clock time instead slides on every slope and at
+    /// every speed the simulation gives someone.
+    [[nodiscard]] static float cyclesWalked(const Pedestrian& person);
+    /// One stride, in metres. A comfortable adult walking pace.
+    static constexpr float kStrideLength = 1.42f;
 
 private:
     int addNode(const Microsoft::Xna::Framework::Vector2& position);
@@ -98,6 +116,7 @@ private:
     std::vector<Pedestrian> people_;
     Rng                     rng_{1u};
     int waitingCount_ = 0;
+    bool lineup_ = false;
 };
 
 }  // namespace CnaStreet

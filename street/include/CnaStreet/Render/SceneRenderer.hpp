@@ -17,6 +17,7 @@
 namespace Microsoft::Xna::Framework::Graphics {
     class GraphicsDevice;
     class PbrEffect;
+    class SkinnedPbrEffect;
 }
 
 namespace CNA::Graphics {
@@ -29,8 +30,27 @@ namespace CNA::Graphics {
 namespace CnaStreet {
 
 class GpuMesh;
+class SkinnedGpuMesh;
 class MaterialLibrary;
 struct Material;
+
+/// One skinned figure, submitted per frame with its own bone palette.
+///
+/// The palette is carried by value rather than by pointer into the animation
+/// player, because the player is advanced once per *pose* and shared by every
+/// pedestrian at that pose: keeping a pointer would draw them all in whatever
+/// pose the last one to be updated happened to be in.
+struct SkinnedItem
+{
+    const SkinnedGpuMesh* mesh     = nullptr;
+    const Material*       material = nullptr;
+    Microsoft::Xna::Framework::Matrix world =
+        Microsoft::Xna::Framework::Matrix::getIdentityProperty();
+    Microsoft::Xna::Framework::BoundingSphere worldSphere;
+    /// Bone-space-to-model-space for every bone, as
+    /// `AnimationPlayer::GetSkinTransforms()` produces it.
+    const std::vector<Microsoft::Xna::Framework::Matrix>* bones = nullptr;
+};
 
 /// One piece of static geometry in the world.
 struct SceneItem
@@ -45,6 +65,9 @@ struct SceneItem
     float cullDistance = 0.0f;
     /// Past this, the item stops being written into the shadow map.
     float shadowDistance = 0.0f;
+    /// Written into the shadow map and nowhere else. The stand-in a skinned
+    /// character casts with, because CNA's cascade caster has no bone palette.
+    bool shadowOnly = false;
 };
 
 /// A set of copies of one mesh, drawn with one instanced call.
@@ -90,6 +113,8 @@ public:
         int totalItems = 0;
         int visibleInstances = 0;
         int totalInstances = 0;
+        int skinnedDrawCalls = 0;
+        int visibleCharacters = 0;
         std::size_t triangles = 0;
         int postPasses = 0;
         bool usedSceneTarget = false;
@@ -137,7 +162,8 @@ public:
     /// Clears the dynamic list. Call before submitting this frame's movers.
     void beginFrame();
     void submitDynamic(const GpuMesh* mesh, const Material* material,
-                       const Microsoft::Xna::Framework::Matrix& world);
+                       const Microsoft::Xna::Framework::Matrix& world, bool shadowOnly = false);
+    void submitSkinned(SkinnedItem item);
 
     void render(const Camera& camera, const RenderSettings& settings, float timeSeconds);
 
@@ -152,6 +178,7 @@ public:
 
 private:
     void drawOpaque(const Camera& camera, const RenderSettings& settings);
+    void drawSkinned(const Camera& camera, const RenderSettings& settings);
     void drawTransparent(const Camera& camera, const RenderSettings& settings);
     void drawShadows(const Camera& camera, const RenderSettings& settings);
     void drawPrepass(const Camera& camera, const RenderSettings& settings);
@@ -165,6 +192,7 @@ private:
     SkySystem sky_;
 
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::PbrEffect> effect_;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::SkinnedPbrEffect> skinnedEffect_;
     std::unique_ptr<CNA::Graphics::RenderPipeline>     pipeline_;
     std::unique_ptr<CNA::Graphics::CascadedShadowMap>  shadows_;
     std::unique_ptr<CNA::Graphics::DepthNormalPrepass> prepass_;
@@ -173,6 +201,8 @@ private:
     std::vector<SceneItem>    items_;
     std::vector<InstanceGroup> groups_;
     std::vector<SceneItem>    dynamic_;
+    std::vector<SkinnedItem>  skinned_;
+    std::vector<std::size_t>  visibleSkinned_;
 
     /// Indices into the lists above, refilled every frame by @ref cull.
     std::vector<std::size_t> visibleOpaque_;

@@ -1303,23 +1303,29 @@ SurfaceMaps TextureFactory::fabric(int size, std::uint32_t seed, const float col
 
             // A plain weave: warp and weft alternating, plus the fibre fuzz that
             // makes cloth read as cloth rather than as painted plastic.
-            const float warp = 0.5f + 0.5f * std::sin(u * kPi * 96.0f);
-            const float weft = 0.5f + 0.5f * std::sin(v * kPi * 96.0f);
+            //
+            // The weave has to be *small*. A coat's thread pitch is under a
+            // millimetre, and the first version put ninety-six cells across a
+            // 0.55 m tile -- a six-millimetre grid, three pixels across at the
+            // distance a person is seen from, with a relief of 1.6. Every
+            // pedestrian in the street was wearing chain mail.
+            const float warp = 0.5f + 0.5f * std::sin(u * kPi * 260.0f);
+            const float weft = 0.5f + 0.5f * std::sin(v * kPi * 260.0f);
             const float weave = std::max(warp, weft);
-            const float fuzz = fbm(u * 200.0f, v * 200.0f, 200, 2, 2.0f, 0.5f, seed + 3u);
-            const float fold = fbm(u * 6.0f, v * 6.0f, 6, 3, 2.0f, 0.55f, seed + 17u);
+            const float fuzz = fbm(u * 220.0f, v * 220.0f, 220, 2, 2.0f, 0.5f, seed + 3u);
+            const float fold = fbm(u * 5.0f, v * 5.0f, 5, 3, 2.0f, 0.55f, seed + 17u);
 
             float base[3];
             for (int c = 0; c < 3; ++c)
-                base[c] = colour[c] * (0.80f + weave * 0.18f + fuzz * 0.14f)
-                          * (0.88f + fold * 0.24f);
+                base[c] = colour[c] * (0.94f + weave * 0.05f + fuzz * 0.06f)
+                          * (0.90f + fold * 0.20f);
 
             s.albedo.setRgb(x, y, base[0], base[1], base[2]);
-            s.height.setRgb(x, y, saturate(0.4f + weave * 0.35f + fold * 0.2f), 0.0f, 0.0f);
-            s.orm.set(x, y, saturate(0.8f + weave * 0.2f), saturate(0.90f + fuzz * 0.08f), 0.0f,
+            s.height.setRgb(x, y, saturate(0.4f + weave * 0.30f + fold * 0.30f), 0.0f, 0.0f);
+            s.orm.set(x, y, saturate(0.86f + weave * 0.12f), saturate(0.88f + fuzz * 0.10f), 0.0f,
                       1.0f);
         }
-    return s.finish(1.6f);
+    return s.finish(0.30f);
 }
 
 SurfaceMaps TextureFactory::skin(int size, std::uint32_t seed, const float colour[3])

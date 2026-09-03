@@ -29,6 +29,7 @@ float Distance(const Vector2& a, const Vector2& b)
 Vector2 Pedestrian::position(const std::vector<WalkNode>& nodes,
                              const std::vector<WalkEdge>& edges) const
 {
+    if (pinned) return pinnedAt;
     const WalkEdge& e = edges[static_cast<std::size_t>(edge)];
     const Vector2& a = nodes[static_cast<std::size_t>(reversed ? e.to : e.from)].position;
     const Vector2& b = nodes[static_cast<std::size_t>(reversed ? e.from : e.to)].position;
@@ -39,6 +40,7 @@ Vector2 Pedestrian::position(const std::vector<WalkNode>& nodes,
 float Pedestrian::heading(const std::vector<WalkNode>& nodes,
                           const std::vector<WalkEdge>& edges) const
 {
+    if (pinned) return pinnedHeading;
     const WalkEdge& e = edges[static_cast<std::size_t>(edge)];
     const Vector2& a = nodes[static_cast<std::size_t>(reversed ? e.to : e.from)].position;
     const Vector2& b = nodes[static_cast<std::size_t>(reversed ? e.from : e.to)].position;
@@ -215,6 +217,7 @@ void PedestrianSystem::build(const CityLayout& layout, const std::vector<Crossin
 
 void PedestrianSystem::update(float deltaSeconds, const TrafficSignalController& signals)
 {
+    if (lineup_) return;
     if (deltaSeconds <= 0.0f || edges_.empty()) return;
     const float dt = std::min(deltaSeconds, 0.1f);
     waitingCount_ = 0;
@@ -276,16 +279,34 @@ Matrix PedestrianSystem::transform(const Pedestrian& person, float groundHeight)
     return Geometry::Place(at.X, groundHeight, at.Y, person.heading(nodes_, edges_));
 }
 
-int PedestrianSystem::poseFor(const Pedestrian& person, int poseCount)
+Vector2 PedestrianSystem::lineupPlace(int index)
 {
-    if (poseCount <= 0) return 0;
-    if (person.waiting) return poseCount;   // the idle pose sits after the cycle
-    // One stride is about 1.5 m, sampled at poseCount phases.
-    const float stride = 1.5f;
-    const float t = person.phase / stride;
-    const int index = static_cast<int>(t * static_cast<float>(poseCount))
-                      % poseCount;
-    return index < 0 ? index + poseCount : index;
+    return Vector2(-(M::kMainCarriagewayWidth * 0.5f + M::kMainSidewalkWidth * 0.55f),
+                   26.0f + 3.4f * static_cast<float>(index));
+}
+
+void PedestrianSystem::buildLineup(const CityLayout& layout,
+                                   const std::vector<Crossing>& crossings, std::uint32_t seed)
+{
+    build(layout, crossings, seed, kVariantCount);
+    lineup_ = true;
+    for (int i = 0; i < static_cast<int>(people_.size()); ++i)
+    {
+        Pedestrian& person = people_[static_cast<std::size_t>(i)];
+        person.variant       = i % kVariantCount;
+        person.waiting       = true;
+        person.waitTime      = static_cast<float>(i) * 0.31f;
+        person.phase         = static_cast<float>(i) * 0.19f;
+        person.speed         = 0.0f;
+        person.pinned        = true;
+        person.pinnedAt      = lineupPlace(i);
+        person.pinnedHeading = MathHelper::PiOver2;
+    }
+}
+
+float PedestrianSystem::cyclesWalked(const Pedestrian& person)
+{
+    return person.phase / kStrideLength;
 }
 
 }  // namespace CnaStreet
