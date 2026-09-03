@@ -38,6 +38,58 @@ enum class PlanarAxis
     X, Y, Z
 };
 
+/**
+ * @brief A parametric surface sampled on a grid, for shapes that must look
+ * *smooth* rather than merely correct.
+ *
+ * Everything architectural in this city is flat-shaded, and rightly so: a wall
+ * has one normal and a face normal derived from the corners is the true one. A
+ * car bonnet is not a wall. Shading a lofted body from per-face normals is the
+ * single largest reason the first vehicle fleet read as faceted CG objects
+ * rather than as pressed steel, and the same is true of a human shoulder and a
+ * tree trunk.
+ *
+ * So this carries positions on a `rows × cols` lattice and derives *vertex*
+ * normals from the neighbouring faces — but only across edges whose faces agree
+ * to within @ref smoothingAngle. That threshold is what keeps a shoulder line, a
+ * bonnet shut and a wheel-arch lip as creases while the panels between them
+ * stay smooth. Averaging everything gives a melted car; averaging nothing gives
+ * the faceted one.
+ */
+struct SurfacePatch
+{
+    int rows = 0;  ///< samples along the sweep
+    int cols = 0;  ///< samples around the section
+    std::vector<Microsoft::Xna::Framework::Vector3> positions;  ///< rows*cols, row-major
+    /// Optional explicit texture coordinates, rows*cols. Empty means the
+    /// builder's own planar projection is used, which is right for a painted
+    /// surface carrying a tiled material.
+    std::vector<Microsoft::Xna::Framework::Vector2> uvs;
+    /// Joins the last column back to the first: a closed tube rather than a sheet.
+    bool wrapCols = false;
+    /// Faces meeting at more than this angle keep their own normals. 55° leaves
+    /// a car's feature lines sharp and its panels smooth.
+    float smoothingAngle = 0.96f;
+
+    [[nodiscard]] const Microsoft::Xna::Framework::Vector3& at(int row, int col) const
+    {
+        return positions[static_cast<std::size_t>(row) * static_cast<std::size_t>(cols)
+                         + static_cast<std::size_t>(col)];
+    }
+    [[nodiscard]] Microsoft::Xna::Framework::Vector3& at(int row, int col)
+    {
+        return positions[static_cast<std::size_t>(row) * static_cast<std::size_t>(cols)
+                         + static_cast<std::size_t>(col)];
+    }
+    void resize(int r, int c)
+    {
+        rows = r;
+        cols = c;
+        positions.assign(static_cast<std::size_t>(r) * static_cast<std::size_t>(c),
+                         Microsoft::Xna::Framework::Vector3::Zero);
+    }
+};
+
 /// Which faces of a box to build. The workhorse for architecture: the faces
 /// nobody can ever see are simply not emitted, which on a street of terraced
 /// buildings removes roughly a third of the façade triangles for free.
@@ -192,6 +244,12 @@ public:
     void addDisc(const Microsoft::Xna::Framework::Vector3& centre, float radius, int segments,
                  bool faceUp = true);
 
+    /// A flat disc facing an arbitrary direction. A wheel's hub cap does not
+    /// face up.
+    void addDiscFacing(const Microsoft::Xna::Framework::Vector3& centre,
+                       const Microsoft::Xna::Framework::Vector3& normal, float radius,
+                       int segments);
+
     /// UV sphere. Used for tree crowns and lamp globes, not for detail.
     void addSphere(const Microsoft::Xna::Framework::Vector3& centre, float radius,
                    int slices, int stacks);
@@ -219,6 +277,17 @@ public:
     /// A closed polygon triangulated as a fan about its centroid, facing @p normal.
     void addPolygon(const std::vector<Microsoft::Xna::Framework::Vector3>& corners,
                     const Microsoft::Xna::Framework::Vector3& normal);
+
+    /// Emits every quad of @p patch with smoothed vertex normals.
+    void addSurfacePatch(const SurfacePatch& patch);
+
+    /// Emits only the quads whose lower corner is in `[rowBegin, rowEnd) ×
+    /// [colBegin, colEnd)`. The normals are still derived from the *whole*
+    /// patch, which is the point: a windscreen emitted into the glass builder
+    /// and the roof emitted into the paint builder still share the vertex
+    /// normals along the seam between them, so the two do not shade apart.
+    void addSurfacePatch(const SurfacePatch& patch, int rowBegin, int rowEnd, int colBegin,
+                         int colEnd);
 
     // --- composition --------------------------------------------------------
     /// Appends another mesh, transforming positions, normals and tangents.

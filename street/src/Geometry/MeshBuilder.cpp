@@ -633,4 +633,145 @@ void MeshBuilder::offsetUv(std::size_t firstVertex, const Vector2& scale, const 
     }
 }
 
+// ---------------------------------------------------------------------------
+// Smoothed parametric surfaces
+
+namespace {
+
+/// The normal of one grid quad, from its diagonals rather than an edge pair --
+/// a lofted car panel is not planar, and the diagonal form is the average of
+/// the two triangulations rather than one of them.
+Vector3 PatchFaceNormal(const SurfacePatch& patch, int row, int col, int colCount)
+{
+    const int c1 = (col + 1) % colCount;
+    const Vector3& a = patch.at(row, col);
+    const Vector3& b = patch.at(row, c1);
+    const Vector3& c = patch.at(row + 1, c1);
+    const Vector3& d = patch.at(row + 1, col);
+    return SafeNormalize(Vector3::Cross(c - a, d - b), Vector3::Up);
+}
+
+}  // namespace
+
+void MeshBuilder::addDiscFacing(const Vector3& centre, const Vector3& normal, float radius,
+                                int segments)
+{
+    const Vector3 n = SafeNormalize(normal, Vector3::Up);
+    const Vector3 reference = std::fabs(n.Y) > 0.95f ? Vector3::Forward : Vector3::Up;
+    const Vector3 u = SafeNormalize(Vector3::Cross(reference, n), Vector3::Right);
+    const Vector3 v = Vector3::Cross(n, u);
+    std::vector<Vector3> ring;
+    ring.reserve(static_cast<std::size_t>(std::max(segments, 3)));
+    for (int i = 0; i < std::max(segments, 3); ++i)
+    {
+        const float a = MathHelper::TwoPi * static_cast<float>(i)
+                        / static_cast<float>(std::max(segments, 3));
+        ring.push_back(centre + u * (std::cos(a) * radius) + v * (std::sin(a) * radius));
+    }
+    addPolygon(ring, n);
+}
+
+void MeshBuilder::addSurfacePatch(const SurfacePatch& patch)
+{
+    addSurfacePatch(patch, 0, patch.rows - 1, 0, patch.wrapCols ? patch.cols : patch.cols - 1);
+}
+
+void MeshBuilder::addSurfacePatch(const SurfacePatch& patch, int rowBegin, int rowEnd,
+                                  int colBegin, int colEnd)
+{
+    if (patch.rows < 2 || patch.cols < 2) return;
+    const int colCount   = patch.cols;
+    const int quadCols   = patch.wrapCols ? colCount : colCount - 1;
+    const int quadRows   = patch.rows - 1;
+    rowBegin = std::clamp(rowBegin, 0, quadRows);
+    rowEnd   = std::clamp(rowEnd, rowBegin, quadRows);
+    colBegin = std::clamp(colBegin, 0, quadCols);
+    colEnd   = std::clamp(colEnd, colBegin, quadCols);
+
+    // Face normals for the whole patch, not just the emitted window: a vertex on
+    // the boundary of the window still has neighbours outside it, and leaving
+    // them out would put a shading seam exactly where two materials meet.
+    std::vector<Vector3> faces(static_cast<std::size_t>(quadRows)
+                               * static_cast<std::size_t>(quadCols));
+    for (int r = 0; r < quadRows; ++r)
+        for (int c = 0; c < quadCols; ++c)
+            faces[static_cast<std::size_t>(r) * static_cast<std::size_t>(quadCols)
+                  + static_cast<std::size_t>(c)] = PatchFaceNormal(patch, r, c, colCount);
+
+    const float cosLimit = std::cos(std::clamp(patch.smoothingAngle, 0.0f, MathHelper::Pi));
+    const bool  hasUv    = patch.uvs.size() == patch.positions.size();
+
+    // The normal at one corner of one quad: the neighbouring faces that agree
+    // with this one to within the smoothing angle, averaged. Weighted by nothing
+    // -- a grid this dense has faces of comparable size, and area weighting on a
+    // patch that tapers to a point at the nose pulls the normal towards the
+    // large faces behind it.
+    const auto cornerNormal = [&](int row, int col, const Vector3& own) {
+        Vector3 sum = own;
+        for (int dr = -1; dr <= 0; ++dr)
+            for (int dc = -1; dc <= 0; ++dc)
+            {
+                const int fr = row + dr;
+                int       fc = col + dc;
+                if (fr < 0 || fr >= quadRows) continue;
+                if (fc < 0)
+                {
+                    if (!patch.wrapCols) continue;
+                    fc += quadCols;
+                }
+                if (fc >= quadCols) continue;
+                const Vector3& n = faces[static_cast<std::size_t>(fr)
+                                             * static_cast<std::size_t>(quadCols)
+                                         + static_cast<std::size_t>(fc)];
+                if (&n == &own) continue;
+                if (Vector3::Dot(n, own) < cosLimit) continue;
+                sum = sum + n;
+            }
+        return SafeNormalize(sum, own);
+    };
+
+    for (int r = rowBegin; r < rowEnd; ++r)
+        for (int c = colBegin; c < colEnd; ++c)
+        {
+            const int c1 = (c + 1) % colCount;
+            const Vector3 corners[4] = {patch.at(r, c), patch.at(r, c1), patch.at(r + 1, c1),
+                                        patch.at(r + 1, c)};
+            const Vector3& face = faces[static_cast<std::size_t>(r)
+                                            * static_cast<std::size_t>(quadCols)
+                                        + static_cast<std::size_t>(c)];
+
+            Vector2 uvs[4];
+            if (hasUv)
+            {
+                const auto uvAt = [&](int rr, int cc) {
+                    return patch.uvs[static_cast<std::size_t>(rr)
+                                         * static_cast<std::size_t>(colCount)
+                                     + static_cast<std::size_t>(cc)];
+                };
+                uvs[0] = uvAt(r, c);
+                uvs[1] = uvAt(r, c1);
+                uvs[2] = uvAt(r + 1, c1);
+                uvs[3] = uvAt(r + 1, c);
+            }
+            else
+            {
+                for (int i = 0; i < 4; ++i) uvs[i] = planarUv(corners[i], face);
+            }
+
+            const Vector3 normals[4] = {cornerNormal(r, c, face), cornerNormal(r, c1, face),
+                                        cornerNormal(r + 1, c1, face), cornerNormal(r + 1, c, face)};
+
+            Vector3 tangent;
+            float   handedness = 1.0f;
+            TangentFrame(corners, uvs, face, tangent, handedness);
+
+            const std::uint32_t base = static_cast<std::uint32_t>(mesh_.vertices.size());
+            const Vector4 tangent4(tangent.X, tangent.Y, tangent.Z, handedness);
+            for (int i = 0; i < 4; ++i)
+                mesh_.vertices.push_back(Vertex(corners[i], normals[i], tangent4, uvs[i]));
+            addTriangleIndices(base + 0, base + 1, base + 2);
+            addTriangleIndices(base + 0, base + 2, base + 3);
+        }
+}
+
 }  // namespace CnaStreet::Geometry
