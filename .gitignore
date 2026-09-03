@@ -10,3 +10,9 @@ compile_commands.json
 # content`, not a source: 69 MB of .cnb regenerated from the same seed by two
 # offline tools, and the demo runs without it.
 /assets/content/
+
+# Downloaded third-party assets. The manifest beside this directory records
+# what each file is, where it came from and under what licence; the files
+# themselves are 114 MB of somebody else's work and are fetched by
+# scripts/fetch-assets.sh rather than vendored.
+/assets/external/downloads/
