@@ -43,24 +43,33 @@ void CityLayout::generate(std::uint32_t seed)
     const float sideLine = M::kSideStreetHalfWidth;
 
     // --- the four main-street frontages -----------------------------------
+    // The corner block of each run turns the corner, so it occupies the first
+    // stretch of the side-street frontage as well. How far it reaches comes back
+    // here, because the side-street runs have to start beyond it: they used to
+    // start at the main street's building line and the first building on every
+    // side-street run was generated *inside* the corner block, which is why the
+    // junction had four blank flank walls standing where four shopfronts should
+    // have been.
+    float cornerNorthWest = 0.0f, cornerSouthWest = 0.0f;
+    float cornerNorthEast = 0.0f, cornerSouthEast = 0.0f;
     generateFrontage(rng, Facing::PosX, -mainLine, sideLine, M::kMainStreetHalfLength, true, true,
-                     plotCounter);
+                     plotCounter, &cornerNorthWest);
     generateFrontage(rng, Facing::PosX, -mainLine, -sideLine, -M::kMainStreetHalfLength, true, true,
-                     plotCounter);
+                     plotCounter, &cornerSouthWest);
     generateFrontage(rng, Facing::NegX, mainLine, sideLine, M::kMainStreetHalfLength, true, true,
-                     plotCounter);
+                     plotCounter, &cornerNorthEast);
     generateFrontage(rng, Facing::NegX, mainLine, -sideLine, -M::kMainStreetHalfLength, true, true,
-                     plotCounter);
+                     plotCounter, &cornerSouthEast);
 
     // --- the four side-street frontages -----------------------------------
-    generateFrontage(rng, Facing::PosZ, -sideLine, mainLine, M::kSideStreetHalfLength, false, false,
-                     plotCounter);
-    generateFrontage(rng, Facing::PosZ, -sideLine, -mainLine, -M::kSideStreetHalfLength, false,
-                     false, plotCounter);
-    generateFrontage(rng, Facing::NegZ, sideLine, mainLine, M::kSideStreetHalfLength, false, false,
-                     plotCounter);
-    generateFrontage(rng, Facing::NegZ, sideLine, -mainLine, -M::kSideStreetHalfLength, false,
-                     false, plotCounter);
+    generateFrontage(rng, Facing::PosZ, -sideLine, mainLine + cornerSouthEast,
+                     M::kSideStreetHalfLength, false, false, plotCounter);
+    generateFrontage(rng, Facing::PosZ, -sideLine, -(mainLine + cornerSouthWest),
+                     -M::kSideStreetHalfLength, false, false, plotCounter);
+    generateFrontage(rng, Facing::NegZ, sideLine, mainLine + cornerNorthEast,
+                     M::kSideStreetHalfLength, false, false, plotCounter);
+    generateFrontage(rng, Facing::NegZ, sideLine, -(mainLine + cornerNorthWest),
+                     -M::kSideStreetHalfLength, false, false, plotCounter);
 
     // --- footway runs ------------------------------------------------------
     const float mainKerb = M::kMainCarriagewayWidth * 0.5f;
@@ -96,7 +105,8 @@ void CityLayout::generate(std::uint32_t seed)
 }
 
 void CityLayout::generateFrontage(Rng& rng, Facing facing, float buildingLine, float from,
-                                  float to, bool alongZ, bool isMainStreet, int& plotCounter)
+                                  float to, bool alongZ, bool isMainStreet, int& plotCounter,
+                                  float* cornerDepth)
 {
     const float direction = to > from ? 1.0f : -1.0f;
     const float span = std::fabs(to - from);
@@ -116,6 +126,7 @@ void CityLayout::generateFrontage(Rng& rng, Facing facing, float buildingLine, f
         if (span - travelled - width < M::kPlotWidthMin) width = span - travelled;
 
         const float depth = corner ? rng.range(19.0f, 24.0f) : rng.range(13.5f, 21.0f);
+        if (corner && cornerDepth != nullptr) *cornerDepth = depth;
 
         Plot plot;
         plot.seed = static_cast<std::uint32_t>(rng.intRange(1, 1 << 28));

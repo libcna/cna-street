@@ -144,8 +144,12 @@ public:
     [[nodiscard]] const std::string& sideStreetName() const { return sideStreetName_; }
 
 private:
+    /// Lays out one street frontage. @p cornerDepth receives how far the run's
+    /// corner block reaches into the block, which is what the side-street runs
+    /// need in order to start beyond it instead of on top of it.
     void generateFrontage(Rng& rng, Facing facing, float buildingLine, float from, float to,
-                          bool alongZ, bool isMainStreet, int& plotCounter);
+                          bool alongZ, bool isMainStreet, int& plotCounter,
+                          float* cornerDepth = nullptr);
 
     std::vector<Plot>       plots_;
     std::vector<FootwayRun> footways_;
