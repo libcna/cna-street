@@ -154,8 +154,11 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
 
     // The ground plane, in cells so it culls, and set a little below the road so
     // it can never win a depth fight with it.
+    // Small cells, and green is the exception. At 92 m a cell is a field, and a
+    // third of them green turned the district's surroundings into a chequerboard
+    // of meadows visible from any camera above the roofline.
     constexpr float kReach = 460.0f;
-    constexpr float kStep  = 92.0f;
+    constexpr float kStep  = 38.0f;
     for (float x = -kReach; x < kReach; x += kStep)
         for (float z = -kReach; z < kReach; z += kStep)
         {
@@ -164,8 +167,20 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
             // Laid under the street rather than around it: leaving a hole where
             // the modelled block sits shows the sky's below-horizon haze through
             // every gap between a building and the kerb.
-            collector.setRegion((x + x1) * 0.5f, (z + z1) * 0.5f);
-            MeshBuilder& builder = collector.builder(rng.chance(0.35f) ? grass : ground);
+            //
+            // Varied at 38 m and batched at 152 m. The variation has to be fine
+            // or the surroundings read as a chequerboard of fields from any
+            // camera above the roofline; the batching has to be coarse or the
+            // ground plane alone is five hundred draw calls of two triangles
+            // each.
+            constexpr float kBatch = 152.0f;
+            const int coarseX = static_cast<int>(std::floor((x + x1) * 0.5f / kBatch));
+            const int coarseZ = static_cast<int>(std::floor((z + z1) * 0.5f / kBatch));
+            // Offset clear of the keys setRegion() derives for the blocks
+            // in this same collector, so a collision cannot quietly merge a
+            // ground cell with a building.
+            collector.setRegionKey(1000000 + coarseX * 64 + coarseZ);
+            MeshBuilder& builder = collector.builder(rng.chance(0.14f) ? grass : ground);
             builder.setTileSize(8.0f);
             builder.addQuad(Vector3(x, -0.04f, z), Vector3(x, -0.04f, z1), Vector3(x1, -0.04f, z1),
                             Vector3(x1, -0.04f, z));
@@ -563,11 +578,14 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     }
 
     // --- the bus stop -------------------------------------------------------
-    // One shelter, on the west footway of the northern arm, set in the furniture
-    // zone with the walking width kept clear behind it.
-    if (runs.size() > 1)
+    // One shelter, on the *east* footway of the northern arm, set in the
+    // furniture zone with the walking width kept clear behind it. It was on the
+    // west footway, six metres in front of the first viewpoint, where a
+    // four-metre glass box is the whole picture: a shelter is scenery seen from
+    // across the street and an obstruction seen from underneath.
+    if (runs.size() > 3)
     {
-        const FootwayRun& run = runs[1];
+        const FootwayRun& run = runs[3];
         const float lateral = run.width * 0.5f - 1.05f;
         const Vector3 p(run.start.X + run.toKerb.X * lateral, ground,
                         run.start.Y + 34.0f + run.toKerb.Y * lateral);
@@ -1102,16 +1120,16 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
     // the saturated cars are the exception that makes the row read as a row of
     // individual cars rather than a colour chart.
     static const Vector3 kPaints[TrafficSystem::kVariantCount] = {
-        Vector3(0.78f, 0.79f, 0.80f),   // silver
+        Vector3(0.62f, 0.63f, 0.65f),   // silver
         Vector3(0.045f, 0.048f, 0.052f),// black
-        Vector3(0.86f, 0.86f, 0.85f),   // white
+        Vector3(0.70f, 0.70f, 0.69f),   // white
         Vector3(0.16f, 0.17f, 0.19f),   // graphite
         Vector3(0.09f, 0.13f, 0.30f),   // dark blue
         Vector3(0.42f, 0.44f, 0.45f),   // grey
         Vector3(0.30f, 0.06f, 0.07f),   // dark red
         Vector3(0.10f, 0.20f, 0.14f),   // British racing green
         Vector3(0.66f, 0.30f, 0.06f),   // copper
-        Vector3(0.88f, 0.88f, 0.87f),   // white van
+        Vector3(0.72f, 0.72f, 0.71f),   // white van
     };
 
     const VehicleFactory vehicles(materials_);
@@ -1191,8 +1209,11 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
     // Built whatever the settings say: the traffic and pedestrian switches turn
     // off updating and drawing, and rebuilding the whole population when one is
     // flicked back on would stall the frame for no reason.
-    traffic_.build(settings.seed, 26, 38);
-    pedestrians_.build(layout_, crossings_, settings.seed, 46);
+    // The counts a shopping street of this size actually carries. They are
+    // affordable because the renderer culls a mover by distance as well as by
+    // frustum: what is on screen is a few dozen, whatever the population is.
+    traffic_.build(settings.seed, 30, 44);
+    pedestrians_.build(layout_, crossings_, settings.seed, 78);
     buildStats_.vehicles = static_cast<int>(traffic_.vehicles().size());
     buildStats_.people   = static_cast<int>(pedestrians_.people().size());
 }
@@ -1217,8 +1238,12 @@ void CityScene::buildViewpoints()
     // bumper. A viewpoint that is not a place is not a view of the street.
     viewpoints_.push_back(Viewpoint{"Footway looking south to the junction",
                                     Vector3(-7.4f, eye, 46.0f), kSouth, -0.035f, 1.0996f});
+    // On the centre line rather than in a lane. The lanes are at +/-1.65 and a
+    // car is 1.84 m wide, so the metre and a half between them is the only place
+    // in the carriageway a camera can stand without spending half its frames
+    // inside a moving vehicle.
     viewpoints_.push_back(Viewpoint{"On the crossing",
-                                    Vector3(0.4f, eye, 19.0f), kSouth + 0.06f, 0.02f, 1.0996f});
+                                    Vector3(0.0f, eye, 15.5f), kSouth + 0.02f, 0.02f, 1.0996f});
     // On the footway outside the corner block, looking across the junction at it.
     viewpoints_.push_back(Viewpoint{"The corner block",
                                     Vector3(-7.6f, eye, 12.6f), kEast - 0.62f, 0.10f, 1.0996f});

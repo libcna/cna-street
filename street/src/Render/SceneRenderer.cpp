@@ -353,9 +353,17 @@ void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
         ++stats_.visibleItems;
     }
 
+    // Movers are culled by distance as well as by frustum. A person at 200 m is
+    // three pixels tall and costs the same three draw calls as a person at
+    // three metres; without this the population of the street is bounded by
+    // what the far end of it can afford rather than by what the near end needs.
+    const float moverDistance = settings.propCullDistance > 0.0f
+                                    ? settings.propCullDistance
+                                    : 0.0f;
     for (std::size_t i = 0; i < dynamic_.size(); ++i)
     {
         const SceneItem& item = dynamic_[i];
+        if (moverDistance > 0.0f && DistanceToBox(eye, item.worldBounds) > moverDistance) continue;
         if (frustum.Contains(item.worldBounds) == ContainmentType::Disjoint) continue;
         visibleDynamic_.push_back(i);
         ++stats_.visibleItems;

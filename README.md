@@ -460,9 +460,9 @@ fraction of this.
 
 | | |
 | --- | --- |
-| Scene build | 8.0 s generating, 1.1 s from compiled content |
-| Static batches | 787 |
-| Triangles in the scene | 498 276 |
+| Scene build | 7.7 s generating, about 1 s of that from compiled content |
+| Static batches | 780 |
+| Triangles in the scene | 499 406 |
 | Geometry memory | 35 MiB |
 | Textures | 313 (145 catalogue surfaces plus per-shop signage) |
 | Texture memory | 291 MiB |
