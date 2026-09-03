@@ -399,8 +399,10 @@ MonoGame, FNA or any Visual Studio content tool.
 **It needed a change to CNA to be worth having.** Compiled textures had exactly
 one mip level — the container has always been able to carry a chain, but nothing
 generated one — so the content path made the street look *worse* than the
-procedural one. `docs/patches/` carries the CNB commit that fixes it, and
-`docs/cna-findings.md` records it as CNA-F12.
+procedural one. The fix is `feat/cnb-source-mipmaps` on `openeggbert/cna`, kept
+here as a patch under `docs/patches/` as well, and `docs/cna-findings.md`
+records it as CNA-F12. Without it the demo still runs — the pipeline is optional
+— but the compiled set aliases where the generated one does not.
 
 `bake-assets --output <dir>` is the same tool's other mode: it writes the
 surfaces as a gallery for looking at, which is the only way to work on a texture
@@ -525,7 +527,7 @@ assets/ATTRIBUTION.md       where the assets come from
 docs/cna-audit.md           what CNA offers, from reading it
 docs/cna-findings.md        what did not work, and what was done about it
 docs/design-notes.md        the decisions behind the code
-docs/patches/               changes contributed back to CNA
+docs/patches/               changes contributed back to CNA, with a README
 docs/screenshots/           the named viewpoints
 plan.md                     what is done, what is next
 ```
