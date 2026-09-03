@@ -57,6 +57,20 @@ if(EXISTS "${CMAKE_SOURCE_DIR}/assets/external/manifest.json")
 endif()
 
 if(TARGET cna_tool_source_to_cnb)
+    # The licence gate. Not part of `content` -- a build that cannot reach
+    # Python should still compile textures -- but it is the thing to run before
+    # trusting the manifest, and it found an undeclared 7.8 MB model sitting in
+    # the fetched set on its first run.
+    find_program(CNA_STREET_PYTHON NAMES python3 python)
+    if(CNA_STREET_PYTHON)
+        add_custom_target(validate-assets
+            COMMAND "${CNA_STREET_PYTHON}"
+                    "${CMAKE_SOURCE_DIR}/scripts/validate-assets.py"
+            WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+            COMMENT "cna-street: checking every external asset's licence and digest"
+            VERBATIM)
+    endif()
+
     add_custom_target(content
         COMMAND "${CMAKE_COMMAND}"
                 -D "BAKE=$<TARGET_FILE:bake-assets>"

@@ -70,21 +70,53 @@ approach, and a pedestrian head at each end of each crossing. Speed limits,
 priority plates, crossing signs, parking signs and warning triangles. Street
 name plates on the corner buildings and house numbers beside the doors.
 
-**The moving parts.** Ten vehicle meshes over five classes in ten paints, both
-parked and driving; the moving ones follow the vehicle ahead and stop for a red
-light. Eight people at nine poses each, walking a graph of the footways and the
-crossings, waiting at the kerb when the man is red.
+**Behind the glass.** Every ground-floor unit is a *room*, not a lit plane a
+metre back: shelving loaded with stock, a counter with a till, display plinths
+in the window, lit ceiling strips. What a unit sells is decided once per plot,
+so the lettering on the fascia and the fittings behind the window cannot
+disagree, and some of them are vacant with a to-let notice, because a street
+where every unit trades is a street nobody believes. The props on the plinths
+are imported glTF models compiled through CNA's own content pipeline.
+
+**The moving parts.** Twelve vehicles over six classes — city car, hatchback,
+saloon, estate, crossover, van — lofted from monotone-cubic profile curves
+rather than assembled from boxes, with wheel arches cut into the body, separate
+wheels that roll and steer, tyres with shoulders, five-spoke alloys, glazing,
+mirrors, bumpers, lamps, number plates and an interior with seats and a
+steering wheel. They follow the vehicle ahead, brake for a red light with
+their brake lamps lit, and turn through the junction on a Bézier.
+
+Fifty-odd people, each one mesh on a nineteen-bone skeleton, skinned by
+distance to the limbs running out of each bone, and animated on the GPU by
+`SkinnedPbrEffect` from walk and idle clips built in code. The animation clock
+is the distance walked rather than wall-clock time, so nobody's feet slide and
+nobody's queue breathes in unison.
+
+**After dark.** `--night` puts the sun four degrees under the horizon and the
+street lights itself: luminaires, the pools they throw on the road, shop
+windows, the flats above them, headlights and tail lights.
 
 ## Screenshots
 
 | | |
 | --- | --- |
-| ![On the crossing](docs/screenshots/02-on-the-crossing.png) | ![The corner block](docs/screenshots/03-the-corner-block.png) |
-| ![Down the side street](docs/screenshots/04-down-the-side-street.png) | ![Looking up at the facades](docs/screenshots/05-looking-up-at-the-facades.png) |
-| ![Above the junction](docs/screenshots/06-above-the-junction.png) | ![Shopfronts](docs/screenshots/08-shopfronts-close.png) |
+| ![Footway looking south](docs/screenshots/01-footway-looking-south-to-the-junction.png) | ![Car at three metres](docs/screenshots/09-car-three-metres.png) |
+| ![Shop window](docs/screenshots/11-shop-window.png) | ![Pedestrian at four metres](docs/screenshots/10-pedestrian-four-metres.png) |
+| ![Road surface](docs/screenshots/12-road-surface.png) | ![Street tree](docs/screenshots/13-street-tree.png) |
 
-All eight are in `docs/screenshots/`, and `--capture <dir>` rewrites them from
-the same viewpoints.
+All fourteen are in `docs/screenshots/`, and `--capture <dir>` rewrites them
+from the same viewpoints.
+
+Six of those fourteen were added because the original eight were all chosen
+from a comfortable distance, and a street that survives being looked at from
+ten metres does not necessarily survive being looked at from three. Each of the
+new ones is aimed squarely at something that used to be a weakness — a car, a
+person, a shop window, the road surface, a tree, one bay of a façade — from the
+distance a person would actually see it from.
+
+`docs/visual-overhaul/` holds the before-and-after set, the night set, five
+frames at 1920 × 1080, and `performance.md`: what the overhaul cost, where, and
+how that was measured.
 
 ## Building
 
@@ -181,6 +213,9 @@ The command line, in full, is `--help`. The ones that matter:
 | `--settings <file.json>` | Load a settings document |
 | `--content <dir>` | Load compiled assets from `<dir>` |
 | `--width`, `--height`, `--seed` | Window size and the procedural seed |
+| `--night` | Civil twilight: the sun four degrees under the horizon and the street lighting itself |
+| `--frames <n>` | Render *n* frames, then print the frame-time profile and the batch reports |
+| `--lineup` | Park one of every vehicle in a row, with a side and a front viewpoint for each |
 | `--viewpoint <n>` | Start at named viewpoint *n* |
 | `--camera x,y,z,yaw,pitch` | Start at an explicit camera, in radians |
 | `--screenshot <file.png>` | Write one frame and exit |
@@ -312,6 +347,10 @@ The modern layer (`CNAEXT`, gated on `CNA_CNAEXT`):
 | `DirectionalLightEXT` | The sun |
 | `GpuTimer` | GPU time per frame in the overlay, where the renderer supports it |
 | `FullscreenPass` | The sky shader's draw |
+| `Model`, `ModelMesh`, `ModelMeshPart`, `ModelBone` | Imported glTF props, loaded from compiled `.cnb` through `ContentManager` |
+| `SkinningData`, `AnimationClip`, `Keyframe`, `AnimationPlayer` | The people: nineteen-bone skeletons, walk and idle clips, and a palette per figure per frame |
+| `SkinnedPbrEffect`, `VertexPositionNormalTangentTextureSkinned` | Those figures on the GPU |
+| `Model::SkinsEXT`, `Model::Tag` | An imported skeleton and its clip, read back out of a compiled model |
 | `RenderQuality`, `ShadowQuality`, `TonemappingMode`, `TransparencyMode` | The vocabulary the settings map onto |
 | `SupportsRendererFeatureEXT`, `GetRendererLimitEXT`, `GetRendererCapabilityReportEXT` | Every optional subsystem is *probed*, never assumed, and what the renderer could not provide is listed in the overlay |
 
@@ -335,6 +374,22 @@ sharp-runtime is configured and setting it afterwards leaves the target
 undefined.
 
 ## Graphics techniques
+
+**The factor and the map are not the same number.** `PbrEffect` computes
+`roughness = map.g * roughnessFactor` and `metalness = map.b * metallicFactor`,
+which is glTF's rule. This catalogue was violating it everywhere and in the most
+plausible way there is: the generator is handed the surface's roughness, writes
+it into the map with its own variation around it, and then the material declares
+the same number as the factor. The product is the square. Painted metal asked
+for 0.38 and got 0.16, which is a gloss lacquer, and every lamp post, bollard,
+bin, sign back and window frame in the city was lacquered; a road sign asked for
+0.32 and got 0.12; a wheel track asked for 0.58 and got 0.39, which is why the
+carriageway looked wet from a low camera. Metalness failed the other way and
+silently: a material declaring itself metal over a map whose blue channel is
+zero is a dielectric however emphatic the declaration, so every galvanised post
+and alloy wheel in the scene was plastic. `MaterialLibrary` now divides each
+declared factor by what the generator actually wrote, so the product averages the
+declaration and keeps the map's spatial detail in proportion.
 
 **Lighting is linear throughout and sRGB only at the ends.** Textures are
 uploaded as sRGB and sampled to linear, every colour constant in the generators
@@ -396,6 +451,36 @@ as before. The target is not part of `ALL`, and the compiled set is gitignored �
 Both stages are headless and deterministic, and neither needs XNA Game Studio,
 MonoGame, FNA or any Visual Studio content tool.
 
+There is a third stage, and it is the interesting one. Every `.glb` under
+`assets/external/downloads` is imported by `cna_tool_gltf_to_cnb` — which links
+the content library's own shared glTF-to-CNJ orchestration, so what this
+project imports is what the *framework* thinks the file means rather than a
+second opinion — and the textures it refers to are copied beside the `.cnb` as
+external references. At start-up `ModelLibrary` loads them with
+`ContentManager::Load<Model>`, walks the meshes and mesh parts, reads each
+part's material off its `PbrEffect` and translates it into this project's own
+`Material`, so an imported prop is lit by the same sun, the same sky and the
+same shadow map as the shopfront it stands in.
+
+Two things about that are worth stating plainly. The imported vertex layout is
+byte-for-byte the layout this city builds its own geometry from — position,
+normal, tangent, one UV, 48 bytes — so imported geometry drops straight into
+the existing draw path with no conversion: the framework's importer and this
+application's generator independently agreed on a vertex format. And five of
+the sixteen fetched models are *refused* by CNA for extensions it does not
+implement (`KHR_materials_sheen`, `KHR_materials_specular`, glTF material
+variants). That is correct behaviour for a required extension it cannot honour,
+so the build warns and skips rather than failing.
+
+The bake also writes `surfaces.txt` beside the images: the mean roughness and
+metalness each generator actually wrote into its ORM map. `MaterialLibrary`
+divides every declared factor by those, because `PbrEffect` multiplies the
+factor by the map and this catalogue was writing the intended value into both
+— see the note under *Graphics techniques*. Without the file a content-backed
+start-up would silently keep the squared factors and look a stop glossier than
+the same build running from source, so the app warns when it is missing rather
+than guessing.
+
 **It needed a change to CNA to be worth having.** Compiled textures had exactly
 one mip level — the container has always been able to carry a chain, but nothing
 generated one — so the content path made the street look *worse* than the
@@ -410,8 +495,34 @@ on a machine with no GPU.
 
 ## Assets
 
-Nothing here was downloaded. See `assets/ATTRIBUTION.md` for what that means and
-where each kind of asset comes from.
+Every *surface* in this street is generated — there is no texture library here,
+and `assets/ATTRIBUTION.md` says what that means.
+
+The *props behind the shop glass* are not. Sixteen glTF models are fetched from
+the Khronos sample set, compiled through CNA's own importer, and stood on the
+display plinths. They are fetched rather than committed, because 110 MB of
+somebody else's work in a repository's history is a different decision from
+using it:
+
+```sh
+./scripts/fetch-assets.sh
+cmake --build build --target content
+```
+
+The script reads `assets/external/manifest.json`, fetches each file and verifies
+its SHA-256 before it is used. A tree that has not run it simply has no imported
+props, exactly as a tree with no compiled content simply generates its textures.
+
+The manifest is the part worth keeping. It records, per asset: the local name,
+the original title, the author, the copyright line, the source URL and
+repository, the exact licence and its URL, whether attribution is required,
+whether redistribution is allowed, the retrieval date, the original format, the
+digest and byte count, what was done to it, and what it is for in the scene.
+Every entry is CC0-1.0 or CC-BY-4.0, and none of them is used on the strength of
+the repository it came from — the same repository carries models under other
+terms, and the manifest names the ones that were rejected and why: the Duck is
+SCEA-licensed, Sponza is a CRYENGINE agreement, and the 3DRT Virtual City is
+testing-use-only. "It downloaded" is not a licence.
 
 ## Tests
 
@@ -419,10 +530,11 @@ where each kind of asset comes from.
 ctest --test-dir build --output-on-failure
 ```
 
-Eight suites over the parts of the street that can be checked without a device:
+Nine suites over the parts of the street that can be checked without a device:
 the signal controller, the traffic model, the walk graph, mesh building, the
-layout, the settings parser, the camera frustum, and the mip-chain generation
-the content pipeline depends on.
+layout, the settings parser, the camera frustum, the mip-chain generation the
+content pipeline depends on, and the shapes and surfaces the visual overhaul
+got wrong.
 
 The checks are chosen for what a screenshot cannot see. Both arms of the
 junction green at once, or a green man across a street whose traffic is running,
@@ -433,6 +545,18 @@ visible but lit from behind, which is exactly the kind of wrong that survives
 review.
 
 Two of them found live bugs on their first run.
+
+`appearance_tests` is the newest and the most opinionated: nine cases, each one
+a defect that was shipped, found by looking at a rendering, and fixed. Not one
+of them would have been caught by a pixel comparison, because they are all
+structural, and each has a number attached that says whether a surface is the
+surface it claims to be — a generator writes the roughness it was handed;
+painted metal carries unit metalness so a material's factor can mean something;
+a per-cell hash reaches both ends of its range where value noise at a
+half-integer lattice point never leaves the middle; four corners in the obvious
+order wind clockwise seen from above; sixty-four slabs to a paving tile give a
+spread of tones where nine gave a repeating block; asphalt's relief belongs in
+the thousandths.
 
 ### Screenshot regression
 
@@ -455,33 +579,47 @@ those is an image test somebody turns off. `TOLERANCE`, `WIDTH`, `HEIGHT`,
 
 ## Performance
 
-The numbers below are from `--preset high` at 1280×720 on **Mesa llvmpipe** —
+The numbers below are from `--preset high` at 1024×576 on **Mesa llvmpipe** —
 a software rasteriser, which is what this environment has. They are a profile,
 not a benchmark: on any real GPU the shadow and opaque passes are a small
-fraction of this.
+fraction of this and the post chain is a rounding error.
+
+Every one of them comes from `--frames N`, which discards six warm-up frames,
+collects the rest and prints mean, median, p95, min and max with the stage
+breakdown averaged over the same window. Run the same command twice and you get
+them again. The overlay's headline is an *exponential* average and its
+breakdown is one frame's stage times: right for flying a camera around, wrong
+for tuning — it once read 214 ms on a frame that took 778.
 
 | | |
 | --- | --- |
-| Scene build | 7.8 s, of which the material stage is about 6 s generating or 1 s from compiled content |
-| Static batches | 780 |
-| Triangles in the scene | 499 406 |
-| Geometry memory | 35 MiB |
-| Textures | 313 (145 catalogue surfaces plus the per-shop signage) |
-| Texture memory | 291 MiB |
+| Scene build | 18 s, of which the material stage is about 6 s generating or 1 s from compiled content |
+| Static batches | 1 187 |
+| Triangles in the scene | 1 042 354 |
+| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own |
 | Plots, vehicles, people | 42, 74, 78 |
-| Draw calls per frame | ~880 opaque and transparent, ~2 730 shadow, 53 instanced |
-| Triangles drawn | 377 000 of 499 000 |
-| Visible batches | 825 of 1 730 |
-| Visible instances | 192 of 408 |
-| Frame | ~127 ms (7.9 fps) at 1280×720 on llvmpipe |
+| Draw calls per frame | 1 356, of which 160 are skinned |
+| Shadow draw calls | 2 819 |
+| Triangles drawn | 559 349 |
+| Frame | 467–506 ms median at 1024×576, 1 031 ms at 1920×1080 |
 
-Where the frame goes, on llvmpipe: the shadow pass (131 ms over four cascades)
-and the opaque pass (93 ms) dominate, the post chain's six passes are the rest,
-the prepass is a sixth of the opaque pass, culling is 0.2 ms for 1 730 batches
-and 408 instance groups, and the sky is free.
+Where the frame goes at 1024×576: post 203 ms, shadow 136 ms, opaque 121 ms,
+prepass 31 ms, culling 0.2 ms, sky free. At 1920×1080 the post chain alone is
+694 ms of a 1 031 ms frame — six full-screen passes at 2.07 megapixels on four
+CPU cores — while the shadow pass barely moves, because the cascades are 2048 px
+whatever the window is.
+
 The overlay shows the same breakdown live, and its parts sum to the frame by
 construction — they did not always, and a breakdown that does not add up is
 worse than none.
+
+Against the last commit before the visual overhaul, on the same machine with
+the two builds interleaved in one session: **+15%**, for skinned animated
+pedestrians in place of rigid ones baked at eight phases, twelve lofted vehicle
+bodies with interiors and working lamps, thirty-nine dressed shop interiors, six
+tree variants with volumetric canopies, a distant city, and a road map at four
+times the resolution. `docs/visual-overhaul/performance.md` has the full table,
+where the cost turned out to be, and how it was found.
 
 What keeps it from being worse: batching by material and cell, instancing every
 repeated prop, frustum and distance culling with a shorter leash for shadows
@@ -490,25 +628,41 @@ materials, and alpha masking instead of blending everywhere except glass.
 
 ## Known limitations
 
-* **People are posed, not skinned.** A figure is generated at eight phases of a
-  stride and the simulation picks one. CNA *has* skeletal animation, and with an
-  authored rigged character it would be the right tool; generating a rigged mesh
-  procedurally and a walk cycle to drive it is a much larger piece of work whose
-  visible result at the distance a street is seen from is the same figure moving
-  the same way.
+* **A skinned figure casts no shadow of its own.** CNA's cascade caster takes
+  its world matrix from a uniform and knows nothing about a bone palette
+  (`docs/cna-findings.md` CNA-F14), so each character carries a rigid stand-in
+  in its bind pose, submitted shadow-only. At the sun angles a street is lit by
+  that is a long thin blob on the pavement either way, and a person with no
+  shadow floats.
+* **An imported rig loads but does not draw.** The skeleton, the bind pose, the
+  inverse bind pose and the clip all come back out of a compiled model
+  correctly, `AnimationPlayer` produces a well-formed palette from them, and the
+  mesh renders nothing through `SkinnedPbrEffect` with a vertex declaration that
+  matches the effect's byte for byte. It is loaded at start-up so the round trip
+  stays exercised, and deliberately not placed in the crowd. The investigation,
+  including what has and has not been ruled out, is `docs/cna-findings.md`
+  GLTF-208.
 * **No audio.** CNA's audio module is there and works; the demo has nothing to
   play through it, and a synthesised city ambience would be a worse thing than
   silence.
-* **Vehicles do not turn.** Four straight lanes, no lane changes, no turning
-  movements. On this street nobody would.
-* **The far context is blocks, not buildings.** Past the modelled frontage the
-  district continues as massing with a parapet and no windows. It is 200 m away
-  and behind everything.
+* **The far context is blocks with printed façades, not buildings.** Past the
+  modelled frontage the district continues as massing carrying a tiling image of
+  a storey rather than modelled reveals. It is 200 m away and behind everything.
 * **`--preset low` is untested on a machine that needs it.** It is built and it
   runs, but the decisions in it are reasoned rather than measured.
 * **Reflections are image-based only.** Screen-space reflections are wired to a
-  setting and off by default; a shop window reflects the sky and the
-  neighbouring massing, not the car parked in front of it.
+  setting and off by default, and they were tried: on the shop window they wash
+  the interior out and cannot reach the glass at all — it is alpha-blended and
+  drawn after the pass — and on the road and the cars they change nothing
+  visible, because the asphalt is far rougher than any SSR cutoff and a black
+  car reflecting dark asphalt has nothing to show. The pass works; this scene
+  has no surface for it. So a shop window reflects the sky and the neighbouring
+  massing, not the car parked in front of it.
+* **The night street is lit, not illuminated.** `PbrEffect` carries one punctual
+  light per draw and this street has forty lamps, so the luminaires, the shop
+  windows and the flats above them are emissive materials and the pools of light
+  on the road are geometry. That is a light map, and it reads at civil twilight;
+  it would not survive a camera walking under a single lamp on an empty road.
 
 ## Repository layout
 
