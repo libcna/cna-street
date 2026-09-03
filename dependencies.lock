@@ -1,0 +1,23 @@
+# Pinned upstream revisions cna-street is developed and verified against.
+#
+# cna-street consumes CNA as a sibling checkout (CNA installs no CMake package),
+# and CNA in turn expects sharp-runtime, easy-gl and meta-gl as *its own* siblings.
+# scripts/fetch-dependencies.sh clones this exact set next to this repository.
+#
+# You are not required to pin these: the build works against any compatible
+# revision. They exist so a build failure can be attributed -- if it reproduces
+# at these SHAs it is cna-street's problem, and if it does not it arrived with an
+# upstream change.
+#
+# Which of these you need depends on the renderer:
+#   CNA, SHARP_RUNTIME     always
+#   EASY_GL, META_GL       the GL renderer family (OPENGL33/OPENGLES3/OPENGLES2)
+#
+# branch=next
+CNA=756096626cfb537e32ac8ccc6b0743a23c57ddfd
+# branch=next
+SHARP_RUNTIME=bd282d101640005454639b372f67e119ffa5642b
+# branch=develop
+EASY_GL=deda7a426c3c166c0e03a4790f1ede610e2e46fb
+# branch=develop
+META_GL=252017322b5e7c4711fcf13810e8b6da05fd0511
