@@ -86,6 +86,45 @@ const Material* MaterialLibrary::derive(const std::string& name, MaterialId base
     return raw;
 }
 
+const Material* MaterialLibrary::deriveTinted(const std::string& name, MaterialId base,
+                                              const Vector3& baseColour, const Vector3& emissive)
+{
+    const auto existing = derived_.find(name);
+    if (existing != derived_.end()) return existing->second.get();
+
+    auto material = std::make_unique<Material>(get(base));
+    material->name           = name;
+    material->baseColour     = baseColour;
+    material->emissiveFactor = emissive;
+    Material* raw = material.get();
+    derived_.emplace(name, std::move(material));
+    return raw;
+}
+
+const Material* MaterialLibrary::add(const std::string& name, const Assets::SurfaceMaps& maps,
+                                     Material material)
+{
+    const auto existing = derived_.find(name);
+    if (existing != derived_.end()) return existing->second.get();
+
+    material.name     = name;
+    material.albedo   = upload(maps.albedo, true, name + ".albedo");
+    material.normal   = upload(maps.normal, false, name + ".normal");
+    material.orm      = upload(maps.orm, false, name + ".orm");
+    material.emissive = maps.emissive.empty() ? nullptr
+                                              : upload(maps.emissive, true, name + ".emissive");
+    auto owned = std::make_unique<Material>(material);
+    Material* raw = owned.get();
+    derived_.emplace(name, std::move(owned));
+    return raw;
+}
+
+const Material* MaterialLibrary::find(const std::string& name) const
+{
+    const auto existing = derived_.find(name);
+    return existing == derived_.end() ? nullptr : existing->second.get();
+}
+
 Texture2D* MaterialLibrary::upload(const Image& image, bool srgb, const std::string& name)
 {
     if (image.empty()) return nullptr;
@@ -308,7 +347,10 @@ void MaterialLibrary::build(std::uint32_t seed)
             {MaterialId::PaintedSteelGreen, "steel-green",        Srgb(42, 62, 52),    0.42f, 0.05f},
             {MaterialId::PaintedSteelBlack, "steel-black",        Srgb(28, 28, 30),    0.40f, 0.05f},
             {MaterialId::GalvanisedSteel,   "galvanised",         Srgb(158, 160, 162), 0.52f, 0.80f},
-            {MaterialId::Aluminium,         "aluminium",          Srgb(196, 198, 200), 0.34f, 0.90f},
+            // Cast-and-machined wheel alloy, not mill-finish sheet: at 0.34
+            // roughness this was a mirror, and under a bright sky every parked
+            // car had two white discs where its wheels should be.
+            {MaterialId::Aluminium,         "wheel-alloy",        Srgb(138, 140, 143), 0.44f, 0.85f},
             {MaterialId::SignalHousing,     "signal-housing",     Srgb(38, 40, 40),    0.46f, 0.05f},
             {MaterialId::HydrantRed,        "hydrant-red",        Srgb(140, 32, 30),   0.40f, 0.0f},
             {MaterialId::BinBody,           "bin-body",           Srgb(62, 66, 64),    0.48f, 0.10f},
@@ -383,9 +425,15 @@ void MaterialLibrary::build(std::uint32_t seed)
             install(face.id, std::string("sign-") + SignFactory::faceName(face.face),
                     SignFactory::face(face.face, kSign, s + 40u), m);
         }
+        // Two plates, because the two streets have two names and the lettering
+        // is baked into the texture. Everything else about them is identical, so
+        // this is the one case in the catalogue where two textures really are
+        // needed rather than one texture and two tints.
         Material plate = pbr(0.30f, 0.0f);
         install(MaterialId::SignFaceStreetName, "sign-street-name",
                 SignFactory::streetPlate("LINDENSTRASSE", kSign, kSign / 4, s + 41u), plate);
+        install(MaterialId::SignFaceStreetNameSide, "sign-street-name-side",
+                SignFactory::streetPlate("MARKTGASSE", kSign, kSign / 4, s + 42u), plate);
     }
 
     // ---------------------------------------------------------------------

@@ -4,6 +4,8 @@
 #include "CnaStreet/Assets/Image.hpp"
 #include "CnaStreet/Render/Material.hpp"
 
+#include "Microsoft/Xna/Framework/Vector3.hpp"
+
 #include <cstddef>
 #include <memory>
 #include <string>
@@ -44,7 +46,8 @@ enum class MaterialId
     GalvanisedSteel, Aluminium,
     SignalHousing, LensRed, LensAmber, LensGreen, LensWalkRed, LensWalkGreen,
     LampGlass,
-    SignFaceProhibition, SignFaceWarning, SignFaceInformation, SignFaceStreetName,
+    SignFaceProhibition, SignFaceWarning, SignFaceInformation,
+    SignFaceStreetName, SignFaceStreetNameSide,
     SignFaceParking, SignFacePriority, SignBack,
     HydrantRed, BinBody, CabinetGrey,
     Timber,
@@ -100,6 +103,29 @@ public:
     [[nodiscard]] const Material* derive(const std::string& name, MaterialId base,
                                          const Microsoft::Xna::Framework::Vector2& uvScale,
                                          const Microsoft::Xna::Framework::Vector2& uvOffset);
+
+    /// A variant differing only in colour: car paint, clothing, a lit signal
+    /// lens. Sharing the textures is the whole point — a fleet of twelve
+    /// differently painted cars costs one texture set, not twelve.
+    [[nodiscard]] const Material* deriveTinted(
+        const std::string& name, MaterialId base,
+        const Microsoft::Xna::Framework::Vector3& baseColour,
+        const Microsoft::Xna::Framework::Vector3& emissive =
+            Microsoft::Xna::Framework::Vector3::Zero);
+
+    /// Registers a material with textures of its own, outside the catalogue.
+    /// The shop fascias need this: every shop has a different name baked into
+    /// its board, so they cannot share one texture the way the painted metal and
+    /// the car paint do. Returns the existing entry when @p name is already
+    /// registered, so a repeated house number costs one texture rather than one
+    /// per door.
+    [[nodiscard]] const Material* add(const std::string& name, const Assets::SurfaceMaps& maps,
+                                      Material material);
+    /// The material registered under @p name, or nullptr.
+    [[nodiscard]] const Material* find(const std::string& name) const;
+
+    /// Every derived material, so the overlay can count them.
+    [[nodiscard]] std::size_t derivedCount() const { return derived_.size(); }
 
     [[nodiscard]] std::size_t textureCount() const { return textures_.size(); }
     [[nodiscard]] std::size_t textureBytes() const { return textureBytes_; }
