@@ -18,12 +18,14 @@ namespace Microsoft::Xna::Framework::Graphics {
     class GraphicsDevice;
     class Model;
     class ModelMeshPart;
+    struct SkinningData;
 }
 
 namespace CnaStreet {
 
 class GpuMesh;
 class MaterialLibrary;
+class SkinnedGpuMesh;
 
 /**
  * @brief Models imported from glTF, through CNA's own content pipeline.
@@ -88,6 +90,38 @@ public:
         [[nodiscard]] int triangleCount() const;
     };
 
+    /// One imported rig: the mesh parts a skin drives, its skeleton and its
+    /// clips, in the form `AnimationPlayer` and `SkinnedPbrEffect` want.
+    ///
+    /// This is the end-to-end demonstration the project exists to make. CNA's
+    /// own importer read the glTF, CNA's content compiler wrote the `.cnb`,
+    /// `ContentManager::Load<Model>` read it back, and what comes out is a
+    /// `SkinningData` with a bind pose, an inverse bind pose, a hierarchy and
+    /// named clips -- the same type this application fills in by hand for its
+    /// generated people, driving the same effect through the same draw path.
+    /// Nothing here parses glTF and nothing here poses a skeleton: it borrows
+    /// the framework's.
+    struct ImportedRig
+    {
+        std::string name;
+        struct SkinnedPart
+        {
+            const Material*       material = nullptr;
+            const SkinnedGpuMesh* mesh     = nullptr;
+        };
+        std::vector<SkinnedPart> parts;
+        Microsoft::Xna::Framework::Graphics::SkinningData* skinning = nullptr;
+        Microsoft::Xna::Framework::BoundingBox bounds;
+        /// The clip names the file brought with it, in file order.
+        std::vector<std::string> clips;
+        [[nodiscard]] float height() const { return bounds.Max.Y - bounds.Min.Y; }
+        [[nodiscard]] bool empty() const { return parts.empty() || skinning == nullptr; }
+    };
+
+    /// Loads @p asset and returns its first skin, or nullptr when the file has
+    /// none. Cached alongside the rigid load.
+    [[nodiscard]] const ImportedRig* loadRig(const std::string& asset);
+
     /// Loads @p asset from the content root, or returns nullptr. Cached: asking
     /// twice costs one load.
     [[nodiscard]] const Imported* load(const std::string& asset);
@@ -112,7 +146,12 @@ private:
     /// The loaded `Model`s, kept alive because the parts borrow their buffers.
     std::vector<std::unique_ptr<Microsoft::Xna::Framework::Graphics::Model>> models_;
     std::vector<std::unique_ptr<GpuMesh>> meshes_;
+    std::vector<std::unique_ptr<SkinnedGpuMesh>> skinnedMeshes_;
+    /// The open `Model` behind each cached name, so a later skin lookup does
+    /// not have to guess which of the loaded models it belongs to.
+    std::unordered_map<std::string, Microsoft::Xna::Framework::Graphics::Model*> modelByName_;
     std::unordered_map<std::string, std::unique_ptr<Imported>> cache_;
+    std::unordered_map<std::string, std::unique_ptr<ImportedRig>> rigs_;
     std::vector<std::string> failures_;
     std::size_t loaded_ = 0;
     std::size_t triangles_ = 0;

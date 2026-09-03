@@ -11,6 +11,11 @@
 #include "Microsoft/Xna/Framework/Graphics/ModelBone.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ModelMesh.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ModelMeshPart.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexElement.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexDeclaration.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexBuffer.hpp"
+#include "Microsoft/Xna/Framework/Graphics/AnimationPlayer.hpp"
+#include "CnaStreet/Render/SkinnedGpuMesh.hpp"
 #include "Microsoft/Xna/Framework/Graphics/PbrEffect.hpp"
 
 #include <algorithm>
@@ -179,6 +184,7 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
     }
 
     result->bounds = BoundingBox(lo, hi);
+    modelByName_[asset] = model.get();
     models_.push_back(std::move(model));
     ++loaded_;
     CNA::Logger::Info("cna-street: imported '" + asset + "' -- "
@@ -205,6 +211,135 @@ int ModelLibrary::Imported::triangleCount() const
     for (const Part& part : parts)
         if (part.mesh != nullptr) total += part.mesh->triangleCount();
     return total;
+}
+
+
+const ModelLibrary::ImportedRig* ModelLibrary::loadRig(const std::string& asset)
+{
+    const auto cached = rigs_.find(asset);
+    if (cached != rigs_.end()) return cached->second->empty() ? nullptr : cached->second.get();
+
+    auto& slot = rigs_[asset];
+    slot = std::make_unique<ImportedRig>();
+    slot->name = asset;
+    if (content_ == nullptr) return nullptr;
+
+    // The rigid load first: it opens the Model, keeps it alive in `models_` and
+    // installs the materials. A skinned file goes through it exactly like an
+    // unskinned one -- the parts are the same parts -- so this borrows that
+    // work rather than repeating it.
+    const Imported* rigid = load(asset);
+    if (rigid == nullptr) return nullptr;
+
+    const auto found = modelByName_.find(asset);
+    if (found == modelByName_.end() || found->second == nullptr) return nullptr;
+    Model* model = found->second;
+
+    // Two places to look, and which one holds the skin depends on how the model
+    // was loaded rather than on what is in it.
+    //
+    // `Model::SkinsEXT` is the unambiguous mapping from every skin to the meshes
+    // its palette drives, and it is what the *runtime glTF* loader fills in.
+    // A model that came through the content pipeline as a `.cnb` -- which is
+    // the whole point of compiling one -- puts its skinning data on
+    // `Model::Tag` instead, following the XNA Skinned Model Sample convention,
+    // and leaves `SkinsEXT` empty. So the same file, imported the same way,
+    // exposes its skeleton through a different API depending on whether it was
+    // compiled first, and a caller written against either one finds nothing
+    // through the other. See docs/cna-findings.md GLTF-207.
+    //
+    // Both are checked here, `SkinsEXT` first because when it is populated it
+    // says which meshes belong to the skin and `Tag` does not.
+    const std::vector<ModelSkinEXT>& skins = model->getSkinsEXTProperty();
+    std::vector<ModelMesh*> skinnedMeshes;
+    if (!skins.empty() && skins.front().Data != nullptr)
+    {
+        slot->skinning = skins.front().Data;
+        skinnedMeshes  = skins.front().Meshes;
+    }
+    else if (auto* tagged = dynamic_cast<SkinningData*>(model->getTagProperty()))
+    {
+        slot->skinning = tagged;
+        // Tag says nothing about *which* meshes the palette drives, so every
+        // mesh in the model is taken. That is right for a character file and
+        // would be wrong for a scene with a rigged prop in it; the assert that
+        // matters is the vertex declaration, and a mesh that is not skinned
+        // fails to build a SkinnedGpuMesh rather than drawing wrongly.
+        const ModelMeshCollection& all = model->getMeshesProperty();
+        for (int m = 0; m < all.getCountProperty(); ++m)
+            if (all[m] != nullptr) skinnedMeshes.push_back(all[m]);
+    }
+    if (slot->skinning == nullptr || skinnedMeshes.empty())
+    {
+        // Said out loud rather than filed away. A rig that quietly fails to
+        // load looks exactly like a rig that was never asked for, and the
+        // difference matters: this one is the end-to-end demonstration.
+        CNA::Logger::Warn("cna-street: '" + asset
+                          + "' loaded but carries no skin on SkinsEXT or Tag");
+        failures_.push_back(asset + ": loaded, but carries no skin");
+        return nullptr;
+    }
+    for (const auto& clip : slot->skinning->AnimationClips) slot->clips.push_back(clip.first);
+
+    Vector3 lo(1e30f, 1e30f, 1e30f);
+    Vector3 hi(-1e30f, -1e30f, -1e30f);
+    int index = 0;
+    for (ModelMesh* mesh : skinnedMeshes)
+    {
+        if (mesh == nullptr) continue;
+        const BoundingSphere sphere = mesh->getBoundingSphereProperty();
+        const Vector3 radius(sphere.Radius, sphere.Radius, sphere.Radius);
+        const BoundingBox local(sphere.Center - radius, sphere.Center + radius);
+        lo = Vector3(std::min(lo.X, local.Min.X), std::min(lo.Y, local.Min.Y),
+                     std::min(lo.Z, local.Min.Z));
+        hi = Vector3(std::max(hi.X, local.Max.X), std::max(hi.Y, local.Max.Y),
+                     std::max(hi.Z, local.Max.Z));
+
+        const ModelMeshPartCollection& parts = mesh->getMeshPartsProperty();
+        for (int p = 0; p < parts.getCountProperty(); ++p)
+        {
+            ModelMeshPart* part = parts[p];
+            if (part == nullptr || part->getPrimitiveCountProperty() <= 0) continue;
+            // The material the rigid load already installed for this part, by
+            // the name it gave it. Same effect, same lighting, same shadows.
+            const Material* material =
+                materials_.find(asset + "." + std::to_string(index));
+            if (material == nullptr && index < static_cast<int>(rigid->parts.size()))
+                material = rigid->parts[static_cast<std::size_t>(index)].material;
+            ++index;
+            if (material == nullptr) continue;
+
+
+            try
+            {
+                auto skinned = std::make_unique<SkinnedGpuMesh>(
+                    *part, local, asset + ".skin." + std::to_string(p));
+                slot->parts.push_back(ImportedRig::SkinnedPart{material, skinned.get()});
+                skinnedMeshes_.push_back(std::move(skinned));
+            }
+            catch (const std::exception&)
+            {
+                continue;
+            }
+        }
+    }
+
+    if (slot->parts.empty())
+    {
+        CNA::Logger::Warn("cna-street: '" + asset + "' has a skin with no drawable parts");
+        failures_.push_back(asset + ": has a skin with no drawable parts");
+        return nullptr;
+    }
+    slot->bounds = BoundingBox(lo, hi);
+
+    std::string clipList;
+    for (const std::string& clip : slot->clips)
+        clipList += (clipList.empty() ? "" : ", ") + clip;
+    CNA::Logger::Info("cna-street: imported rig '" + asset + "' -- "
+                      + std::to_string(slot->parts.size()) + " skinned part(s), "
+                      + std::to_string(slot->skinning->BoneCount) + " bones, clip(s): "
+                      + (clipList.empty() ? std::string("none") : clipList));
+    return slot.get();
 }
 
 }  // namespace CnaStreet

@@ -215,6 +215,14 @@ private:
     /// One player per person. Advanced to that person's own animation time
     /// every frame, so no two people in the crowd are in step.
     std::vector<std::unique_ptr<Microsoft::Xna::Framework::Graphics::AnimationPlayer>> walkers_;
+
+    /// A glTF character imported through CNA's own pipeline: skeleton, bind
+    /// pose, inverse bind pose, hierarchy and clip all crossing from the file
+    /// to `SkinningData` without this application interpreting any of them.
+    /// Loaded at start-up so the round trip is exercised and logged, and *not*
+    /// placed in the crowd -- see docs/cna-findings.md GLTF-208 for why.
+    const ModelLibrary::ImportedRig* importedWalker_ = nullptr;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::AnimationPlayer> importedPlayer_;
     /// Lit and dark variants of each lens colour, in the order red, amber,
     /// green, pedestrian red, pedestrian green.
     std::vector<const Material*> lensLit_, lensDark_;

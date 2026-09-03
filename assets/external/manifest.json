@@ -39,7 +39,7 @@
         "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
         "uniformly scaled at placement to the real-world size given by fitMetres"
       ],
-      "role": "The imported-skeleton demonstration: one pedestrian on the street is this model, walking on its own imported clip through CNA's glTF pipeline.",
+      "role": "The imported-skeleton round trip: compiled to .cnb by CNA's own glTF importer and loaded back at start-up, where its 19-bone skeleton, bind pose, inverse bind pose and animation clip are read into a SkinningData and driven by CNA's AnimationPlayer. Not placed in the crowd -- the mesh does not draw through SkinnedPbrEffect and the reason is unresolved; see docs/cna-findings.md GLTF-207 and GLTF-208.",
       "fitMetres": 1.8
     },
     {

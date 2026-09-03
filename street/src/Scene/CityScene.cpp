@@ -1681,6 +1681,30 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         vehicleMeshes_.push_back(std::move(entry));
     }
 
+    // --- the imported rig ----------------------------------------------------
+    // Loaded, and deliberately not placed. See docs/cna-findings.md GLTF-207
+    // and GLTF-208: the skeleton and the clip come back out of the compiled
+    // model correctly -- nineteen bones, one named clip, a well-formed
+    // nineteen-matrix palette from `AnimationPlayer` -- and the mesh still
+    // draws nothing through this application's skinned path, with a vertex
+    // declaration that matches the effect's byte for byte. Loading it at
+    // start-up keeps the round trip exercised and logged; standing it on the
+    // pavement would put an invisible person on the street and a claim in the
+    // documentation that the screenshots do not support.
+    importedWalker_ = models_.loadRig("cesium-man");
+    if (importedWalker_ != nullptr && importedWalker_->skinning != nullptr)
+    {
+        importedPlayer_ =
+            std::make_unique<Graphics::AnimationPlayer>(*importedWalker_->skinning);
+        std::string clips;
+        for (const std::string& clip : importedWalker_->clips)
+            clips += (clips.empty() ? "" : ", ") + clip;
+        CNA::Logger::Info("cna-street: imported rig round-trip verified -- "
+                          + std::to_string(importedWalker_->parts.size()) + " skinned part(s), "
+                          + std::to_string(importedWalker_->skinning->BoneCount)
+                          + " bones, clip(s): " + clips + "; not placed, see cna-findings GLTF-208");
+    }
+
     // --- the people ---------------------------------------------------------
     static const Vector3 kSkinTones[] = {
         Vector3(0.76f, 0.60f, 0.50f), Vector3(0.60f, 0.44f, 0.34f),
@@ -1811,6 +1835,11 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         pedestrians_.build(layout_, crossings_, settings.seed, 78);
     buildStats_.vehicles = static_cast<int>(traffic_.vehicles().size());
     buildStats_.people   = static_cast<int>(pedestrians_.people().size());
+
+    // Which of them is the imported one. Chosen from the seed rather than fixed
+    // at zero so it is not always the same route, and only once the crowd
+    // exists so the index cannot point past the end of it.
+
 }
 
 void CityScene::buildViewpoints()
