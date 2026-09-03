@@ -56,10 +56,30 @@ public:
     /// A bus shelter: posts, roof, and a glazed back and side.
     void busShelter(GeometryCollector& collector) const;
 
-    /// A street tree: trunk, main limbs, and a crown of alpha-masked cards.
-    void tree(GeometryCollector& collector, Rng& rng, float height) const;
+    /// The street trees. Three species rather than one: a plane with a broad
+    /// high crown, a lime with a denser upright one, and a young tree of the
+    /// kind a council plants to replace a felled one. A row of identical trees
+    /// down a footway is as obvious as a row of identical cars.
+    enum class TreeSpecies
+    {
+        Plane,
+        Lime,
+        Young,
+        Count
+    };
+
+    /// A street tree: a tapered trunk with a root flare, a recursive branch
+    /// structure, and leaf clusters on the twigs. @p detail below 1 halves the
+    /// branching depth and the card count, for the trees at the far end.
+    void tree(GeometryCollector& collector, Rng& rng, TreeSpecies species, float height,
+              bool fullDetail = true) const;
     /// The cast-iron grating around a tree pit.
     void treeGrate(GeometryCollector& collector) const;
+    /// The scruff at the base of a wall or a tree pit: tufts of weed, a few
+    /// fallen leaves, grass through a crack. Deliberately sparse -- realism is
+    /// controlled imperfection, and a footway with weeds every metre is a
+    /// derelict one.
+    void groundScruff(GeometryCollector& collector, Rng& rng, float radius, int tufts) const;
 
     /// A three-aspect vehicle signal head on its backing board, with the hoods.
     /// The lenses are *not* included: they are drawn separately so the signal

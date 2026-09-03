@@ -287,86 +287,275 @@ void PropFactory::busShelter(GeometryCollector& collector) const
 // ---------------------------------------------------------------------------
 // Vegetation
 // ---------------------------------------------------------------------------
-void PropFactory::tree(GeometryCollector& collector, Rng& rng, float height) const
+void PropFactory::tree(GeometryCollector& collector, Rng& rng, TreeSpecies species, float height,
+                       bool fullDetail) const
 {
     MeshBuilder& bark = collector.builder(&materials_.get(MaterialId::Bark));
-    bark.setTileSize(0.9f);
+    bark.setTileSize(0.55f);
 
-    const float clearStem = M::kTreeClearStem * rng.aboutOne(0.12f);
-    const float trunkRadius = M::kTreeTrunkRadius * rng.aboutOne(0.18f);
-    const float lean = rng.signed_(0.10f);
-
-    // The trunk, in two lengths so it can lean slightly. A perfectly vertical
-    // street tree looks like a lamp post with leaves on.
-    bark.addCylinder(Vector3::Zero, trunkRadius * 1.35f, trunkRadius * 1.08f, 0.35f, 10, false,
-                     false);
-    bark.addCylinderBetween(Vector3(0.0f, 0.35f, 0.0f),
-                            Vector3(lean * 0.4f, clearStem, lean * 0.25f), trunkRadius, 10, false);
-
-    // Three or four main limbs rising into the crown.
-    const int limbs = rng.intRange(3, 5);
-    const float crownBase = clearStem;
-    const float crownTop  = height;
-    std::vector<Vector3> limbTips;
-    for (int i = 0; i < limbs; ++i)
+    // What distinguishes one street tree from another, in the four numbers that
+    // matter: how high the first branch is, how wide the crown gets, how far
+    // each branch turns away from its parent, and how many times it splits.
+    struct Shape
     {
-        const float angle = MathHelper::TwoPi * static_cast<float>(i) / static_cast<float>(limbs)
-                            + rng.signed_(0.5f);
-        const float spread = rng.range(0.9f, 1.9f);
-        const Vector3 from(lean * 0.4f, crownBase, lean * 0.25f);
-        const Vector3 mid(from.X + std::cos(angle) * spread * 0.45f,
-                          crownBase + (crownTop - crownBase) * 0.34f,
-                          from.Z + std::sin(angle) * spread * 0.45f);
-        const Vector3 tip(from.X + std::cos(angle) * spread,
-                          crownBase + (crownTop - crownBase) * rng.range(0.55f, 0.75f),
-                          from.Z + std::sin(angle) * spread);
-        bark.addCylinderBetween(from, mid, trunkRadius * 0.62f, 7, false);
-        bark.addCylinderBetween(mid, tip, trunkRadius * 0.34f, 6, false);
-        limbTips.push_back(tip);
+        float clearStem;    ///< fraction of the height to the first branch
+        float trunk;        ///< trunk radius at the base, metres
+        float spread;       ///< crown radius as a fraction of the height
+        float divergence;   ///< branch angle from its parent, radians
+        int   levels;       ///< how many times a branch splits
+        float leaf;         ///< leaf card size, metres
+    };
+    Shape shape{0.42f, M::kTreeTrunkRadius, 0.42f, 0.62f, 5, 0.95f};
+    switch (species)
+    {
+        // A plane: pollarded high, so a bare stem and then a wide flat crown.
+        case TreeSpecies::Plane: shape = {0.46f, 0.170f, 0.44f, 0.68f, 5, 1.05f}; break;
+        // A lime: branches lower, denser, and the crown is taller than it is wide.
+        case TreeSpecies::Lime:  shape = {0.34f, 0.135f, 0.36f, 0.52f, 5, 0.86f}; break;
+        // A replacement planted last winter: thin, short, still staked.
+        case TreeSpecies::Young: shape = {0.44f, 0.055f, 0.24f, 0.58f, 4, 0.60f}; break;
+        case TreeSpecies::Count: break;
+    }
+    // One level fewer at distance, with correspondingly larger foliage cards, so
+    // the far tree has a quarter of the geometry and the same silhouette. The
+    // number of *distinct* cluster positions is what a crown's density is made
+    // of -- three cards through one point project to the area of one card -- so
+    // dropping a level is the only economy that actually saves anything.
+    const int levels = fullDetail ? shape.levels : std::max(3, shape.levels - 1);
+
+    const float clearStem = height * shape.clearStem * rng.aboutOne(0.10f);
+    const float trunk     = shape.trunk * rng.aboutOne(0.16f);
+    const Vector3 lean(rng.signed_(0.09f), 0.0f, rng.signed_(0.09f));
+
+    // The trunk, as a swept tube rather than a cylinder: a street tree has a
+    // root flare at the pavement, thins as it rises, and leans. A cylinder has
+    // none of those, and a cylinder with leaves on is a lamp post with leaves on.
+    {
+        Geometry::SurfacePatch stem;
+        const int sides = fullDetail ? 9 : 6;
+        const float steps[] = {0.0f, 0.05f, 0.14f, 0.40f, 0.72f, 1.0f};
+        const float radii[] = {1.55f, 1.24f, 1.08f, 0.94f, 0.84f, 0.74f};
+        stem.resize(static_cast<int>(std::size(steps)), sides);
+        stem.wrapCols = true;
+        stem.smoothingAngle = 1.4f;
+        for (int r = 0; r < stem.rows; ++r)
+        {
+            const float t = steps[r];
+            const Vector3 centre = lean * (t * t) + Vector3(0.0f, clearStem * t, 0.0f);
+            for (int c = 0; c < sides; ++c)
+            {
+                const float a = MathHelper::TwoPi * static_cast<float>(c)
+                                / static_cast<float>(sides);
+                // A trunk is not round. A few per cent of radial wobble, held
+                // constant up the stem so it reads as a ridge rather than noise.
+                const float wobble = 1.0f + 0.11f * std::sin(a * 3.0f + static_cast<float>(c));
+                stem.at(r, c) = centre
+                                + Vector3(std::cos(a) * trunk * radii[r] * wobble, 0.0f,
+                                          std::sin(a) * trunk * radii[r] * wobble);
+            }
+        }
+        bark.addSurfacePatch(stem);
     }
 
-    // The crown: alpha-masked cards, in crossed pairs around each limb tip plus
-    // a few filling the middle. Cards rather than a solid shell because a
-    // canopy has to be see-through at its edge -- a hard silhouette against the
-    // sky is the single most obvious way a tree gives itself away.
     MeshBuilder& leaves = collector.builder(&materials_.get(MaterialId::Foliage));
     leaves.setUvMode(UvMode::Explicit);
 
-    auto card = [&](const Vector3& centre, float size, float yaw, float pitch) {
-        const Matrix frame = Matrix::CreateRotationX(pitch) * Matrix::CreateRotationY(yaw)
+    // Where the crown sits, and how big it is. Both are needed below: the first
+    // to shade the canopy as a volume, the second to size the branches so the
+    // tree ends up the width its species says it is.
+    const float crownReach  = height * shape.spread;
+    const Vector3 crownAxis = lean + Vector3(0.0f, clearStem + (height - clearStem) * 0.55f, 0.0f);
+
+    // One leaf card. Four rotations of the same image, picked per card, so a
+    // crown of eighty cards is not eighty copies of one photograph -- which is
+    // exactly what the eye finds first in a procedural tree.
+    //
+    // The normals are the other half of it. A flat card takes a flat card's
+    // lighting: every leaf on one quad is equally lit, the quad next to it at a
+    // different angle is a different flat tone, and a canopy built that way
+    // reads as a stack of painted plates. Real foliage shades like a *ball* --
+    // bright at the top and on the sun side, dark in the middle -- so each
+    // vertex normal is bent most of the way from the card's own facing toward
+    // the direction out of the crown's centre. It costs four normalisations per
+    // card and it is the difference between foliage and bunting.
+    const auto card = [&](const Vector3& centre, float size, float yaw, float pitch, int spin) {
+        const Matrix frame = Matrix::CreateRotationZ(static_cast<float>(spin) * 1.5707963f)
+                             * Matrix::CreateRotationX(pitch) * Matrix::CreateRotationY(yaw)
                              * Matrix::CreateTranslation(centre);
         const float h = size * 0.5f;
-        leaves.addQuadUv(Vector3::Transform(Vector3(-h, -h, 0.0f), frame),
-                         Vector3::Transform(Vector3(h, -h, 0.0f), frame),
-                         Vector3::Transform(Vector3(h, h, 0.0f), frame),
-                         Vector3::Transform(Vector3(-h, h, 0.0f), frame),
-                         Vector2(0.0f, 1.0f), Vector2(1.0f, 1.0f), Vector2(1.0f, 0.0f),
-                         Vector2(0.0f, 0.0f));
+        const std::size_t first = leaves.vertexCount();
+        if (!leaves.addQuadUv(Vector3::Transform(Vector3(-h, -h, 0.0f), frame),
+                              Vector3::Transform(Vector3(h, -h, 0.0f), frame),
+                              Vector3::Transform(Vector3(h, h, 0.0f), frame),
+                              Vector3::Transform(Vector3(-h, h, 0.0f), frame), Vector2(0.0f, 1.0f),
+                              Vector2(1.0f, 1.0f), Vector2(1.0f, 0.0f), Vector2(0.0f, 0.0f)))
+            return;
+        auto& vertices = leaves.mesh().vertices;
+        for (std::size_t v = first; v < vertices.size(); ++v)
+        {
+            Vector3 out = vertices[v].Position - crownAxis;
+            // Flattened vertically: a crown is wider than it is deep, and using
+            // the true radial direction makes the underside of a wide canopy
+            // shade as if it faced straight down.
+            out.Y *= 0.55f;
+            const float length = std::sqrt(out.X * out.X + out.Y * out.Y + out.Z * out.Z);
+            if (length < 1e-3f) continue;
+            out = out * (1.0f / length);
+            const Vector3 blended = vertices[v].Normal * 0.28f + out * 0.72f;
+            const float scale = std::sqrt(blended.X * blended.X + blended.Y * blended.Y
+                                          + blended.Z * blended.Z);
+            if (scale > 1e-4f) vertices[v].Normal = blended * (1.0f / scale);
+        }
     };
 
-    for (const Vector3& tip : limbTips)
+    // A cluster of foliage at a twig tip: three cards through the same point at
+    // different angles. Three rather than two because a crossed pair vanishes
+    // edge-on from one direction, and a canopy that thins as you walk past it is
+    // the other way a tree gives itself away.
+    const int cardsPerCluster = fullDetail ? 3 : 2;
+    const auto cluster = [&](const Vector3& at, float size) {
+        const float yaw = rng.range(0.0f, MathHelper::TwoPi);
+        card(at, size, yaw, rng.signed_(0.35f), rng.intRange(0, 3));
+        card(at, size * 0.92f, yaw + 1.047f, rng.signed_(0.35f), rng.intRange(0, 3));
+        if (cardsPerCluster > 2)
+            card(at, size * 0.86f, yaw + 2.094f, rng.signed_(0.35f), rng.intRange(0, 3));
+    };
+    // Cards are bigger on the far tree, because it has fewer of them and a
+    // crown that thins with distance is worse than one that coarsens.
+    const float cardSize = shape.leaf * (fullDetail ? 1.0f : 1.45f);
+
+    // The branch structure, recursively. Each branch splits into two or three,
+    // each turning away from its parent by roughly the divergence angle and
+    // spun around it; a twig at the last level carries a leaf cluster. This is
+    // what the old generator's four straight limbs were standing in for, and
+    // the difference is the whole silhouette: real foliage sits at the *ends*
+    // of a structure, and the structure is visible through it.
+    struct Branch { Vector3 from; Vector3 direction; float length; float radius; int level; };
+    std::vector<Branch> queue;
+    const Vector3 crotch = lean + Vector3(0.0f, clearStem, 0.0f);
+    const int firstSplit = rng.intRange(3, 4);
+    // The first limb's length, chosen so the crown ends up the width the species
+    // asks for. A chain of `levels` branches shortening by about 0.7 each time
+    // reaches roughly 2.9 times the first one, of which around half is
+    // horizontal once the divergence angles are averaged in -- so a first limb
+    // of about 0.68 of the target radius lands the outermost twigs on it.
+    // `spread` was previously declared and never read, which is why every tree
+    // came out the same narrow shape regardless of species.
+    const float limb = crownReach * rng.range(0.62f, 0.74f);
+    for (int i = 0; i < firstSplit; ++i)
     {
-        const int clusters = rng.intRange(3, 5);
-        for (int c = 0; c < clusters; ++c)
+        const float a = MathHelper::TwoPi * static_cast<float>(i) / static_cast<float>(firstSplit)
+                        + rng.signed_(0.45f);
+        const float tilt = shape.divergence * rng.aboutOne(0.25f);
+        queue.push_back(Branch{crotch,
+                               Vector3(std::cos(a) * std::sin(tilt), std::cos(tilt),
+                                       std::sin(a) * std::sin(tilt)),
+                               limb * rng.aboutOne(0.14f), trunk * 0.60f, 1});
+    }
+
+    while (!queue.empty())
+    {
+        const Branch branch = queue.back();
+        queue.pop_back();
+
+        // Branches droop as they lengthen: gravity is most of what tells a real
+        // tree apart from a diagram of one.
+        const float droop = 0.10f * static_cast<float>(branch.level);
+        const Vector3 direction(branch.direction.X, branch.direction.Y - droop,
+                                branch.direction.Z);
+        const float scale = 1.0f / std::max(0.2f, std::sqrt(direction.X * direction.X
+                                                            + direction.Y * direction.Y
+                                                            + direction.Z * direction.Z));
+        const Vector3 to = branch.from + direction * (branch.length * scale);
+
+        bark.addCylinderBetween(branch.from, to, branch.radius,
+                                branch.level <= 1 ? (fullDetail ? 7 : 5) : (branch.level <= 2 ? 5 : 4),
+                                false);
+
+        if (branch.level >= levels)
         {
-            const Vector3 at = tip + Vector3(rng.signed_(0.9f), rng.range(-0.3f, 1.1f),
-                                             rng.signed_(0.9f));
-            const float size = rng.range(1.7f, 2.9f);
-            const float yaw = rng.range(0.0f, MathHelper::TwoPi);
-            card(at, size, yaw, rng.signed_(0.5f));
-            card(at, size * 0.94f, yaw + MathHelper::PiOver2, rng.signed_(0.5f));
+            cluster(to, cardSize * rng.aboutOne(0.22f));
+            // Two more clusters back along the twig. This is where a crown's
+            // density actually comes from: three cards through one point cover
+            // one card's worth of sky, so what fills a canopy is the number of
+            // *separate* places foliage hangs from, not the number of quads.
+            cluster(branch.from + direction * (branch.length * scale * 0.62f),
+                    cardSize * rng.aboutOne(0.25f) * 0.90f);
+            cluster(branch.from + direction * (branch.length * scale * 0.28f),
+                    cardSize * rng.aboutOne(0.25f) * 0.82f);
+            continue;
+        }
+        // Foliage on the two levels above the twigs as well. Without it the
+        // crown is a hollow shell with daylight through the middle of it, which
+        // is exactly what a tree seen from underneath does not have.
+        if (branch.level >= levels - 2 && rng.chance(fullDetail ? 0.80f : 0.5f))
+            cluster(branch.from + direction * (branch.length * scale * rng.range(0.45f, 0.95f)),
+                    cardSize * rng.aboutOne(0.25f) * 0.94f);
+
+        const int children = rng.intRange(2, 3);
+        for (int i = 0; i < children; ++i)
+        {
+            // Turn away from the parent by the divergence angle, spun about it.
+            const float spin = MathHelper::TwoPi * static_cast<float>(i)
+                                   / static_cast<float>(children)
+                               + rng.signed_(0.7f);
+            const float tilt = shape.divergence * rng.aboutOne(0.35f);
+            // An orthonormal frame about the parent's direction.
+            const Vector3 up = std::fabs(direction.Y) > 0.92f ? Vector3::Right : Vector3::Up;
+            Vector3 side = Vector3::Cross(direction, up);
+            const float sideLength = std::sqrt(side.X * side.X + side.Y * side.Y
+                                               + side.Z * side.Z);
+            if (sideLength < 1e-4f) continue;
+            side = side * (1.0f / sideLength);
+            const Vector3 other = Vector3::Cross(direction, side);
+            const Vector3 turn = side * std::cos(spin) + other * std::sin(spin);
+            const Vector3 childDirection = direction * (std::cos(tilt) * scale)
+                                           + turn * std::sin(tilt);
+            queue.push_back(Branch{to, childDirection, branch.length * rng.range(0.64f, 0.78f),
+                                   branch.radius * 0.62f, branch.level + 1});
         }
     }
-    const int fill = rng.intRange(5, 9);
-    for (int i = 0; i < fill; ++i)
+
+    if (species == TreeSpecies::Young)
     {
-        const Vector3 at(lean * 0.4f + rng.signed_(1.5f),
-                         crownBase + (crownTop - crownBase) * rng.range(0.25f, 0.9f),
-                         lean * 0.25f + rng.signed_(1.5f));
-        const float size = rng.range(1.9f, 3.1f);
-        const float yaw = rng.range(0.0f, MathHelper::TwoPi);
-        card(at, size, yaw, rng.signed_(0.6f));
-        card(at, size * 0.9f, yaw + MathHelper::PiOver2, rng.signed_(0.6f));
+        // The stake and tie a newly planted street tree is held up by, which is
+        // the detail that says somebody planted this one on purpose.
+        MeshBuilder& stake = collector.builder(&materials_.get(MaterialId::Timber));
+        stake.setTileSize(0.4f);
+        const float sx = trunk * 3.4f;
+        stake.addCylinder(Vector3(sx, 0.0f, 0.0f), 0.028f, 0.024f, 1.55f, 6, false, true);
+        MeshBuilder& tie = collector.builder(&materials_.get(MaterialId::PaintedSteelBlack));
+        tie.addCylinderBetween(Vector3(sx, 1.42f, 0.0f), Vector3(0.0f, 1.42f, 0.0f), 0.014f, 5);
+    }
+}
+
+void PropFactory::groundScruff(GeometryCollector& collector, Rng& rng, float radius,
+                               int tufts) const
+{
+    MeshBuilder& weed = collector.builder(&materials_.get(MaterialId::Foliage));
+    weed.setUvMode(UvMode::Explicit);
+    for (int i = 0; i < tufts; ++i)
+    {
+        const float a = rng.range(0.0f, MathHelper::TwoPi);
+        const float r = radius * std::sqrt(rng.range(0.15f, 1.0f));
+        const Vector3 at(std::cos(a) * r, 0.0f, std::sin(a) * r);
+        const float size = rng.range(0.10f, 0.26f);
+        // Two crossed cards standing on the ground, leaning a little. A tuft of
+        // weed at a wall base is four triangles and it is the difference between
+        // a pavement and a floor.
+        for (int c = 0; c < 2; ++c)
+        {
+            const float yaw = rng.range(0.0f, MathHelper::TwoPi) + static_cast<float>(c) * 1.571f;
+            const Matrix frame = Matrix::CreateRotationZ(rng.signed_(0.30f))
+                                 * Matrix::CreateRotationY(yaw)
+                                 * Matrix::CreateTranslation(at + Vector3(0.0f, size * 0.48f, 0.0f));
+            const float h = size * 0.5f;
+            weed.addQuadUv(Vector3::Transform(Vector3(-h, -h, 0.0f), frame),
+                           Vector3::Transform(Vector3(h, -h, 0.0f), frame),
+                           Vector3::Transform(Vector3(h, h, 0.0f), frame),
+                           Vector3::Transform(Vector3(-h, h, 0.0f), frame), Vector2(0.0f, 1.0f),
+                           Vector2(1.0f, 1.0f), Vector2(1.0f, 0.0f), Vector2(0.0f, 0.0f));
+        }
     }
 }
 

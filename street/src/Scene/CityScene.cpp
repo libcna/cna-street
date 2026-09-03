@@ -278,11 +278,12 @@ CityScene::PropMesh CityScene::makeProp(const std::string& name,
 
 void CityScene::placeProp(const PropMesh& prop, const std::vector<Matrix>& transforms,
                           const std::string& name, float cullDistance, float shadowDistance,
-                          bool castsShadow)
+                          bool castsShadow, const PropMesh* distant, float lodDistance)
 {
     if (prop.empty() || transforms.empty()) return;
-    for (const PropMesh::Part& part : prop.parts)
+    for (std::size_t i = 0; i < prop.parts.size(); ++i)
     {
+        const PropMesh::Part& part = prop.parts[i];
         InstanceGroup group;
         group.mesh           = part.mesh;
         group.material       = part.material;
@@ -291,6 +292,16 @@ void CityScene::placeProp(const PropMesh& prop, const std::vector<Matrix>& trans
         group.shadowDistance = shadowDistance;
         group.castsShadow    = castsShadow;
         group.name           = name;
+        // The cheaper mesh, matched part for part. Matching by index rather
+        // than by material is safe because both are built by the same generator
+        // in the same order from the same seed; a mismatch in count means one
+        // of them dropped a material, and the near mesh is then used at every
+        // distance rather than the wrong geometry being swapped in.
+        if (distant != nullptr && distant->parts.size() == prop.parts.size() && lodDistance > 0.0f)
+        {
+            group.lodMesh     = distant->parts[i].mesh;
+            group.lodDistance = lodDistance;
+        }
         renderer_.addInstances(std::move(group));
         ++buildStats_.instanceGroups;
     }
@@ -732,22 +743,40 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     const float shade = settings.propShadowDistance;
     const float ground = M::kCurbHeight;
 
-    // Four trees rather than one. A row of identical trees is as obvious as a
-    // row of identical windows, and four crowns shuffled by yaw and spacing is
-    // enough that nobody counts them.
-    constexpr int kTreeVariants = 4;
+    // Six trees over three species. A row of identical trees is as obvious as a
+    // row of identical windows, and a street planted in one season with one
+    // species still has trees of visibly different ages in it.
+    constexpr int kTreeVariants = 6;
     std::vector<PropMesh> trees;
+    std::vector<PropMesh> distantTrees;
     trees.reserve(kTreeVariants);
+    distantTrees.reserve(kTreeVariants);
     for (int i = 0; i < kTreeVariants; ++i)
     {
-        const float height = M::kTreeHeightMin
-                             + (M::kTreeHeightMax - M::kTreeHeightMin)
-                                   * (static_cast<float>(i) + 0.5f)
-                                   / static_cast<float>(kTreeVariants);
-        trees.push_back(makeProp("tree-" + std::to_string(i), [&](GeometryCollector& c) {
-            props.tree(c, rng, height);
+        const auto species = static_cast<PropFactory::TreeSpecies>(
+            i % static_cast<int>(PropFactory::TreeSpecies::Count));
+        const float height =
+            species == PropFactory::TreeSpecies::Young
+                ? M::kTreeHeightMin * 0.62f
+                : M::kTreeHeightMin
+                      + (M::kTreeHeightMax - M::kTreeHeightMin) * (static_cast<float>(i) + 0.5f)
+                            / static_cast<float>(kTreeVariants);
+        const std::string tag = std::to_string(i);
+        trees.push_back(makeProp("tree-" + tag, [&](GeometryCollector& c) {
+            Rng own = Rng::derive(settings.seed, "tree-" + tag);
+            props.tree(c, own, species, height, true);
+        }));
+        distantTrees.push_back(makeProp("tree-far-" + tag, [&](GeometryCollector& c) {
+            // The same tree from the same seed, so the far version is the near
+            // one with fewer twigs rather than a different tree that pops when
+            // the camera crosses the switch distance.
+            Rng own = Rng::derive(settings.seed, "tree-" + tag);
+            props.tree(c, own, species, height, false);
         }));
     }
+    const PropMesh scruff = makeProp("ground-scruff", [&](GeometryCollector& c) {
+        props.groundScruff(c, rng, 0.72f, 7);
+    });
     const PropMesh grate = makeProp("tree-grate", [&](GeometryCollector& c) {
         props.treeGrate(c);
     });
@@ -756,7 +785,7 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     });
 
     std::vector<std::vector<Matrix>> treeAt(kTreeVariants);
-    std::vector<Matrix> grateAt, planterAt;
+    std::vector<Matrix> grateAt, planterAt, scruffAt;
 
     for (const FootwayRun& run : layout_.footways())
     {
@@ -789,6 +818,11 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
                 // The grate sits flush with the paving, not on top of it.
                 grateAt.push_back(Place(p.X, p.Y - 0.012f, p.Z,
                                         rng.chance(0.5f) ? 0.0f : MathHelper::PiOver2));
+                // Weeds around a tree pit, on about half of them. Every pit
+                // would be a derelict street; none would be a rendering.
+                if (rng.chance(0.55f))
+                    scruffAt.push_back(Place(p.X, p.Y + 0.002f, p.Z,
+                                             rng.range(0.0f, MathHelper::TwoPi)));
             }
         }
 
@@ -800,16 +834,28 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
             const Vector3 p = at(s + rng.signed_(3.0f), -(run.width * 0.5f - 0.55f));
             planterAt.push_back(Place(p.X, p.Y, p.Z, YawTowards(kerb)));
         }
+
+        // And the scruff along the building line: grass through the joint where
+        // a wall meets a pavement is one of the details a street has and a
+        // rendering of one never does.
+        for (float s = 4.0f; s < length - 4.0f; s += 5.5f)
+        {
+            if (!rng.chance(0.26f)) continue;
+            const Vector3 p = at(s + rng.signed_(2.0f), -(run.width * 0.5f - 0.16f));
+            scruffAt.push_back(Place(p.X, p.Y + 0.002f, p.Z, rng.range(0.0f, MathHelper::TwoPi)));
+        }
     }
 
     for (int i = 0; i < kTreeVariants; ++i)
     {
         placeProp(trees[static_cast<std::size_t>(i)], treeAt[static_cast<std::size_t>(i)],
-                  "tree-" + std::to_string(i), cull, shade);
+                  "tree-" + std::to_string(i), cull, shade,
+                  /*castsShadow=*/true, &distantTrees[static_cast<std::size_t>(i)], 52.0f);
         buildStats_.trees += static_cast<int>(treeAt[static_cast<std::size_t>(i)].size());
     }
     placeProp(grate, grateAt, "tree-grate", cull * 0.35f, 0.0f, false);
     placeProp(planter, planterAt, "planter", cull * 0.5f, shade * 0.6f);
+    placeProp(scruff, scruffAt, "ground-scruff", 42.0f, 0.0f, false);
 }
 
 void CityScene::buildSignalsAndSigns(Rng& rng, const RenderSettings& settings)

@@ -119,7 +119,8 @@ private:
     void placeProp(const PropMesh& prop,
                    const std::vector<Microsoft::Xna::Framework::Matrix>& transforms,
                    const std::string& name, float cullDistance, float shadowDistance,
-                   bool castsShadow = true);
+                   bool castsShadow = true, const PropMesh* distant = nullptr,
+                   float lodDistance = 0.0f);
     /// Submits one placed copy of a prop for this frame. `overrideMaterial`
     /// replaces every part's material, which is how a signal lens is drawn lit
     /// or dark from one mesh.
