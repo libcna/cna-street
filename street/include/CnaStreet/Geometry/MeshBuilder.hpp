@@ -135,6 +135,14 @@ public:
                        const Microsoft::Xna::Framework::Vector3& d,
                        const Microsoft::Xna::Framework::Vector3& hint);
 
+    /// @ref addQuadFacing with unit UVs, for a surface that carries an image
+    /// rather than a tiled material -- an interior cell, a sign face.
+    bool addQuadFacingUv(const Microsoft::Xna::Framework::Vector3& a,
+                         const Microsoft::Xna::Framework::Vector3& b,
+                         const Microsoft::Xna::Framework::Vector3& c,
+                         const Microsoft::Xna::Framework::Vector3& d,
+                         const Microsoft::Xna::Framework::Vector3& hint);
+
     /// Explicit-UV quad. UVs are given per corner in the same order.
     bool addQuadUv(const Microsoft::Xna::Framework::Vector3& a,
                    const Microsoft::Xna::Framework::Vector3& b,

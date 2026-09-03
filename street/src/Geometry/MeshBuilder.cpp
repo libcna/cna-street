@@ -224,6 +224,14 @@ bool MeshBuilder::addQuadFacing(const Vector3& a, const Vector3& b, const Vector
     return addQuad(a, b, c, d);
 }
 
+bool MeshBuilder::addQuadFacingUv(const Vector3& a, const Vector3& b, const Vector3& c,
+                                  const Vector3& d, const Vector3& hint)
+{
+    const Vector3 raw = Vector3::Cross(b - a, c - a);
+    if (Vector3::Dot(raw, hint) < 0.0f) return addQuadUnitUv(a, d, c, b);
+    return addQuadUnitUv(a, b, c, d);
+}
+
 bool MeshBuilder::addQuadUnitUv(const Vector3& a, const Vector3& b, const Vector3& c,
                                 const Vector3& d)
 {
