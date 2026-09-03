@@ -87,6 +87,7 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --width <n> --height <n>          window size\n"
                 "  --seed <n>                        procedural seed (default: %u)\n"
                 "  --viewpoint <n>                   start at named viewpoint n (1-based)\n"
+                "  --camera x,y,z,yaw,pitch          start at an explicit camera (radians)\n"
                 "  --frames <n>                      render n frames and exit\n"
                 "  --screenshot <file.png>           write one frame and exit\n"
                 "  --capture <dir>                   write every viewpoint into dir and exit\n"
@@ -121,6 +122,20 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--height")     { const char* v = next(i); if (v) settings_.windowHeight = std::atoi(v); }
         else if (arg == "--seed")       { const char* v = next(i); if (v) settings_.seed = static_cast<std::uint32_t>(std::strtoul(v, nullptr, 10)); }
         else if (arg == "--viewpoint")  { const char* v = next(i); if (v) startViewpoint_ = std::atoi(v) - 1; }
+        else if (arg == "--camera")
+        {
+            const char* v = next(i);
+            float p[5] = {0.0f, 1.80f, 0.0f, 0.0f, 0.0f};
+            if (v == nullptr
+                || std::sscanf(v, "%f,%f,%f,%f,%f", &p[0], &p[1], &p[2], &p[3], &p[4]) != 5)
+            {
+                std::fprintf(stderr, "--camera needs x,y,z,yaw,pitch (radians)\n");
+                return false;
+            }
+            cameraOverride_ = true;
+            cameraOverrideAt_ = Viewpoint{"Command line", Vector3(p[0], p[1], p[2]), p[3], p[4],
+                                          settings_.verticalFovDegrees * 0.0174532925f};
+        }
         else if (arg == "--frames")     { const char* v = next(i); if (v) frameBudget_ = std::atoi(v); }
         else if (arg == "--screenshot") { const char* v = next(i); if (v) screenshotPath_ = v; }
         else if (arg == "--capture")    { const char* v = next(i); if (v) captureDirectory_ = v; }
@@ -258,6 +273,7 @@ void StreetApplication::LoadContent()
         const int index = std::clamp(startViewpoint_, 0, static_cast<int>(viewpoints.size()) - 1);
         controller_.setHome(viewpoints[static_cast<std::size_t>(index)]);
     }
+    if (cameraOverride_) controller_.setHome(cameraOverrideAt_);
     controller_.setCinematicPath(viewpoints, 8.0f);
 
     overlay_ = std::make_unique<DebugOverlay>(device);
@@ -384,7 +400,9 @@ void StreetApplication::Draw(const GameTime& gameTime)
     {
         captureScreenshot(screenshotPath_);
         screenshotPath_.clear();
-        if (frameBudget_ == 0) Exit();
+        // A one-shot --screenshot run is finished here; a --capture run has more
+        // viewpoints to walk and ends when the script says so.
+        if (frameBudget_ == 0 && captureDirectory_.empty()) Exit();
     }
     if (frameBudget_ > 0 && framesDrawn_ >= frameBudget_) Exit();
 }
@@ -414,7 +432,7 @@ void StreetApplication::runCaptureScript()
     {
         const Viewpoint& viewpoint = viewpoints[static_cast<std::size_t>(captureIndex_)];
         std::filesystem::create_directories(captureDirectory_);
-        char index[8];
+        char index[16];
         std::snprintf(index, sizeof(index), "%02d", captureIndex_ + 1);
         const std::string path = (std::filesystem::path(captureDirectory_)
                                   / (std::string(index) + "-" + SanitiseFileName(viewpoint.name)

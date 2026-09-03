@@ -83,6 +83,13 @@ private:
     std::string shadowDumpPath_;
     std::string settingsPath_;
     int         startViewpoint_  = 0;
+    /// `--camera x,y,z,yaw,pitch` overrides the starting viewpoint. Not a
+    /// feature so much as a tool: every visual defect in this project was
+    /// found by pointing a camera at it from a place the viewpoint list does
+    /// not contain, and doing that by editing the viewpoint table and
+    /// rebuilding is a five-minute round trip instead of a five-second one.
+    bool        cameraOverride_  = false;
+    Viewpoint   cameraOverrideAt_{};
 };
 
 }  // namespace CnaStreet
