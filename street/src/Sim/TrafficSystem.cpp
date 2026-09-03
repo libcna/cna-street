@@ -97,16 +97,26 @@ void TrafficSystem::buildLanes()
 void TrafficSystem::spawnMoving(Rng& rng, int count)
 {
     if (lanes_.empty()) return;
+
+    // Round-robin over the lanes, and along a lane on a jittered grid rather
+    // than at uniform random. Random positions put two cars a metre apart often
+    // enough to matter, and the car-following model cannot undo an overlap it
+    // was handed: a pair spawned inside one another stays inside one another for
+    // as long as anyone is watching.
+    const int perLane = std::max(1, count / static_cast<int>(lanes_.size()) + 1);
     for (int i = 0; i < count; ++i)
     {
         Vehicle vehicle;
-        vehicle.lane    = static_cast<int>(rng.index(lanes_.size()));
+        vehicle.lane    = i % static_cast<int>(lanes_.size());
         vehicle.variant = rng.intRange(0, kVariantCount - 1);
         vehicle.type    = typeForVariant(vehicle.variant);
         vehicle.length  = VehicleFactory::dimensionsFor(vehicle.type).length;
-        // Spread them along the lane rather than at the start, so the street has
-        // traffic on it in the first frame instead of a convoy arriving later.
-        vehicle.position = rng.range(0.0f, lanes_[static_cast<std::size_t>(vehicle.lane)].length);
+
+        const float length = lanes_[static_cast<std::size_t>(vehicle.lane)].length;
+        const float slot   = length / static_cast<float>(perLane);
+        const int   index  = i / static_cast<int>(lanes_.size());
+        vehicle.position = static_cast<float>(index) * slot
+                           + rng.range(vehicle.length, std::max(vehicle.length + 0.1f, slot * 0.7f));
         vehicle.desiredSpeed = rng.range(7.0f, 10.5f);
         vehicle.speed = vehicle.desiredSpeed * rng.range(0.5f, 1.0f);
         vehicles_.push_back(vehicle);

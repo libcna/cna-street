@@ -47,12 +47,29 @@ float Pedestrian::heading(const std::vector<WalkNode>& nodes,
 
 int PedestrianSystem::addNode(const Vector2& position)
 {
+    // Coincident nodes are merged rather than joined. The main-street and
+    // side-street chains both start at the same four corners, and joining the
+    // two copies with an edge produced four zero-length edges -- an edge with no
+    // length has no direction, so anyone who stepped onto one faced nowhere in
+    // particular until they stepped off it again.
+    for (std::size_t i = 0; i < nodes_.size(); ++i)
+        if (Distance(nodes_[i].position, position) < 0.20f) return static_cast<int>(i);
+
     nodes_.push_back(WalkNode{position, {}});
     return static_cast<int>(nodes_.size()) - 1;
 }
 
 void PedestrianSystem::addEdge(int from, int to, bool crossing, SignalAxis axis)
 {
+    if (from == to) return;
+    // Nor a duplicate: the corner joins would otherwise add a second edge
+    // between two nodes the chains already connect, and a pedestrian choosing
+    // between them would appear to dither.
+    for (const WalkEdge& existing : edges_)
+        if ((existing.from == from && existing.to == to)
+            || (existing.from == to && existing.to == from))
+            return;
+
     WalkEdge edge;
     edge.from = from;
     edge.to = to;
