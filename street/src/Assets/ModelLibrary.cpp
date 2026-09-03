@@ -183,6 +183,7 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
     ++loaded_;
     CNA::Logger::Info("cna-street: imported '" + asset + "' -- "
                       + std::to_string(result->parts.size()) + " part(s), "
+                      + std::to_string(result->triangleCount()) + " triangles, "
                       + std::to_string(result->height()) + " m tall as authored");
     return result;
 }
@@ -195,6 +196,15 @@ Matrix ModelLibrary::fitTo(const Imported& model, float metres)
     const Vector3 centre((model.bounds.Min.X + model.bounds.Max.X) * 0.5f, model.bounds.Min.Y,
                          (model.bounds.Min.Z + model.bounds.Max.Z) * 0.5f);
     return Matrix::CreateTranslation(-centre) * Matrix::CreateScale(scale);
+}
+
+
+int ModelLibrary::Imported::triangleCount() const
+{
+    int total = 0;
+    for (const Part& part : parts)
+        if (part.mesh != nullptr) total += part.mesh->triangleCount();
+    return total;
 }
 
 }  // namespace CnaStreet

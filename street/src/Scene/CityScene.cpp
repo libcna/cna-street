@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <set>
 
 using namespace Microsoft::Xna::Framework;
 using Microsoft::Xna::Framework::Graphics::GraphicsDevice;
@@ -1410,7 +1411,9 @@ void CityScene::buildShopDisplays(const RenderSettings& settings)
         {ShopKind::Office,      {"plant", "lantern", nullptr, nullptr}},
     };
 
+    constexpr int kDisplayTriangleBudget = 22000;
     Rng rng = Rng::derive(settings.seed, "displays");
+    std::set<std::string> skippedForBudget;
     int dressed = 0;
     for (const ShopDisplay& display : displays_)
     {
@@ -1421,13 +1424,41 @@ void CityScene::buildShopDisplays(const RenderSettings& settings)
 
         // Rotate the candidate list per plinth, so two windows of the same trade
         // are not the same window.
+        //
+        // And a triangle budget. The Khronos sample set is a set of *material*
+        // showcases, authored to be filmed on a turntable rather than stood on
+        // a 40 cm plinth behind a pane of glass, and their weights are: avocado
+        // 682, water bottle 4 510, lantern 5 394, boombox 6 036, chair 9 984,
+        // sunglasses 13 396, vase of flowers 14 036, corset 18 324, camera
+        // 20 066 -- and the plant, 68 409, of which 54 000 are one part.
+        //
+        // 22 000 admits every one of them except the plant, which is the only
+        // real outlier: a shrub carrying more geometry than the building it
+        // stands in. A shop whose whole candidate list is over budget gets a
+        // bare plinth, which is a thing real shops have.
+        //
+        // What this is *not* fixing is worth saying, because the first version
+        // of this comment got it wrong. The batch report counts a family's
+        // triangles with its copies included, so thirty-nine dressed windows
+        // read as 850 000 -- but the copies share one mesh, so the geometry in
+        // memory is one per model and the drawn cost is bounded by the 22 m
+        // cull, which admits three or four at a time. The budget is here for
+        // the outlier and for the 4K texture set that comes with it, not to
+        // rescue a frame time that was never in danger.
         const int offset = rng.intRange(0, 3);
         const ModelLibrary::Imported* model = nullptr;
         for (int i = 0; i < 4 && model == nullptr; ++i)
         {
             const char* name = choice->assets[(i + offset) % 4];
             if (name == nullptr) continue;
-            model = models_.load(name);
+            const ModelLibrary::Imported* candidate = models_.load(name);
+            if (candidate == nullptr) continue;
+            if (candidate->triangleCount() > kDisplayTriangleBudget)
+            {
+                skippedForBudget.insert(candidate->name);
+                continue;
+            }
+            model = candidate;
         }
         if (model == nullptr) continue;
 
@@ -1459,6 +1490,10 @@ void CityScene::buildShopDisplays(const RenderSettings& settings)
         ++dressed;
     }
 
+    for (const std::string& name : skippedForBudget)
+        CNA::Logger::Info("cna-street: imported '" + name + "' is over the "
+                          + std::to_string(kDisplayTriangleBudget)
+                          + "-triangle budget for a window display and was not used");
     CNA::Logger::Info("cna-street: " + std::to_string(dressed) + " of "
                       + std::to_string(displays_.size()) + " window displays dressed from "
                       + std::to_string(models_.loadedCount()) + " imported model(s)");

@@ -553,7 +553,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         Material panel = pbr(0.74f, 0.0f);
         panel.baseColour = Vector3(0.72f, 0.72f, 0.70f);
         install(MaterialId::ConcretePanel, "concrete-panel",
-                [&] { return TextureFactory::concretePaving(kLarge, s + 15u); }, panel);
+                [&] { return TextureFactory::concretePaving(kLarge, s + 15u, 3.0f); }, panel);
         // Precast cladding is a large flat panel, not paving: keep the aggregate
         // and weathering but scale the joints out of sight with a large tile.
         // Divided by what the generator wrote, because this is set *after*
@@ -753,7 +753,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         shopFloor.emissiveFactor = shopLight(0.22f);
         shopFloor.castsShadow = false;
         install(MaterialId::ShopFloor, "shop-floor",
-                [&] { return enclose(TextureFactory::concretePaving(kMedium, s + 64u), 0.30f, 1.0f); },
+                [&] { return enclose(TextureFactory::concretePaving(kMedium, s + 64u, 8.0f), 0.30f, 1.0f); },
                 shopFloor);
 
         Material shopTimber = pbr(0.52f, 0.0f);

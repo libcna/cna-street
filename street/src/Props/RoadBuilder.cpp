@@ -28,6 +28,9 @@ namespace {
 /// thing that survived to the screen was the coarse noise laid on top of it,
 /// which is why the carriageway read as weather rather than as a surface.
 constexpr float kAsphaltTile = 5.0f;
+/// And the footway. Four metres carries eight 50 cm slabs, so the paving map
+/// holds sixty-four different ones rather than the nine a 1.5 m tile held.
+constexpr float kPavingTile = 4.0f;
 }  // namespace
 
 
@@ -464,7 +467,7 @@ void RoadBuilder::buildFootways(GeometryCollector& collector, Rng& rng)
                 const float z1 = from + half * std::min(t + step, std::fabs(to - from));
                 collector.setRegion(inner, (z0 + z1) * 0.5f);
                 MeshBuilder& builder = collector.builder(paving);
-                builder.setTileSize(1.5f);
+                builder.setTileSize(kPavingTile);
                 Slab(builder, std::min(inner, outer), std::min(z0, z1), std::max(inner, outer),
                      std::max(z0, z1), kFootwayY);
             }
@@ -486,7 +489,7 @@ void RoadBuilder::buildFootways(GeometryCollector& collector, Rng& rng)
                 const float x1 = from + half * std::min(t + step, std::fabs(to - from));
                 collector.setRegion((x0 + x1) * 0.5f, inner);
                 MeshBuilder& builder = collector.builder(paving);
-                builder.setTileSize(1.5f);
+                builder.setTileSize(kPavingTile);
                 Slab(builder, std::min(x0, x1), std::min(inner, outer), std::max(x0, x1),
                      std::max(inner, outer), kFootwayY);
             }
@@ -504,7 +507,7 @@ void RoadBuilder::buildFootways(GeometryCollector& collector, Rng& rng)
         const float cz = sz * (kSideHalfRoad + kCornerRadius);
 
         MeshBuilder& builder = collector.builder(paving);
-        builder.setTileSize(1.5f);
+        builder.setTileSize(kPavingTile);
         constexpr int kSegments = 8;
         std::vector<Vector3> outline;
         outline.reserve(kSegments + 4);

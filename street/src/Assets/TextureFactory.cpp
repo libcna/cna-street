@@ -66,6 +66,15 @@ void Srgb8(float out[3], int r, int g, int b)
 }
 
 /// Distance to the border of a cell, used for joints and bevels.
+/// Where a point sits across its own cell, 0..1. Used where something has to be
+/// drawn *within* one slab or sett rather than across the tile.
+float fu2(float u, float v, float cells)
+{
+    (void)v;
+    const float su = u * cells;
+    return su - std::floor(su);
+}
+
 float CellEdge(float u, float v, float cellsX, float cellsY, float& cellId, float rowOffset,
                std::uint32_t seed)
 {
@@ -276,13 +285,28 @@ SurfaceMaps TextureFactory::wheelTrack(int size, std::uint32_t seed)
 // ---------------------------------------------------------------------------
 // Concrete paving
 // ---------------------------------------------------------------------------
-SurfaceMaps TextureFactory::concretePaving(int size, std::uint32_t seed)
+SurfaceMaps TextureFactory::concretePaving(int size, std::uint32_t seed, float cells)
 {
     Surface s(size);
-    // 3x3 slabs to the tile. At the material's 1.5 m tile size that makes each
-    // slab 50 cm square, which is the standard German Gehwegplatte.
-    constexpr float kCells = 3.0f;
-    constexpr float kJoint = 0.028f;
+    // 8x8 slabs to the tile. At the material's 4 m tile size that keeps each
+    // slab 50 cm square -- the standard German Gehwegplatte -- while giving the
+    // footway sixty-four *different* slabs instead of nine.
+    //
+    // Nine was the whole problem. The slab size was right and the per-slab tone
+    // variation was right, and the footway still read as a drawn grid, because
+    // a 1.5 m tile repeats the same three-by-three block of slabs every 1.5 m:
+    // across a 4 m footway that is three copies side by side and down the
+    // street it is a hundred and seventy. What the eye picks up is not the slab
+    // but the *group*, and a group repeating every metre and a half is a
+    // pattern. Sixty-four slabs on a 4 m tile is a rhythm nobody counts.
+    // A parameter rather than a constant, because three surfaces share this
+    // generator and they are not the same object: a footway wants eight 50 cm
+    // slabs to a 4 m tile, a precast cladding panel wants three large ones so
+    // its joints stay sparse, and a shop floor wants eight small tiles to 2.4 m.
+    // With the count fixed, moving it for the footway silently changed the
+    // joint spacing on every concrete-clad building in the city.
+    const float kCells = std::max(1.0f, cells);
+    const float kJoint = 0.084f / kCells;
 
     float pale[3], dark[3];
     Srgb8(pale, 186, 182, 174);
@@ -308,7 +332,12 @@ SurfaceMaps TextureFactory::concretePaving(int size, std::uint32_t seed)
             for (int c = 0; c < 3; ++c)
                 base[c] *= 0.90f + grain * 0.16f + (swirl - 0.5f) * 0.09f;
 
-            float height = 0.66f + grain * 0.05f;
+            // Lippage: each slab sits a couple of millimetres above or below
+            // its neighbours, because they are laid on sand by hand. It is a
+            // step at every joint rather than a groove, and it is what stops a
+            // paved footway reading as a printed sheet -- the grazing light
+             // along a footway finds a 2 mm step from thirty metres away.
+            float height = 0.66f + grain * 0.05f + (cellId - 0.5f) * 0.085f;
             float roughness = 0.72f + grain * 0.10f;
             float occlusion = 1.0f;
 
@@ -327,9 +356,31 @@ SurfaceMaps TextureFactory::concretePaving(int size, std::uint32_t seed)
 
             // Weathering: the whole footway is dirtier near the kerb and under
             // the buildings, but at this scale it is just patchy grime.
-            const float grime = smoothstep(0.48f, 0.90f,
+            const float grime = smoothstep(0.44f, 0.90f,
                                            fbm(u * 3.0f, v * 3.0f, 3, 4, 2.0f, 0.55f, seed + 59u));
-            for (int c = 0; c < 3; ++c) base[c] *= (1.0f - grime * 0.30f);
+            for (int c = 0; c < 3; ++c) base[c] *= (1.0f - grime * 0.34f);
+            roughness = Mix(roughness, 0.88f, grime * 0.5f);
+
+            // A cracked slab, on about one in twenty. A hairline across one
+            // Gehwegplatte is the sort of thing nobody notices and everybody
+            // would notice the absence of, and unlike the asphalt's cracking it
+            // is bounded to a single cell, so it cannot spread into a web.
+            if (cellId > 0.95f)
+            {
+                const float across = std::fabs(fu2(u, v, kCells) - 0.5f);
+                const float line = 1.0f - smoothstep(0.0f, 0.035f, across);
+                for (int c = 0; c < 3; ++c) base[c] *= 1.0f - line * 0.45f;
+                height -= line * 0.10f;
+                occlusion -= line * 0.30f;
+            }
+
+            // The dark line where a slab meets a wall or a kerb has already
+            // been handled by the joint; what is left is the chewing gum and
+            // the ground-in grit that collect in the middle of a walking line.
+            const float trodden = smoothstep(0.62f, 0.95f,
+                                             fbm(u * 24.0f, v * 24.0f, 24, 2, 2.0f, 0.5f,
+                                                 seed + 83u));
+            for (int c = 0; c < 3; ++c) base[c] *= 1.0f - trodden * 0.16f;
 
             s.albedo.setRgb(x, y, base[0], base[1], base[2]);
             s.height.setRgb(x, y, saturate(height), 0.0f, 0.0f);

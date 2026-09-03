@@ -36,7 +36,12 @@ public:
     [[nodiscard]] static SurfaceMaps wheelTrack(int size, std::uint32_t seed);
 
     /// Cast concrete paving slabs, 3x3 to the tile.
-    [[nodiscard]] static SurfaceMaps concretePaving(int size, std::uint32_t seed);
+    /// Cast concrete slabs. @p cells is how many across the tile: eight 50 cm
+    /// Gehwegplatten to a 4 m footway tile, three large ones to a precast
+    /// cladding panel. The caller owns the joint scale because the three
+    /// surfaces that share this generator are not the same object.
+    [[nodiscard]] static SurfaceMaps concretePaving(int size, std::uint32_t seed,
+                                                    float cells = 8.0f);
 
     /// Small granite setts, as laid in the gutter channel and at crossings.
     [[nodiscard]] static SurfaceMaps graniteSetts(int size, std::uint32_t seed);

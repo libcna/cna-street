@@ -446,7 +446,12 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
     room.addQuadFacingUv(frame.at(u0, ceiling, depth), frame.at(u1, ceiling, depth),
                          frame.at(u1, ceiling, 0.0f), frame.at(u0, ceiling, 0.0f), inV * -1.0f);
     MeshBuilder& floorSurface = collector.builder(&materials_.get(MaterialId::ShopFloor));
-    floorSurface.setTileSize(0.60f);
+    // Eight tiles to the repeat, so 2.4 m gives 30 cm floor tiles -- a shop
+    // floor, not a footway. This tracks the paving generator's cell count: it
+    // went from three cells to eight to stop a footway reading as a repeating
+    // three-by-three block, and every surface that shares the generator has to
+    // move its tile size with it or the joints change size underneath it.
+    floorSurface.setTileSize(2.4f);
     floorSurface.addQuadFacing(frame.at(u0, floor, depth), frame.at(u1, floor, depth),
                                frame.at(u1, floor, 0.0f), frame.at(u0, floor, 0.0f), inV);
 

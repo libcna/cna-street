@@ -80,6 +80,12 @@ public:
         /// real-world size without knowing what units it was authored in.
         [[nodiscard]] float height() const { return bounds.Max.Y - bounds.Min.Y; }
         [[nodiscard]] bool empty() const { return parts.empty(); }
+        /// Every part's triangles added up. The Khronos sample set is a set of
+        /// *material* showcases -- one of these plants is 54 000 triangles in a
+        /// single part, authored to be filmed on a turntable -- and a caller
+        /// standing one on a 40 cm plinth behind glass needs to know that before
+        /// it agrees to.
+        [[nodiscard]] int triangleCount() const;
     };
 
     /// Loads @p asset from the content root, or returns nullptr. Cached: asking
