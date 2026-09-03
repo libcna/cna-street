@@ -76,6 +76,14 @@ bool StreetApplication::configure(int argc, char** argv)
         return (i + 1 < argc) ? argv[++i] : nullptr;
     };
 
+    // The settings file is read *before* the options, not after, so that the
+    // command line wins. It used to be loaded at the end, which meant a settings
+    // document silently overrode every flag on the command line -- `--preset low`
+    // ran at high quality and there was nothing on screen to say why.
+    for (int i = 1; i + 1 < argc; ++i)
+        if (std::string(argv[i]) == "--settings") settingsPath_ = argv[i + 1];
+    loadSettingsFile();
+
     for (int i = 1; i < argc; ++i)
     {
         const std::string arg = argv[i];
@@ -175,7 +183,6 @@ bool StreetApplication::configure(int argc, char** argv)
         }
         else if (arg == "--dump-settings")
         {
-            loadSettingsFile();
             std::fputs(settings_.toJson().c_str(), stdout);
             return false;
         }
@@ -186,7 +193,6 @@ bool StreetApplication::configure(int argc, char** argv)
         }
     }
 
-    loadSettingsFile();
     if (!captureDirectory_.empty())
     {
         // A capture run has no user to look at an overlay, and the overlay would
@@ -366,8 +372,18 @@ void StreetApplication::Update(GameTime& gameTime)
 {
     Game::Update(gameTime);
 
-    const float dt = static_cast<float>(
-        gameTime.getElapsedGameTimeProperty().getTotalSecondsProperty());
+    // A capture or a one-shot screenshot advances the clock by a fixed step
+    // rather than by however long the last frame took. Without it the sky's
+    // clouds and the traffic are wherever wall-clock time left them, two runs of
+    // --capture produce two different pictures, and the screenshot comparison
+    // that scripts/check-screenshots.sh is built on means nothing: a quarter of
+    // the pixels in a view of the sky differed between runs of an unchanged
+    // build.
+    const bool deterministic = !captureDirectory_.empty() || !screenshotPath_.empty();
+    const float dt = deterministic
+                         ? 1.0f / 60.0f
+                         : static_cast<float>(
+                               gameTime.getElapsedGameTimeProperty().getTotalSecondsProperty());
     elapsedSeconds_ += dt;
 
     const KeyboardState keyboard = Keyboard::GetState();

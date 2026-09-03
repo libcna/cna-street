@@ -192,6 +192,11 @@ The command line, in full, is `--help`. The ones that matter:
 | `--dump-settings` | Print the effective settings as JSON and exit |
 | `--dump-shadow <file.png>` | Write the cascade atlas, which is the only way to tell an empty shadow map from a misplaced one |
 
+A capture or a one-shot screenshot runs the clock at a fixed step, so the frames
+it writes depend only on the seed and the frame count. That is what makes
+`scripts/check-screenshots.sh` a regression test rather than a diff of two
+different moments.
+
 ## Controls
 
 | | |
@@ -427,6 +432,25 @@ review.
 
 Two of them found live bugs on their first run.
 
+### Screenshot regression
+
+```sh
+./scripts/check-screenshots.sh
+```
+
+Renders every named viewpoint and compares it with the committed set in
+`docs/screenshots`. The scene comes from a seed, the viewpoints are fixed, and a
+capture advances the clock by a fixed step rather than by however long the last
+frame took, so two runs of an unchanged build are **bit-identical** — the sky's
+clouds and the traffic are where the frame count puts them, not where wall-clock
+time left them.
+
+The comparison is tolerant on purpose: it allows 2 % of pixels to differ by more
+than 8/255, because a driver update or an anti-aliasing decision moves
+individual pixels without changing the picture, and an image test that fails on
+those is an image test somebody turns off. `TOLERANCE`, `WIDTH`, `HEIGHT`,
+`BUILD_DIR` and `REFERENCE_DIR` are environment overrides.
+
 ## Performance
 
 The numbers below are from `--preset high` at 1280×720 on **Mesa llvmpipe** —
@@ -488,6 +512,8 @@ dependencies.lock           the upstream revisions this is verified against
 scripts/fetch-dependencies.sh
 street/                     the application and its static library
 tools/bake/                 the offline surface baker
+tools/compare/              the screenshot comparator
+scripts/check-screenshots.sh
 tests/                      the unit tests
 assets/config/render.json   a settings document
 assets/ATTRIBUTION.md       where the assets come from

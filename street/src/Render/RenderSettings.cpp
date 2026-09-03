@@ -39,9 +39,10 @@ void RenderSettings::applyPreset(QualityPreset preset)
         case QualityPreset::Low:
             // Everything a software rasteriser or an old integrated GPU can
             // still run at an interactive rate. Shadows survive -- a street
-            // without them stops being a street -- but at one coarse cascade.
+            // without them stops being a street -- but at two coarse cascades,
+            // which is the fewest CascadedShadowMap accepts.
             multiSample = 0;   renderScale = 0.72f;
-            shadows = true;    shadowCascades = 1;  shadowQuality = 0;
+            shadows = true;    shadowCascades = 2;  shadowQuality = 0;
             shadowDistance = 70.0f;  propShadowDistance = 34.0f;
             hdr = false;  bloom = false;  ssao = false;  fxaa = false;
             heightFog = true;  lightShafts = false;  ssr = false;  depthOfField = false;

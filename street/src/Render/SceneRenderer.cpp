@@ -143,10 +143,21 @@ void SceneRenderer::initialise(const RenderSettings& settings)
     {
         if (device_.SupportsShadowSamplingEXT())
         {
-            shadows_ = std::make_unique<CascadedShadowMap>(
-                device_, ToShadowQuality(settings.shadowQuality),
-                std::clamp(settings.shadowCascades, 1, CascadedShadowMap::kMaxCascades));
-            if (!shadows_->isSupported())
+            // Two is the floor, not one: CascadedShadowMap requires 2..4 and
+            // throws otherwise, and a settings file asking for one cascade
+            // should cost a cascade rather than the whole street.
+            try
+            {
+                shadows_ = std::make_unique<CascadedShadowMap>(
+                    device_, ToShadowQuality(settings.shadowQuality),
+                    std::clamp(settings.shadowCascades, 2, CascadedShadowMap::kMaxCascades));
+            }
+            catch (const std::exception& failure)
+            {
+                limitations_.emplace_back(std::string("no shadow map: ") + failure.what());
+                shadows_.reset();
+            }
+            if (shadows_ != nullptr && !shadows_->isSupported())
             {
                 limitations_.emplace_back("cascaded shadow maps are unavailable on this renderer");
                 shadows_.reset();

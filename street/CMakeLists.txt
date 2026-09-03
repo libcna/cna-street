@@ -40,3 +40,12 @@ target_compile_definitions(cna_street_core PUBLIC
 # with no GPU.
 add_executable(bake-assets "${CMAKE_SOURCE_DIR}/tools/bake/BakeAssets.cpp")
 target_link_libraries(bake-assets PRIVATE CnaStreet::Core CnaStreet::Warnings)
+
+# --- screenshot comparison ---------------------------------------------------
+# The other half of `--capture`: scripts/check-screenshots.sh renders every named
+# viewpoint and hands each pair to this. Deliberately standalone -- it needs a
+# PNG *decoder*, which nothing else in the project does, and linking the whole
+# street into a tool that reads two files would be the wrong shape.
+add_executable(compare-images "${CMAKE_SOURCE_DIR}/tools/compare/CompareImages.cpp")
+target_link_libraries(compare-images PRIVATE CnaStreet::Warnings)
+target_include_directories(compare-images SYSTEM PRIVATE "${CNA_ROOT_DIR}/third_party/stb")
