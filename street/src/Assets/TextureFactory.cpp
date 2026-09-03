@@ -1114,8 +1114,14 @@ SurfaceMaps TextureFactory::facadeGrid(int size, std::uint32_t seed, int bays,
                 // What is behind one pane, decided once per bay and per tile so
                 // a wall of them is a wall of *different* windows: some dark,
                 // some curtained, some catching the sky.
-                const float pick = value2(static_cast<float>(cx) + 0.5f, 0.5f, columns, seed + 31u);
-                const float lit  = value2(static_cast<float>(cx) + 0.5f, 1.5f, columns, seed + 47u);
+                // Sampled per *cell* with a direct hash, not with value noise.
+                // Value noise at a half-integer lattice point is the mean of
+                // four randoms, so it clusters hard around 0.5: every bay came
+                // out the same brightness and `lit > 0.72` almost never fired.
+                // A wall of identical windows was exactly what this was written
+                // to avoid.
+                const float pick = Noise::random2(cx, 0, seed + 31u);
+                const float lit  = Noise::random2(cx, 1, seed + 47u);
                 float glass = 0.055f + 0.075f * pick;
                 if (lit > 0.72f) glass = 0.34f + 0.18f * pick;          // curtain or blind
                 // The sky reflected in the upper part of the pane, which is what
@@ -1165,11 +1171,14 @@ SurfaceMaps TextureFactory::shopStock(int size, std::uint32_t seed)
             const float v = static_cast<float>(y) / static_cast<float>(size);
             const int cx = static_cast<int>(u * kCells);
             const int cy = static_cast<int>(v * kCells);
-            const float pick = value2(static_cast<float>(cx) + 0.5f, static_cast<float>(cy) + 0.5f,
-                                      kCells, seed + 3u);
-            const float bright =
-                0.28f + 0.52f * value2(static_cast<float>(cx) + 0.5f, static_cast<float>(cy) + 0.5f,
-                                       kCells, seed + 11u);
+            // Per-cell hashes rather than value noise: sampled at a
+            // half-integer lattice point, value noise returns the mean of four
+            // randoms and lands within a tenth of 0.5 almost every time. Six
+            // hues quantised from that pick only ever produced two of them,
+            // which is why a shelf of assorted packaging came out uniformly
+            // teal.
+            const float pick   = Noise::random2(cx, cy, seed + 3u);
+            const float bright = 0.28f + 0.52f * Noise::random2(cx, cy, seed + 11u);
             // Six hues around the wheel, which is what a shelf of packaging is.
             const float hue = std::floor(pick * 6.0f) / 6.0f;
             const float r = std::fabs(hue * 6.0f - 3.0f) - 1.0f;

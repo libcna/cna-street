@@ -486,7 +486,9 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
     MeshBuilder& fittings = collector.builder(&materials_.get(MaterialId::ShopFitting));
     fittings.setTileSize(1.0f);
     MeshBuilder& timber = collector.builder(&materials_.get(MaterialId::ShopTimber));
-    timber.setTileSize(1.1f);
+    // 0.62 m rather than 1.1: a shop counter is faced in boards, and a grain
+    // that repeats once every metre reads as tiger stripe rather than as wood.
+    timber.setTileSize(0.62f);
     MeshBuilder& stock = collector.builder(&materials_.get(MaterialId::ShopStock));
     stock.setTileSize(0.34f);
 
@@ -504,26 +506,36 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
                             + (height - 0.28f) * static_cast<float>(level)
                                   / static_cast<float>(levels);
             FacadeBox(fittings, frame, a, v, d, b, v + thickness, d + 0.42f);
+            // A *run* of packets rather than a packet, because the stock
+            // texture already draws the individual packets and their seams:
+            // one box per packet was ten thousand boxes across the street, a
+            // hundred and twenty thousand triangles, and through glass at three
+            // metres it looked exactly like this does. Geometry supplies what
+            // the texture cannot -- the breaks in the run, and the different
+            // depth and height each block sits at -- and nothing else.
             float u = a + 0.04f;
-            while (u < b - 0.12f)
+            while (u < b - 0.20f)
             {
-                const float w = rng.range(0.09f, 0.20f);
+                const float w = rng.range(0.26f, 0.56f);
                 if (u + w > b - 0.05f) break;
-                if (rng.chance(0.82f))
+                if (rng.chance(0.86f))
                     FacadeBox(stock, frame, u, v + thickness, d + rng.range(0.04f, 0.12f), u + w,
                               v + thickness + rng.range(0.13f, 0.24f), d + rng.range(0.26f, 0.38f));
-                u += w + rng.range(0.008f, 0.05f);
+                u += w + rng.range(0.02f, 0.09f);
             }
         }
         FacadeBox(fittings, frame, a, floor, d, a + thickness, floor + height, d + 0.42f);
         FacadeBox(fittings, frame, b - thickness, floor, d, b, floor + height, d + 0.42f);
     };
 
-    // A counter with a till on it.
+    // A counter with a till on it. The body is a faced panel and only the
+    // worktop is timber, which is what a shop counter is actually made of --
+    // and it keeps four metres of hardwood figure out of the middle of the
+    // window, where a grain that reads as oak on a bench reads as tiger stripe.
     const auto counter = [&](float a, float b, float d) {
         if (b - a < 0.5f) return;
-        FacadeBox(timber, frame, a, floor, d, b, floor + 0.92f, d + 0.62f);
-        FacadeBox(fittings, frame, a - 0.02f, floor + 0.92f, d - 0.03f, b + 0.02f, floor + 0.97f,
+        FacadeBox(fittings, frame, a, floor, d, b, floor + 0.92f, d + 0.62f);
+        FacadeBox(timber, frame, a - 0.02f, floor + 0.92f, d - 0.03f, b + 0.02f, floor + 0.97f,
                   d + 0.66f);
         const float tu = a + (b - a) * 0.62f;
         FacadeBox(fittings, frame, tu, floor + 0.97f, d + 0.16f, tu + 0.30f, floor + 1.13f,

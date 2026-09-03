@@ -468,6 +468,63 @@ void MaterialLibrary::build(std::uint32_t seed)
         materials_[static_cast<std::size_t>(MaterialId::ShopGlazing)] = shop;
     }
     {
+        // How much sky a surface inside a shop can see, written into the
+        // occlusion channel of its ORM map.
+        //
+        // A room behind a shopfront is enclosed, and this renderer has no
+        // room-scale occlusion: SSAO is a contact effect measured in
+        // centimetres, and the cascades only carry what the sun casts. So an
+        // interior surface takes the *whole* sky ambient and the whole IBL, as
+        // though the walls around it were not there, and a shop interior comes
+        // out the same brightness as the pavement outside it. That was the
+        // single loudest thing about the first version of these rooms: a wall
+        // of milky white behind every pane of glass.
+        //
+        // Occlusion is exactly the right lever. `PbrEffect` multiplies both
+        // ambient terms by it and leaves direct light alone, so a low value
+        // says "this face sees very little sky" without touching the ceiling
+        // strip that is actually lighting the room.
+        //
+        // The fractions are graded by how deep into the room each surface
+        // lives, which is the nearest a tiling material can get to the gradient
+        // a real shopfront has: the plinth and the front fittings sit a metre
+        // behind a wall of glass and see a great deal of sky, the rear wall
+        // sees almost none. A retail interior is also *lit*, brightly and on
+        // purpose, so none of these is as dark as a domestic room behind the
+        // same glass would be.
+        // The second half of the same problem is *colour*. Having correctly
+        // decided that a shop interior sees almost no sky, the room is then lit
+        // by what little sky it does see -- and this street's sky ambient is
+        // (0.26, 0.40, 0.59), strongly blue. Every packet on every shelf came
+        // out a shade of navy, and the hue wheel the stock texture goes to the
+        // trouble of drawing was invisible under it.
+        //
+        // A real shop is lit by warm fluorescent tubes and lit brightly. The
+        // ceiling strips here are emissive geometry, which glows but emits
+        // nothing, and `PbrEffect` carries one punctual light per draw -- not
+        // thirty-nine. So the room's light is *baked*, which is what a light map
+        // is and has always been: each interior surface gets an emissive map
+        // that is a copy of its own albedo, and a warm emissive factor scaled
+        // by how much of the ceiling that surface can see. `factor * albedo` is
+        // exactly "warm light bouncing off this colour", so a red packet stays
+        // red and a green one green, and the stock reads as assorted packaging
+        // instead of as a wall of denim.
+        const auto enclose = [](Assets::SurfaceMaps maps, float sky, float lit) {
+            maps.orm.forEach([sky](int, int, float* px) { px[0] *= sky; });
+            if (lit > 0.0f)
+            {
+                maps.emissive = maps.albedo;
+                // Opaque: the alpha of an emissive map is not read, and leaving
+                // the albedo's mask in it is a trap for whoever reads this next.
+                maps.emissive.forEach([](int, int, float* px) { px[3] = 1.0f; });
+            }
+            return maps;
+        };
+        /// The warm white of a retail fluorescent, as an emissive multiplier.
+        const auto shopLight = [](float strength) {
+            return Vector3(1.00f, 0.93f, 0.80f) * strength;
+        };
+
         Material interior = pbr(0.90f, 0.0f);
         interior.emissiveFactor = Vector3(1.0f, 1.0f, 1.0f);
         install(MaterialId::Interior, "interior",
@@ -478,10 +535,15 @@ void MaterialLibrary::build(std::uint32_t seed)
         // shop interior is a bright box and dark fittings behind glass vanish.
         Material fitting = pbr(0.62f, 0.0f);
         fitting.baseColour = Srgb(212, 209, 203);
+        // A shelf unit stands under the tubes and takes the most of them.
+        fitting.emissiveFactor = shopLight(0.38f);
         float fittingRgb[3];
         Rgb(fittingRgb, fitting.baseColour);
         install(MaterialId::ShopFitting, "shop-fitting",
-                [&] { return TextureFactory::paintedMetal(kSmall, s + 61u, fittingRgb, 0.62f); },
+                [&] {
+                    return enclose(TextureFactory::paintedMetal(kSmall, s + 61u, fittingRgb, 0.62f),
+                                   0.44f, 1.0f);
+                },
                 fitting);
 
         // The product on the shelves. One noisy, saturated surface for all of
@@ -489,8 +551,9 @@ void MaterialLibrary::build(std::uint32_t seed)
         // nothing else, and giving each shop its own palette would cost sixteen
         // textures to say something nobody can resolve.
         Material stock = pbr(0.68f, 0.0f);
+        stock.emissiveFactor = shopLight(0.48f);
         install(MaterialId::ShopStock, "shop-stock",
-                [&] { return TextureFactory::shopStock(kSmall, s + 62u); }, stock);
+                [&] { return enclose(TextureFactory::shopStock(kSmall, s + 62u), 0.46f, 1.0f); }, stock);
 
         // A lit ceiling panel. Emissive rather than a real light: a punctual
         // light per shop would be forty of them in the clustered set to
@@ -513,22 +576,35 @@ void MaterialLibrary::build(std::uint32_t seed)
         // cascade atlas from two hundred metres.
         Material shopWall = pbr(0.86f, 0.0f);
         shopWall.baseColour  = Srgb(196, 194, 188);
+        shopWall.emissiveFactor = shopLight(0.19f);
         shopWall.castsShadow = false;
         const float shopWallRgb[3] = {1.0f, 1.0f, 1.0f};
+        // Painted plasterboard, not exterior render. The plaster generator's
+        // mottle and its rain streaks are right on a wall that has weather on
+        // it and wrong on a lit interior, where at this brightness they read as
+        // flies on the paintwork.
         install(MaterialId::ShopWall, "shop-wall",
-                [&] { return TextureFactory::plaster(kMedium, s + 63u, shopWallRgb, 0.55f); },
+                [&] {
+                    return enclose(TextureFactory::paintedMetal(kMedium, s + 63u, shopWallRgb,
+                                                                0.86f),
+                                   0.26f, 1.0f);
+                },
                 shopWall);
 
         Material shopFloor = pbr(0.55f, 0.0f);
         shopFloor.baseColour  = Srgb(168, 164, 158);
+        shopFloor.emissiveFactor = shopLight(0.22f);
         shopFloor.castsShadow = false;
         install(MaterialId::ShopFloor, "shop-floor",
-                [&] { return TextureFactory::concretePaving(kMedium, s + 64u); }, shopFloor);
+                [&] { return enclose(TextureFactory::concretePaving(kMedium, s + 64u), 0.30f, 1.0f); },
+                shopFloor);
 
         Material shopTimber = pbr(0.52f, 0.0f);
+        shopTimber.emissiveFactor = shopLight(0.24f);
         shopTimber.castsShadow = false;
         install(MaterialId::ShopTimber, "shop-timber",
-                [&] { return TextureFactory::hardwood(kSmall, s + 65u); }, shopTimber);
+                [&] { return enclose(TextureFactory::hardwood(kSmall, s + 65u), 0.36f, 1.0f); },
+                shopTimber);
 
         Material shopScreen = pbr(0.16f, 0.0f);
         shopScreen.baseColour  = Srgb(16, 17, 20);
