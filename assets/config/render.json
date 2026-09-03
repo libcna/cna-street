@@ -1,0 +1,46 @@
+{
+    "windowWidth": 1600,
+    "windowHeight": 900,
+    "vsync": true,
+    "multiSample": 4,
+    "renderScale": 1.0,
+
+    "verticalFovDegrees": 63.0,
+    "nearPlane": 0.12,
+    "farPlane": 620.0,
+    "mouseSensitivity": 0.0022,
+    "moveSpeed": 7.0,
+
+    "shadows": true,
+    "shadowCascades": 4,
+    "shadowQuality": 2,
+    "shadowDistance": 190.0,
+    "shadowSplitLambda": 0.86,
+    "shadowDepthBias": 0.006,
+
+    "sunElevationDegrees": 48.0,
+    "sunAzimuthDegrees": 250.0,
+    "sunIntensity": 3.0,
+    "imageBasedLighting": true,
+    "skyTurbidity": 2.9,
+    "clouds": true,
+    "cloudCoverage": 0.45,
+
+    "hdr": true,
+    "exposure": 0.42,
+    "tonemap": 2,
+    "bloom": true,
+    "ssao": true,
+    "fxaa": true,
+    "heightFog": true,
+
+    "traffic": true,
+    "pedestrians": true,
+    "vegetation": true,
+    "streetFurniture": true,
+    "debugOverlay": true,
+    "propCullDistance": 210.0,
+    "propShadowDistance": 74.0,
+
+    "seed": 20260903
+}
