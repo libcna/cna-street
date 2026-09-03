@@ -664,6 +664,10 @@ materials, and alpha masking instead of blending everywhere except glass.
   on the road are geometry. That is a light map, and it reads at civil twilight;
   it would not survive a camera walking under a single lamp on an empty road.
 
+Most of these need a change inside CNA before they can be lifted.
+`docs/cna-followup-after-framework-work.md` says which ones, in what order, and
+what this project does once each is fixed.
+
 ## Repository layout
 
 ```
@@ -680,6 +684,8 @@ assets/config/render.json   a settings document
 assets/ATTRIBUTION.md       where the assets come from
 docs/cna-audit.md           what CNA offers, from reading it
 docs/cna-findings.md        what did not work, and what was done about it
+docs/cna-followup-after-framework-work.md
+                            the CNA-side work those findings imply, deferred
 docs/design-notes.md        the decisions behind the code
 docs/patches/               changes contributed back to CNA, with a README
 docs/screenshots/           the named viewpoints
