@@ -214,7 +214,12 @@ void BuildingBuilder::build(const Plot& plot, int plotIndex, GeometryCollector& 
             buildFacade(plot, plotIndex, frame, palette, collector, rng, anchors,
                         facing == plot.primary);
         else
-            buildPlainWall(frame, palette, collector, rng, /*addWindows=*/false);
+            // Windows even on the elevations that do not front a street. Most of
+            // these are party walls nobody can see, but the ones at the end of a
+            // terrace and the rear elevations across a courtyard are visible from
+            // the junction and from any camera above eye level, and a seventeen
+            // metre blank wall is the loudest thing in the picture.
+            buildPlainWall(frame, palette, collector, rng, /*addWindows=*/true);
     }
 
     buildRoof(plot, palette, collector, rng);
@@ -249,17 +254,44 @@ void BuildingBuilder::buildPlainWall(const FacadeFrame& frame, const Palette& pa
     Panel(wall, frame, 0.0f, M::kCurbHeight + M::kPlinthHeight, frame.width, frame.height, 0.0f);
 
     if (!addWindows) return;
-    // A rear elevation: a sparse grid of small openings, no reveals, no sills.
+    // A rear or flank elevation: plainer than a street front -- smaller openings,
+    // no architrave, no balcony -- but a real opening all the same, recessed with
+    // a frame and a sill. A pane painted flat on the wall reads as a poster.
     const int bays = std::max(1, static_cast<int>(frame.width / 3.4f));
     const float pitch = frame.width / static_cast<float>(bays);
+    const float reveal = 0.10f;
+    MeshBuilder& sash = collector.builder(palette.frame);
+    sash.setTileSize(0.5f);
+    MeshBuilder& glass = collector.builder(palette.glass);
+    glass.setTileSize(1.4f);
+    MeshBuilder& trim = collector.builder(palette.trim);
+    trim.setTileSize(1.0f);
+
     for (int bay = 0; bay < bays; ++bay)
-        for (float v = M::kGroundFloorHeight; v < frame.height - 1.6f; v += M::kUpperFloorHeight)
+        for (float v = M::kGroundFloorHeight; v < frame.height - 1.9f; v += M::kUpperFloorHeight)
         {
-            if (!rng.chance(0.7f)) continue;
-            const float u = (static_cast<float>(bay) + 0.5f) * pitch - 0.45f;
-            MeshBuilder& glass = collector.builder(palette.interior);
-            glass.setUvMode(UvMode::Explicit);
-            Panel(glass, frame, u, v + 0.9f, u + 0.9f, v + 2.2f, 0.04f);
+            if (!rng.chance(0.72f)) continue;
+            const float u0 = (static_cast<float>(bay) + 0.5f) * pitch - 0.50f;
+            const float u1 = u0 + 1.00f;
+            const float v0 = v + 0.85f;
+            const float v1 = v0 + 1.35f;
+
+            wall.addQuad(frame.at(u0, v0, 0.0f), frame.at(u0, v0, -reveal),
+                         frame.at(u0, v1, -reveal), frame.at(u0, v1, 0.0f));
+            wall.addQuad(frame.at(u1, v0, -reveal), frame.at(u1, v0, 0.0f),
+                         frame.at(u1, v1, 0.0f), frame.at(u1, v1, -reveal));
+            wall.addQuad(frame.at(u0, v1, 0.0f), frame.at(u0, v1, -reveal),
+                         frame.at(u1, v1, -reveal), frame.at(u1, v1, 0.0f));
+            wall.addQuad(frame.at(u0, v0, -reveal), frame.at(u0, v0, 0.0f),
+                         frame.at(u1, v0, 0.0f), frame.at(u1, v0, -reveal));
+
+            const float glassDepth = -reveal + 0.04f;
+            FacadeBox(sash, frame, u0, v0, glassDepth - 0.02f, u0 + 0.05f, v1, glassDepth + 0.02f);
+            FacadeBox(sash, frame, u1 - 0.05f, v0, glassDepth - 0.02f, u1, v1, glassDepth + 0.02f);
+            FacadeBox(sash, frame, u0, v0, glassDepth - 0.02f, u1, v0 + 0.05f, glassDepth + 0.02f);
+            FacadeBox(sash, frame, u0, v1 - 0.05f, glassDepth - 0.02f, u1, v1, glassDepth + 0.02f);
+            Panel(glass, frame, u0 + 0.02f, v0 + 0.02f, u1 - 0.02f, v1 - 0.02f, glassDepth);
+            FacadeBox(trim, frame, u0 - 0.04f, v0 - 0.07f, -reveal, u1 + 0.04f, v0, 0.04f);
         }
 }
 
@@ -348,23 +380,33 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
 {
     const float depth = -rng.range(3.2f, 5.0f);   // into the building
 
-    MeshBuilder& room = collector.builder(palette.interior);
+    // Plaster, not the interior atlas. The atlas is a four-by-four grid of *whole
+    // rooms*, drawn one cell per window; stretched across the back wall of a real
+    // modelled room it showed all sixteen at once, and every shopfront on the
+    // street had a wall of thumbnail rooms behind the glass.
+    MeshBuilder& room = collector.builder(palette.wall);
     room.setUvMode(UvMode::Explicit);
-    // Inward-facing: the winding is the reverse of an exterior panel, because
-    // these surfaces are only ever seen from the street side of the glass.
-    // Back wall.
-    room.addQuadUnitUv(frame.at(u1, floor, depth), frame.at(u0, floor, depth),
-                       frame.at(u0, ceiling, depth), frame.at(u1, ceiling, depth));
-    // Side walls.
-    room.addQuadUnitUv(frame.at(u0, floor, depth), frame.at(u0, floor, 0.0f),
-                       frame.at(u0, ceiling, 0.0f), frame.at(u0, ceiling, depth));
-    room.addQuadUnitUv(frame.at(u1, floor, 0.0f), frame.at(u1, floor, depth),
-                       frame.at(u1, ceiling, depth), frame.at(u1, ceiling, 0.0f));
-    // Ceiling and floor.
-    room.addQuadUnitUv(frame.at(u0, ceiling, depth), frame.at(u0, ceiling, 0.0f),
-                       frame.at(u1, ceiling, 0.0f), frame.at(u1, ceiling, depth));
-    room.addQuadUnitUv(frame.at(u0, floor, 0.0f), frame.at(u0, floor, depth),
-                       frame.at(u1, floor, depth), frame.at(u1, floor, 0.0f));
+    // Inward-facing, and stated as such rather than wound by hand. Deriving the
+    // corner order for five faces of a box in façade coordinates is exactly the
+    // sort of thing that comes out right for three of them: the first version of
+    // this room had its back wall and ceiling culled, so a shopper looking in
+    // saw the sky through the back of the shop.
+    const Vector3 inU = frame.right;   // toward u1
+    const Vector3 inV = frame.up;
+    const Vector3 inW = frame.out;     // toward the street
+    // Back wall, facing the street.
+    room.addQuadFacingUv(frame.at(u0, floor, depth), frame.at(u1, floor, depth),
+                         frame.at(u1, ceiling, depth), frame.at(u0, ceiling, depth), inW);
+    // Side walls, each facing across the room.
+    room.addQuadFacingUv(frame.at(u0, floor, depth), frame.at(u0, floor, 0.0f),
+                         frame.at(u0, ceiling, 0.0f), frame.at(u0, ceiling, depth), inU);
+    room.addQuadFacingUv(frame.at(u1, floor, depth), frame.at(u1, floor, 0.0f),
+                         frame.at(u1, ceiling, 0.0f), frame.at(u1, ceiling, depth), inU * -1.0f);
+    // Ceiling looking down, floor looking up.
+    room.addQuadFacingUv(frame.at(u0, ceiling, depth), frame.at(u1, ceiling, depth),
+                         frame.at(u1, ceiling, 0.0f), frame.at(u0, ceiling, 0.0f), inV * -1.0f);
+    room.addQuadFacingUv(frame.at(u0, floor, depth), frame.at(u1, floor, depth),
+                         frame.at(u1, floor, 0.0f), frame.at(u0, floor, 0.0f), inV);
 
     // A counter and a couple of display units, as silhouettes. Through glass at
     // three metres that is all a shop interior needs to be.
@@ -575,24 +617,43 @@ void BuildingBuilder::buildShopfront(const Plot& plot, int plotIndex, const Faca
     {
         MeshBuilder& awning = collector.builder(&materials_.get(MaterialId::Awning));
         awning.setTileSize(0.9f);
-        const float projection = rng.range(0.9f, 1.6f);
+        const float projection = rng.range(0.9f, 1.5f);
         const float top = head - 0.04f;
         const float front = top - 0.38f;
-        // The canopy, its valance, and the two arms.
-        awning.addQuad(frame.at(u0, top, 0.05f), frame.at(u1, top, 0.05f),
-                       frame.at(u1, front, projection), frame.at(u0, front, projection));
-        awning.addQuad(frame.at(u0, front, projection), frame.at(u1, front, projection),
-                       frame.at(u1, front - 0.24f, projection), frame.at(u0, front - 0.24f,
-                                                                        projection));
+        // A retractable awning comes in standard widths and is fitted per bay,
+        // so a 20 m shopfront gets one over part of it rather than one 20 m
+        // canopy -- which is what the first version built, and it roofed the
+        // whole footway.
+        const float span = std::min(u1 - u0, 4.6f);
+        const float a0 = (u0 + u1) * 0.5f - span * 0.5f;
+        const float a1 = a0 + span;
+
+        // Canopy, underside and valance, each told which way it faces: a canopy
+        // wound the wrong way is a dark slab over the footway in full sun.
+        const Vector3 upAndOut = frame.up * 0.86f + frame.out * 0.51f;
+        awning.addQuadFacing(frame.at(a0, top, 0.05f), frame.at(a1, top, 0.05f),
+                             frame.at(a1, front, projection), frame.at(a0, front, projection),
+                             upAndOut);
+        awning.addQuadFacing(frame.at(a0, top - 0.03f, 0.05f), frame.at(a1, top - 0.03f, 0.05f),
+                             frame.at(a1, front - 0.03f, projection),
+                             frame.at(a0, front - 0.03f, projection), upAndOut * -1.0f);
+        awning.addQuadFacing(frame.at(a0, front, projection), frame.at(a1, front, projection),
+                             frame.at(a1, front - 0.24f, projection),
+                             frame.at(a0, front - 0.24f, projection), frame.out);
         // The front bar the canopy rolls onto, and the box the roller sits in
         // against the wall. Real retractable awnings have both, and they are what
         // keeps the canopy from reading as a floating triangle.
         MeshBuilder& bar = collector.builder(palette.metal);
         bar.setTileSize(0.3f);
-        bar.addCylinderBetween(frame.at(u0 - 0.06f, front - 0.30f, projection),
-                               frame.at(u1 + 0.06f, front - 0.30f, projection), 0.035f, 8);
-        bar.addBox(frame.at(u0 - 0.06f, top - 0.02f, 0.02f) - Vector3(0.09f, 0.09f, 0.09f),
-                   frame.at(u1 + 0.06f, top + 0.16f, 0.24f) + Vector3(0.09f, 0.09f, 0.09f));
+        bar.addCylinderBetween(frame.at(a0 - 0.06f, front - 0.28f, projection),
+                               frame.at(a1 + 0.06f, front - 0.28f, projection), 0.035f, 8);
+        bar.addBox(frame.at(a0 - 0.06f, top - 0.02f, 0.02f) - Vector3(0.08f, 0.08f, 0.08f),
+                   frame.at(a1 + 0.06f, top + 0.14f, 0.20f) + Vector3(0.08f, 0.08f, 0.08f));
+        // The folding arms, which is what a viewer reads as "this is an awning"
+        // rather than "this is a wedge".
+        for (const float u : {a0 + 0.14f, a1 - 0.14f})
+            bar.addCylinderBetween(frame.at(u, top - 0.10f, 0.06f),
+                                   frame.at(u, front - 0.24f, projection - 0.03f), 0.022f, 6);
     }
     (void)plot;
 }
@@ -1133,11 +1194,17 @@ void BuildingBuilder::buildRoof(const Plot& plot, const Palette& palette,
             const float t = (static_cast<float>(i) + 1.0f) / (static_cast<float>(stacks) + 1.0f);
             const float x = ridgeAlongX ? plot.minX + t * w : (plot.minX + plot.maxX) * 0.5f;
             const float z = ridgeAlongX ? (plot.minZ + plot.maxZ) * 0.5f : plot.minZ + t * d;
+            // The same numbers the roof itself is built from. They used to be
+            // re-derived here, and the mansard's `span * 0.38` bore no relation
+            // to the capped deck the roof generator actually builds: on a 26 m
+            // block that put the stacks five metres above a roof they were
+            // supposed to be sitting on.
             const float rise = plot.roof == RoofStyle::Pitched
                                    ? std::min(span * 0.5f * std::tan(
                                                   MathHelper::ToRadians(M::kRoofPitchDegrees)),
                                               4.6f)
-                                   : span * 0.38f;
+                                   : std::min(span * 0.28f, 3.1f)
+                                         + std::min(span * 0.10f, 1.15f);
             // The stack passes through the roof; what shows is the metre or so
             // above the ridge, not a five-metre tower.
             const float top = eaves + rise + rng.range(0.75f, 1.25f);
