@@ -235,9 +235,16 @@ void SceneRenderer::applySettings(const RenderSettings& settings)
     p.setHeightFogFalloff(settings.fogFalloff);
     p.setHeightFogBaseHeight(0.0f);
 
-    p.setLightShaftIntensity(settings.lightShafts ? 0.55f : 0.0f);
-    p.setLightShaftThreshold(0.82f);
-    p.setLightShaftDecay(0.965f);
+    // Light shafts, tuned to be shafts rather than ghosts. The pass has a fixed
+    // sample count, so a decay of 0.965 spreads those samples over most of the
+    // screen and each one lands as a discrete smeared copy of whatever seeded
+    // it: at 0.82 the threshold caught the bright window frames of a sunlit
+    // façade, and a row of ghost windows climbed diagonally across the sky. The
+    // sun disc and the hottest speculars are what should seed a shaft, and the
+    // shaft should be short enough for the samples to overlap.
+    p.setLightShaftIntensity(settings.lightShafts ? 0.32f : 0.0f);
+    p.setLightShaftThreshold(0.995f);
+    p.setLightShaftDecay(0.86f);
 
     // Sorted rather than order-independent: the transparent set here iswindow glass
     // and car glazing, which is convex, sparse and already sorted well by
