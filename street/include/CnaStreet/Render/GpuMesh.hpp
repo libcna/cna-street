@@ -30,6 +30,14 @@ class GpuMesh
 public:
     GpuMesh(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
             const Geometry::MeshData& data, std::string name);
+
+    /// Borrows the buffers of a mesh part that already exists on the GPU: one
+    /// piece of a `Model` the content pipeline produced. The part and the model
+    /// behind it must outlive this. Used for imported glTF, which arrives as
+    /// `ModelMeshPart`s with exactly the vertex layout this project uses --
+    /// stride 48, position/normal/tangent/UV -- so nothing has to be copied.
+    GpuMesh(Microsoft::Xna::Framework::Graphics::ModelMeshPart& part,
+            const Microsoft::Xna::Framework::BoundingBox& bounds, std::string name);
     ~GpuMesh();
 
     GpuMesh(const GpuMesh&) = delete;
@@ -41,7 +49,7 @@ public:
 
     [[nodiscard]] Microsoft::Xna::Framework::Graphics::ModelMeshPart* part() const
     {
-        return part_.get();
+        return part_;
     }
     [[nodiscard]] const Microsoft::Xna::Framework::BoundingBox& bounds() const { return bounds_; }
     [[nodiscard]] const Microsoft::Xna::Framework::BoundingSphere& sphere() const
@@ -56,9 +64,15 @@ public:
 
 private:
     std::string name_;
-    std::unique_ptr<Microsoft::Xna::Framework::Graphics::VertexBuffer>  vertexBuffer_;
-    std::unique_ptr<Microsoft::Xna::Framework::Graphics::IndexBuffer>   indexBuffer_;
-    std::unique_ptr<Microsoft::Xna::Framework::Graphics::ModelMeshPart> part_;
+    /// Null when the buffers are borrowed from a `ModelMeshPart`.
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::VertexBuffer>  ownedVertexBuffer_;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::IndexBuffer>   ownedIndexBuffer_;
+    Microsoft::Xna::Framework::Graphics::VertexBuffer* vertexBuffer_ = nullptr;
+    Microsoft::Xna::Framework::Graphics::IndexBuffer*  indexBuffer_  = nullptr;
+    int vertexOffset_ = 0;
+    int startIndex_   = 0;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::ModelMeshPart> ownedPart_;
+    Microsoft::Xna::Framework::Graphics::ModelMeshPart* part_ = nullptr;
     Microsoft::Xna::Framework::BoundingBox    bounds_;
     Microsoft::Xna::Framework::BoundingSphere sphere_;
     int         triangleCount_ = 0;

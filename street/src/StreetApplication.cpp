@@ -2,6 +2,7 @@
 #include "CnaStreet/StreetApplication.hpp"
 
 #include "CnaStreet/Render/DebugOverlay.hpp"
+#include "CnaStreet/Assets/ModelLibrary.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
 
 #include "Microsoft/Xna/Framework/Content/ContentManager.hpp"
@@ -280,11 +281,14 @@ void StreetApplication::LoadContent()
         CNA::Logger::Info("cna-street: content root " + contentRoot.string());
     }
 
+    models_ = std::make_unique<ModelLibrary>(device, *materials_);
+    models_->setContentSource(content_.get());
+
     renderer_  = std::make_unique<SceneRenderer>(device, *materials_);
     renderer_->resize(width, height);
     renderer_->initialise(settings_);
 
-    scene_ = std::make_unique<CityScene>(device, *renderer_, *materials_);
+    scene_ = std::make_unique<CityScene>(device, *renderer_, *materials_, *models_);
     scene_->build(settings_);
 
     camera_.setPerspective(MathHelper::ToRadians(settings_.verticalFovDegrees),

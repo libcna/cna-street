@@ -26,6 +26,7 @@ namespace CnaStreet {
 class CityScene;
 class DebugOverlay;
 class MaterialLibrary;
+class ModelLibrary;
 class SceneRenderer;
 
 /**
@@ -61,6 +62,7 @@ private:
 
     std::unique_ptr<Microsoft::Xna::Framework::GraphicsDeviceManager> graphics_;
     std::unique_ptr<MaterialLibrary> materials_;
+    std::unique_ptr<ModelLibrary>    models_;
     std::unique_ptr<SceneRenderer> renderer_;
     std::unique_ptr<CityScene>     scene_;
     std::unique_ptr<DebugOverlay>  overlay_;

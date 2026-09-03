@@ -39,8 +39,14 @@ enum class MaterialId
     RenderCream, RenderOchre, RenderSage, RenderGrey, RenderTerracotta, RenderBlue,
     RenderWhite,
     Ashlar, ConcretePanel,
+    /// Whole storeys of a building as one tiling image, for the blocks beyond
+    /// the modelled frontage. Six of them so the district is not one building.
+    ContextFacade0, ContextFacade1, ContextFacade2,
+    ContextFacade3, ContextFacade4, ContextFacade5,
     RoofTile, RoofFelt, RoofZinc,
     Glazing, ShopGlazing, Interior,
+    ShopFitting, ShopStock, ShopCeilingLight, ShopWall, ShopFloor, ShopTimber,
+    ShopScreen,
     FrameWhite, FrameDark, FrameBronze,
     DoorGreen, DoorRed, DoorBlue, DoorOak,
     ShopFascia, Awning,

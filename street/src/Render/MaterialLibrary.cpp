@@ -380,6 +380,37 @@ void MaterialLibrary::build(std::uint32_t seed)
         // Precast cladding is a large flat panel, not paving: keep the aggregate
         // and weathering but scale the joints out of sight with a large tile.
         materials_[static_cast<std::size_t>(MaterialId::ConcretePanel)].roughness = 0.70f;
+
+        // The district beyond the modelled frontage. Six façades as *images* of
+        // a storey rather than as geometry: at 200 m a modelled reveal is a
+        // sub-pixel and a painted one is indistinguishable, but the difference
+        // between having windows and not having them is the whole picture --
+        // the first version's blank massing was the loudest thing in every
+        // aerial shot.
+        struct ContextFacade { MaterialId id; const char* name; Vector3 wall; int bays; };
+        const ContextFacade contextFacades[] = {
+            {MaterialId::ContextFacade0, "context-facade-0", Srgb(206, 199, 184), 4},
+            {MaterialId::ContextFacade1, "context-facade-1", Srgb(178, 172, 166), 5},
+            {MaterialId::ContextFacade2, "context-facade-2", Srgb(150, 108, 84),  4},
+            {MaterialId::ContextFacade3, "context-facade-3", Srgb(196, 186, 160), 6},
+            {MaterialId::ContextFacade4, "context-facade-4", Srgb(168, 174, 170), 5},
+            {MaterialId::ContextFacade5, "context-facade-5", Srgb(214, 208, 198), 4},
+        };
+        for (const ContextFacade& facade : contextFacades)
+        {
+            Material material = pbr(0.72f, 0.0f);
+            float wall[3];
+            Rgb(wall, facade.wall);
+            const int bays = facade.bays;
+            const std::uint32_t facadeSeed =
+                s + 90u + static_cast<std::uint32_t>(&facade - contextFacades);
+            install(facade.id, facade.name,
+                    [&, bays, facadeSeed] {
+                        float local[3] = {wall[0], wall[1], wall[2]};
+                        return TextureFactory::facadeGrid(kMedium, facadeSeed, bays, local);
+                    },
+                    material);
+        }
     }
 
     install(MaterialId::RoofTile, "roof-tile", [&] { return TextureFactory::roofTile(kMedium, s + 16u); },
@@ -416,6 +447,75 @@ void MaterialLibrary::build(std::uint32_t seed)
         interior.emissiveFactor = Vector3(1.0f, 1.0f, 1.0f);
         install(MaterialId::Interior, "interior",
                 [&] { return TextureFactory::interiorAtlas(kLarge, s + 20u); }, interior);
+
+        // Shop fittings: the painted MDF and powder-coated steel that shelving,
+        // counters and display plinths are actually made of. Pale, because a
+        // shop interior is a bright box and dark fittings behind glass vanish.
+        Material fitting = pbr(0.62f, 0.0f);
+        fitting.baseColour = Srgb(212, 209, 203);
+        float fittingRgb[3];
+        Rgb(fittingRgb, fitting.baseColour);
+        install(MaterialId::ShopFitting, "shop-fitting",
+                [&] { return TextureFactory::paintedMetal(kSmall, s + 61u, fittingRgb, 0.62f); },
+                fitting);
+
+        // The product on the shelves. One noisy, saturated surface for all of
+        // it: at the distance a shop window is looked into, stock is colour and
+        // nothing else, and giving each shop its own palette would cost sixteen
+        // textures to say something nobody can resolve.
+        Material stock = pbr(0.68f, 0.0f);
+        install(MaterialId::ShopStock, "shop-stock",
+                [&] { return TextureFactory::shopStock(kSmall, s + 62u); }, stock);
+
+        // A lit ceiling panel. Emissive rather than a real light: a punctual
+        // light per shop would be forty of them in the clustered set to
+        // illuminate a room nobody stands in, and what the street actually sees
+        // is the *brightness* of the soffit through the glass.
+        Material ceiling = pbr(0.55f, 0.0f);
+        ceiling.baseColour     = Vector3(0.92f, 0.90f, 0.86f);
+        ceiling.emissiveFactor = Vector3(2.30f, 2.10f, 1.80f);
+        float ceilingRgb[3];
+        Rgb(ceilingRgb, ceiling.baseColour);
+        install(MaterialId::ShopCeilingLight, "shop-ceiling-light",
+                [&] { return TextureFactory::flat(8, ceilingRgb, 0.55f, 0.0f); }, ceiling);
+
+        // The room itself: walls, floor, joinery and the dark of a screen.
+        // Separate entries rather than the façade's own materials, and the
+        // reason is not colour -- it is that a shop interior is an enclosed box
+        // whose shadow nothing outside can ever see, and whose geometry is
+        // invisible past the width of the street. Sharing a material with the
+        // wall in front of it would mean drawing a wall of shelving into the
+        // cascade atlas from two hundred metres.
+        Material shopWall = pbr(0.86f, 0.0f);
+        shopWall.baseColour  = Srgb(196, 194, 188);
+        shopWall.castsShadow = false;
+        const float shopWallRgb[3] = {1.0f, 1.0f, 1.0f};
+        install(MaterialId::ShopWall, "shop-wall",
+                [&] { return TextureFactory::plaster(kMedium, s + 63u, shopWallRgb, 0.55f); },
+                shopWall);
+
+        Material shopFloor = pbr(0.55f, 0.0f);
+        shopFloor.baseColour  = Srgb(168, 164, 158);
+        shopFloor.castsShadow = false;
+        install(MaterialId::ShopFloor, "shop-floor",
+                [&] { return TextureFactory::concretePaving(kMedium, s + 64u); }, shopFloor);
+
+        Material shopTimber = pbr(0.52f, 0.0f);
+        shopTimber.castsShadow = false;
+        install(MaterialId::ShopTimber, "shop-timber",
+                [&] { return TextureFactory::hardwood(kSmall, s + 65u); }, shopTimber);
+
+        Material shopScreen = pbr(0.16f, 0.0f);
+        shopScreen.baseColour  = Srgb(16, 17, 20);
+        shopScreen.castsShadow = false;
+        float screenRgb[3];
+        Rgb(screenRgb, shopScreen.baseColour);
+        install(MaterialId::ShopScreen, "shop-screen",
+                [&] { return TextureFactory::flat(8, screenRgb, 0.16f, 0.0f); }, shopScreen);
+
+        materials_[static_cast<std::size_t>(MaterialId::ShopFitting)].castsShadow = false;
+        materials_[static_cast<std::size_t>(MaterialId::ShopStock)].castsShadow = false;
+        materials_[static_cast<std::size_t>(MaterialId::ShopCeilingLight)].castsShadow = false;
     }
 
     // ---------------------------------------------------------------------

@@ -28,21 +28,24 @@ GpuMesh::GpuMesh(GraphicsDevice& device, const Geometry::MeshData& data, std::st
     vertexCount_   = static_cast<int>(data.vertices.size());
     triangleCount_ = static_cast<int>(data.indices.size() / 3);
 
-    vertexBuffer_ = std::make_unique<VertexBuffer>(
+    ownedVertexBuffer_ = std::make_unique<VertexBuffer>(
         device, Geometry::Vertex::getVertexDeclarationStatic(), vertexCount_,
         BufferUsage::WriteOnly);
-    vertexBuffer_->SetData(data.vertices.data(), vertexCount_);
+    ownedVertexBuffer_->SetData(data.vertices.data(), vertexCount_);
+    vertexBuffer_ = ownedVertexBuffer_.get();
 
     // 32-bit indices unconditionally. The merged façade batches run to hundreds
     // of thousands of vertices, and choosing per mesh would mean two code paths
     // for a saving that is a rounding error next to the vertex data itself.
-    indexBuffer_ = std::make_unique<IndexBuffer>(device, IndexElementSize::ThirtyTwoBits,
-                                                 static_cast<int>(data.indices.size()),
-                                                 BufferUsage::WriteOnly);
-    indexBuffer_->SetData(data.indices.data(), static_cast<int>(data.indices.size()));
+    ownedIndexBuffer_ = std::make_unique<IndexBuffer>(device, IndexElementSize::ThirtyTwoBits,
+                                                      static_cast<int>(data.indices.size()),
+                                                      BufferUsage::WriteOnly);
+    ownedIndexBuffer_->SetData(data.indices.data(), static_cast<int>(data.indices.size()));
+    indexBuffer_ = ownedIndexBuffer_.get();
 
-    part_ = std::make_unique<ModelMeshPart>(vertexBuffer_.get(), indexBuffer_.get(), vertexCount_,
-                                            triangleCount_, 0, 0);
+    ownedPart_ = std::make_unique<ModelMeshPart>(vertexBuffer_, indexBuffer_, vertexCount_,
+                                                 triangleCount_, 0, 0);
+    part_ = ownedPart_.get();
 
     bounds_ = data.bounds();
     sphere_ = BoundingSphere::CreateFromBoundingBox(bounds_);
@@ -52,12 +55,31 @@ GpuMesh::GpuMesh(GraphicsDevice& device, const Geometry::MeshData& data, std::st
 
 GpuMesh::~GpuMesh() = default;
 
+GpuMesh::GpuMesh(ModelMeshPart& part, const BoundingBox& bounds, std::string name)
+    : name_(std::move(name))
+{
+    vertexBuffer_  = part.getVertexBufferProperty();
+    indexBuffer_   = part.getIndexBufferProperty();
+    vertexOffset_  = part.getVertexOffsetProperty();
+    startIndex_    = part.getStartIndexProperty();
+    vertexCount_   = part.getNumVerticesProperty();
+    triangleCount_ = part.getPrimitiveCountProperty();
+    part_          = &part;
+    bounds_        = bounds;
+    sphere_        = BoundingSphere::CreateFromBoundingBox(bounds_);
+    // Borrowed: the memory belongs to the Model this part came from, and
+    // counting it here would double it in the overlay.
+    gpuBytes_ = 0;
+    if (vertexBuffer_ == nullptr || indexBuffer_ == nullptr || triangleCount_ <= 0)
+        throw std::invalid_argument("GpuMesh '" + name_ + "': the mesh part has no geometry");
+}
+
 void GpuMesh::draw(GraphicsDevice& device) const
 {
-    device.SetVertexBuffer(vertexBuffer_.get());
-    device.SetIndexBuffer(indexBuffer_.get());
-    device.DrawIndexedPrimitives(PrimitiveType::TriangleList, 0, 0, vertexCount_, 0,
-                                 triangleCount_);
+    device.SetVertexBuffer(vertexBuffer_);
+    device.SetIndexBuffer(indexBuffer_);
+    device.DrawIndexedPrimitives(PrimitiveType::TriangleList, vertexOffset_, 0, vertexCount_,
+                                 startIndex_, triangleCount_);
 }
 
 }  // namespace CnaStreet

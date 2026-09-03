@@ -194,13 +194,16 @@ FacadeFrame BuildingBuilder::frameFor(const Plot& plot, Facing facing) const
     return frame;
 }
 
-void BuildingBuilder::build(const Plot& plot, int plotIndex, GeometryCollector& collector, Rng& rng,
-                            std::vector<FacadeAnchor>& anchors)
+void BuildingBuilder::build(const Plot& plot, int plotIndex, GeometryCollector& collector,
+                            GeometryCollector& interiors, Rng& rng,
+                            std::vector<FacadeAnchor>& anchors,
+                            std::vector<ShopDisplay>& displays)
 {
     // One region per building: a plot is a natural unit for culling, and it
     // keeps a whole elevation in one draw call per material.
     const Vector2 centre = plot.centre();
     collector.setRegion(centre.X, centre.Y);
+    interiors.setRegion(centre.X, centre.Y);
 
     const Palette palette = paletteFor(plot, rng);
 
@@ -211,8 +214,8 @@ void BuildingBuilder::build(const Plot& plot, int plotIndex, GeometryCollector& 
         const Facing facing = static_cast<Facing>(face);
         const FacadeFrame frame = frameFor(plot, facing);
         if (plot.isDetailed(facing))
-            buildFacade(plot, plotIndex, frame, palette, collector, rng, anchors,
-                        facing == plot.primary);
+            buildFacade(plot, plotIndex, frame, palette, collector, rng, interiors, anchors,
+                        displays, facing == plot.primary);
         else
             // Windows even on the elevations that do not front a street. Most of
             // these are party walls nobody can see, but the ones at the end of a
@@ -374,17 +377,54 @@ void BuildingBuilder::buildWindow(const FacadeFrame& frame, float u, float v, fl
         FacadeBox(trim, frame, u - 0.075f, v1, -reveal, u1 + 0.075f, v1 + 0.14f, 0.075f);
 }
 
-void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, float u1, float floor,
-                                        float ceiling, const Palette& palette,
-                                        GeometryCollector& collector, Rng& rng)
+ShopKind BuildingBuilder::shopKindFor(const Plot& plot, int plotIndex)
 {
-    const float depth = -rng.range(3.2f, 5.0f);   // into the building
+    // From the plot and its index alone, so the fascia lettering, the fittings
+    // and the window display are all decided by the same number and cannot
+    // disagree. A shoe shop with a bread counter behind the glass is worse than
+    // an empty one.
+    static const ShopKind kMix[] = {
+        ShopKind::Bakery,     ShopKind::Clothing, ShopKind::Convenience, ShopKind::Bakery,
+        ShopKind::Electrical, ShopKind::Clothing, ShopKind::Optician,    ShopKind::Convenience,
+        ShopKind::Florist,    ShopKind::Office,   ShopKind::Furniture,   ShopKind::Clothing,
+        ShopKind::Bakery,     ShopKind::Vacant,   ShopKind::Convenience, ShopKind::Electrical,
+    };
+    const int slot = (plotIndex * 7 + static_cast<int>(plot.style) * 3 + plot.colourIndex)
+                     % static_cast<int>(std::size(kMix));
+    return kMix[static_cast<std::size_t>(slot < 0 ? slot + static_cast<int>(std::size(kMix))
+                                                  : slot)];
+}
+
+const char* BuildingBuilder::shopKindName(ShopKind kind)
+{
+    switch (kind)
+    {
+        case ShopKind::Bakery:      return "bakery";
+        case ShopKind::Clothing:    return "clothing";
+        case ShopKind::Convenience: return "convenience";
+        case ShopKind::Electrical:  return "electrical";
+        case ShopKind::Florist:     return "florist";
+        case ShopKind::Optician:    return "optician";
+        case ShopKind::Furniture:   return "furniture";
+        case ShopKind::Office:      return "office";
+        case ShopKind::Vacant:      return "vacant";
+        case ShopKind::Count:       break;
+    }
+    return "shop";
+}
+
+void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, float u1, float floor,
+                                        float ceiling, ShopKind kind, int plotIndex,
+                                        GeometryCollector& collector, Rng& rng,
+                                        std::vector<ShopDisplay>* displays)
+{
+    const float depth = -rng.range(4.2f, 6.4f);   // into the building
 
     // Plaster, not the interior atlas. The atlas is a four-by-four grid of *whole
     // rooms*, drawn one cell per window; stretched across the back wall of a real
     // modelled room it showed all sixteen at once, and every shopfront on the
     // street had a wall of thumbnail rooms behind the glass.
-    MeshBuilder& room = collector.builder(palette.wall);
+    MeshBuilder& room = collector.builder(&materials_.get(MaterialId::ShopWall));
     room.setUvMode(UvMode::Explicit);
     // Inward-facing, and stated as such rather than wound by hand. Deriving the
     // corner order for five faces of a box in façade coordinates is exactly the
@@ -405,21 +445,268 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
     // Ceiling looking down, floor looking up.
     room.addQuadFacingUv(frame.at(u0, ceiling, depth), frame.at(u1, ceiling, depth),
                          frame.at(u1, ceiling, 0.0f), frame.at(u0, ceiling, 0.0f), inV * -1.0f);
-    room.addQuadFacingUv(frame.at(u0, floor, depth), frame.at(u1, floor, depth),
-                         frame.at(u1, floor, 0.0f), frame.at(u0, floor, 0.0f), inV);
+    MeshBuilder& floorSurface = collector.builder(&materials_.get(MaterialId::ShopFloor));
+    floorSurface.setTileSize(0.60f);
+    floorSurface.addQuadFacing(frame.at(u0, floor, depth), frame.at(u1, floor, depth),
+                               frame.at(u1, floor, 0.0f), frame.at(u0, floor, 0.0f), inV);
 
-    // A counter and a couple of display units, as silhouettes. Through glass at
-    // three metres that is all a shop interior needs to be.
-    MeshBuilder& fittings = collector.builder(palette.fascia);
-    fittings.setTileSize(1.0f);
-    const float counterU = u0 + (u1 - u0) * rng.range(0.15f, 0.55f);
-    FacadeBox(fittings, frame, counterU, floor, depth * 0.55f, counterU + rng.range(1.4f, 2.6f),
-              floor + 0.95f, depth * 0.55f + 0.65f);
-    for (int i = 0; i < 2; ++i)
+    if (kind == ShopKind::Vacant)
     {
-        const float du = u0 + (u1 - u0) * rng.range(0.05f, 0.85f);
-        FacadeBox(fittings, frame, du, floor, -0.85f, du + rng.range(0.7f, 1.3f),
-                  floor + rng.range(0.7f, 1.6f), -0.45f);
+        // A unit to let: a bare floor, a paper notice taped inside the glass,
+        // and nothing else. One of these on a street of sixteen is worth more
+        // than a sixteenth shop full of stock -- it is the thing that says
+        // somebody owns these buildings and one of them is between tenants.
+        MeshBuilder& notice = collector.builder(&materials_.get(MaterialId::ShopFitting));
+        notice.setTileSize(0.5f);
+        const float nu = (u0 + u1) * 0.5f;
+        FacadeBox(notice, frame, nu - 0.21f, floor + 1.35f, -0.14f, nu + 0.21f, floor + 1.65f,
+                  -0.13f);
+        return;
+    }
+
+    // --- the lit ceiling ----------------------------------------------------
+    // Two strips of light on the soffit, and they are the single most valuable
+    // thing in here. A shop interior is *brighter* than the street outside it,
+    // and an unlit one behind glass reads as a cupboard however well it is
+    // furnished -- which is exactly what the first version of these looked like.
+    {
+        MeshBuilder& lamp = collector.builder(&materials_.get(MaterialId::ShopCeilingLight));
+        lamp.setUvMode(UvMode::Explicit);
+        for (int i = 0; i < 2; ++i)
+        {
+            const float lv = ceiling - 0.06f;
+            const float ld = depth * (0.30f + 0.36f * static_cast<float>(i));
+            lamp.addQuadFacingUv(frame.at(u0 + 0.55f, lv, ld - 0.13f),
+                                 frame.at(u1 - 0.55f, lv, ld - 0.13f),
+                                 frame.at(u1 - 0.55f, lv, ld + 0.13f),
+                                 frame.at(u0 + 0.55f, lv, ld + 0.13f), inV * -1.0f);
+        }
+    }
+
+    MeshBuilder& fittings = collector.builder(&materials_.get(MaterialId::ShopFitting));
+    fittings.setTileSize(1.0f);
+    MeshBuilder& timber = collector.builder(&materials_.get(MaterialId::ShopTimber));
+    timber.setTileSize(1.1f);
+    MeshBuilder& stock = collector.builder(&materials_.get(MaterialId::ShopStock));
+    stock.setTileSize(0.34f);
+
+    // A run of shelving against a wall, loaded with product. The product is what
+    // does the work: four shelves of small blocks at slightly different depths
+    // and heights reads, through glass at three metres, as a shop. A bare shelf
+    // reads as a bookcase in an empty flat.
+    const auto shelving = [&](float a, float b, float d, int levels, float height) {
+        if (b - a < 0.5f) return;
+        const float thickness = 0.045f;
+        FacadeBox(fittings, frame, a, floor, d, b, floor + 0.10f, d + 0.42f);
+        for (int level = 0; level < levels; ++level)
+        {
+            const float v = floor + 0.28f
+                            + (height - 0.28f) * static_cast<float>(level)
+                                  / static_cast<float>(levels);
+            FacadeBox(fittings, frame, a, v, d, b, v + thickness, d + 0.42f);
+            float u = a + 0.04f;
+            while (u < b - 0.12f)
+            {
+                const float w = rng.range(0.09f, 0.20f);
+                if (u + w > b - 0.05f) break;
+                if (rng.chance(0.82f))
+                    FacadeBox(stock, frame, u, v + thickness, d + rng.range(0.04f, 0.12f), u + w,
+                              v + thickness + rng.range(0.13f, 0.24f), d + rng.range(0.26f, 0.38f));
+                u += w + rng.range(0.008f, 0.05f);
+            }
+        }
+        FacadeBox(fittings, frame, a, floor, d, a + thickness, floor + height, d + 0.42f);
+        FacadeBox(fittings, frame, b - thickness, floor, d, b, floor + height, d + 0.42f);
+    };
+
+    // A counter with a till on it.
+    const auto counter = [&](float a, float b, float d) {
+        if (b - a < 0.5f) return;
+        FacadeBox(timber, frame, a, floor, d, b, floor + 0.92f, d + 0.62f);
+        FacadeBox(fittings, frame, a - 0.02f, floor + 0.92f, d - 0.03f, b + 0.02f, floor + 0.97f,
+                  d + 0.66f);
+        const float tu = a + (b - a) * 0.62f;
+        FacadeBox(fittings, frame, tu, floor + 0.97f, d + 0.16f, tu + 0.30f, floor + 1.13f,
+                  d + 0.44f);
+    };
+
+    // A display plinth in the window, and the anchor for whatever stands on it.
+    const auto plinth = [&](float u, float width, float height, float span) {
+        const float d0 = -0.95f, d1 = -0.35f;
+        FacadeBox(fittings, frame, u, floor, d0, u + width, floor + height, d1);
+        if (displays == nullptr) return;
+        ShopDisplay display;
+        display.stand =
+            Geometry::Frame(frame.at(u + width * 0.5f, floor + height, (d0 + d1) * 0.5f),
+                            frame.right, frame.up, frame.out);
+        display.span      = span;
+        display.kind      = kind;
+        display.plotIndex = plotIndex;
+        displays->push_back(display);
+    };
+
+    const float span = u1 - u0;
+    switch (kind)
+    {
+        case ShopKind::Bakery:
+        {
+            // A serving counter across the back, shelves of loaves behind it,
+            // and two cafe tables in the window.
+            counter(u0 + 0.5f, u1 - 0.5f, depth * 0.42f);
+            shelving(u0 + 0.6f, u1 - 0.6f, depth + 0.05f, 4, 2.05f);
+            for (int i = 0; i < 2; ++i)
+            {
+                const float tu = u0 + span * (0.24f + 0.44f * static_cast<float>(i));
+                timber.addCylinder(frame.at(tu, floor, -1.30f), 0.035f, 0.035f, 0.72f, 8);
+                timber.addCylinder(frame.at(tu, floor + 0.72f, -1.30f), 0.34f, 0.34f, 0.04f, 12);
+                for (const float side : {-0.52f, 0.52f})
+                {
+                    FacadeBox(timber, frame, tu - 0.17f, floor, -1.30f + side - 0.17f, tu + 0.17f,
+                              floor + 0.44f, -1.30f + side + 0.17f);
+                    FacadeBox(timber, frame, tu - 0.17f, floor + 0.44f, -1.30f + side + 0.10f,
+                              tu + 0.17f, floor + 0.86f, -1.30f + side + 0.17f);
+                }
+            }
+            plinth(u0 + span * 0.06f, 0.62f, 0.78f, 0.34f);
+            break;
+        }
+        case ShopKind::Clothing:
+        {
+            // Rails of garments, a bank of shelves and plinths in the window.
+            for (int i = 0; i < 2; ++i)
+            {
+                const float d = depth * (0.35f + 0.34f * static_cast<float>(i));
+                const float a = u0 + 0.55f, b = u1 - 0.55f;
+                if (b - a < 0.6f) continue;
+                for (const float u : {a, b})
+                    fittings.addCylinder(frame.at(u, floor, d), 0.028f, 0.028f, 1.62f, 8);
+                fittings.addCylinderBetween(frame.at(a, floor + 1.62f, d),
+                                            frame.at(b, floor + 1.62f, d), 0.020f, 8);
+                float u = a + 0.10f;
+                while (u < b - 0.10f)
+                {
+                    // A hanging garment: a thin slab, not a box. Two dozen of
+                    // them in a row is what a clothes rail looks like through a
+                    // window, and nothing else does.
+                    const float w = rng.range(0.05f, 0.085f);
+                    FacadeBox(stock, frame, u, floor + 0.62f, d - 0.16f, u + w, floor + 1.58f,
+                              d + 0.16f);
+                    u += w + rng.range(0.010f, 0.035f);
+                }
+            }
+            shelving(u0 + 0.4f, u0 + 0.4f + std::min(2.2f, span * 0.35f), depth + 0.05f, 4, 1.85f);
+            plinth(u0 + span * 0.10f, 0.55f, 0.62f, 0.5f);
+            if (span > 4.5f) plinth(u0 + span * 0.62f, 0.55f, 0.44f, 0.5f);
+            break;
+        }
+        case ShopKind::Convenience:
+        {
+            // Aisles: two or three double-sided runs down the shop, a wall of
+            // shelving at the back and a counter by the door.
+            const int aisles = span > 6.0f ? 3 : 2;
+            for (int i = 0; i < aisles; ++i)
+                shelving(u0 + 0.45f, u1 - 0.45f, depth * (0.30f + 0.24f * static_cast<float>(i)), 4,
+                         1.72f);
+            shelving(u0 + 0.35f, u1 - 0.35f, depth + 0.05f, 5, 2.10f);
+            counter(u0 + 0.4f, u0 + std::min(2.4f, span * 0.35f), -1.55f);
+            plinth(u1 - span * 0.20f, 0.7f, 0.55f, 0.4f);
+            break;
+        }
+        case ShopKind::Electrical:
+        {
+            counter(u0 + 0.5f, u0 + std::min(2.6f, span * 0.4f), depth * 0.5f);
+            shelving(u0 + 0.4f, u1 - 0.4f, depth + 0.05f, 3, 1.95f);
+            // A wall of screens: dark rectangles at eye level, which is the one
+            // thing that says "electrical shop" from the pavement.
+            MeshBuilder& screens = collector.builder(&materials_.get(MaterialId::ShopScreen));
+            screens.setTileSize(0.8f);
+            float u = u0 + 0.5f;
+            while (u < u1 - 0.9f)
+            {
+                const float w = rng.range(0.55f, 0.95f);
+                FacadeBox(screens, frame, u, floor + 1.10f, depth * 0.72f, u + w,
+                          floor + 1.10f + w * 0.58f, depth * 0.72f + 0.06f);
+                u += w + rng.range(0.12f, 0.30f);
+            }
+            plinth(u1 - span * 0.24f, 0.66f, 0.72f, 0.34f);
+            break;
+        }
+        case ShopKind::Florist:
+        {
+            // Tiered staging, the way a florist's window actually works.
+            for (int i = 0; i < 3; ++i)
+            {
+                const float d = -0.55f - 0.42f * static_cast<float>(i);
+                FacadeBox(timber, frame, u0 + 0.4f, floor, d - 0.20f, u1 - 0.4f,
+                          floor + 0.30f + 0.26f * static_cast<float>(i), d + 0.20f);
+            }
+            shelving(u0 + 0.4f, u1 - 0.4f, depth + 0.05f, 3, 1.70f);
+            counter(u1 - std::min(2.2f, span * 0.34f), u1 - 0.4f, depth * 0.45f);
+            plinth(u0 + span * 0.14f, 0.5f, 0.86f, 0.45f);
+            if (span > 4.0f) plinth(u0 + span * 0.55f, 0.5f, 0.68f, 0.45f);
+            break;
+        }
+        case ShopKind::Optician:
+        {
+            // Frames on the wall in rows, which is what an optician's is.
+            for (int row = 0; row < 4; ++row)
+            {
+                const float v = floor + 0.95f + 0.30f * static_cast<float>(row);
+                FacadeBox(fittings, frame, u0 + 0.45f, v, depth + 0.05f, u1 - 0.45f, v + 0.030f,
+                          depth + 0.24f);
+                float u = u0 + 0.55f;
+                while (u < u1 - 0.65f)
+                {
+                    FacadeBox(stock, frame, u, v + 0.030f, depth + 0.09f, u + 0.135f, v + 0.095f,
+                              depth + 0.20f);
+                    u += 0.135f + rng.range(0.05f, 0.12f);
+                }
+            }
+            counter(u0 + 0.5f, u0 + std::min(2.4f, span * 0.4f), depth * 0.5f);
+            plinth(u0 + span * 0.12f, 0.44f, 0.90f, 0.22f);
+            if (span > 4.0f) plinth(u0 + span * 0.58f, 0.44f, 0.90f, 0.22f);
+            break;
+        }
+        case ShopKind::Furniture:
+        {
+            shelving(u0 + 0.4f, u1 - 0.4f, depth + 0.05f, 3, 2.00f);
+            plinth(u0 + span * 0.10f, std::min(1.9f, span * 0.34f), 0.12f, 1.10f);
+            if (span > 5.0f) plinth(u0 + span * 0.56f, std::min(1.5f, span * 0.28f), 0.12f, 0.90f);
+            break;
+        }
+        case ShopKind::Office:
+        {
+            // Desks in a row facing the window, with a screen on each: an office
+            // at street level is glazed and you see straight into it.
+            const int desks = std::max(1, static_cast<int>(span / 2.1f));
+            for (int i = 0; i < desks; ++i)
+            {
+                const float du = u0 + 0.4f
+                                 + (span - 0.8f) * static_cast<float>(i)
+                                       / static_cast<float>(desks);
+                const float dw = std::min(1.55f,
+                                          (span - 0.8f) / static_cast<float>(desks) - 0.3f);
+                if (dw < 0.6f) continue;
+                FacadeBox(timber, frame, du, floor + 0.70f, depth * 0.55f, du + dw, floor + 0.75f,
+                          depth * 0.55f + 0.70f);
+                for (const float leg : {0.06f, dw - 0.10f})
+                    FacadeBox(fittings, frame, du + leg, floor, depth * 0.55f + 0.06f,
+                              du + leg + 0.04f, floor + 0.70f, depth * 0.55f + 0.10f);
+                MeshBuilder& screen = collector.builder(&materials_.get(MaterialId::ShopScreen));
+                screen.setTileSize(0.5f);
+                FacadeBox(screen, frame, du + dw * 0.28f, floor + 0.79f, depth * 0.55f + 0.50f,
+                          du + dw * 0.72f, floor + 1.09f, depth * 0.55f + 0.54f);
+                FacadeBox(fittings, frame, du + dw * 0.34f, floor + 0.42f, depth * 0.55f - 0.36f,
+                          du + dw * 0.66f, floor + 0.48f, depth * 0.55f - 0.04f);
+                FacadeBox(fittings, frame, du + dw * 0.34f, floor + 0.48f, depth * 0.55f - 0.36f,
+                          du + dw * 0.66f, floor + 0.95f, depth * 0.55f - 0.30f);
+            }
+            shelving(u0 + 0.4f, u1 - 0.4f, depth + 0.05f, 4, 1.85f);
+            break;
+        }
+        case ShopKind::Vacant:
+        case ShopKind::Count:
+            break;
     }
 }
 
@@ -523,7 +810,9 @@ void BuildingBuilder::buildBalcony(const FacadeFrame& frame, float u, float v, f
 
 void BuildingBuilder::buildShopfront(const Plot& plot, int plotIndex, const FacadeFrame& frame,
                                      const Palette& palette, GeometryCollector& collector,
-                                     Rng& rng, std::vector<FacadeAnchor>& anchors,
+                                     Rng& rng, GeometryCollector& interiors,
+                                     std::vector<FacadeAnchor>& anchors,
+                                     std::vector<ShopDisplay>& displays,
                                      std::vector<Opening>& openings)
 {
     const float base   = M::kCurbHeight;
@@ -587,7 +876,8 @@ void BuildingBuilder::buildShopfront(const Plot& plot, int plotIndex, const Faca
     FacadeBox(sash, frame, doorU, base, glassDepth, doorU + doorWidth, base + 0.22f, 0.03f);
     FacadeBox(sash, frame, doorU, head - 0.05f, glassDepth, doorU + doorWidth, head, 0.03f);
 
-    buildShopInterior(frame, u0 + 0.03f, u1 - 0.03f, base, head, palette, collector, rng);
+    buildShopInterior(frame, u0 + 0.03f, u1 - 0.03f, base, head, shopKindFor(plot, plotIndex),
+                      plotIndex, interiors, rng, &displays);
     MeshBuilder& metal = collector.builder(palette.metal);
     metal.setTileSize(0.3f);
     FacadeBox(metal, frame, doorU + doorWidth - 0.20f, base + 1.02f, glassDepth + 0.02f,
@@ -660,7 +950,9 @@ void BuildingBuilder::buildShopfront(const Plot& plot, int plotIndex, const Faca
 
 void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeFrame& frame,
                                   const Palette& palette, GeometryCollector& collector, Rng& rng,
-                                  std::vector<FacadeAnchor>& anchors, bool primary)
+                                  GeometryCollector& interiors,
+                                  std::vector<FacadeAnchor>& anchors,
+                                  std::vector<ShopDisplay>& displays, bool primary)
 {
     const bool classical = plot.style == BuildingStyle::Gruenderzeit
                            || plot.style == BuildingStyle::CornerBlock
@@ -681,7 +973,8 @@ void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeF
     // --- ground floor -------------------------------------------------------
     if (plot.hasShop && primary)
     {
-        buildShopfront(plot, plotIndex, frame, palette, collector, rng, anchors, openings);
+        buildShopfront(plot, plotIndex, frame, palette, collector, rng, interiors, anchors,
+                       displays, openings);
     }
     else if (office)
     {
@@ -702,7 +995,8 @@ void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeF
             FacadeBox(sash, frame, u - 0.045f, base, -0.24f, u + 0.045f, head, -0.02f);
         }
         FacadeBox(sash, frame, 0.9f, head - 0.09f, -0.24f, frame.width - 0.9f, head, -0.02f);
-        buildShopInterior(frame, 0.9f, frame.width - 0.9f, base, head, palette, collector, rng);
+        buildShopInterior(frame, 0.9f, frame.width - 0.9f, base, head, ShopKind::Office, plotIndex,
+                          interiors, rng, nullptr);
     }
     else
     {

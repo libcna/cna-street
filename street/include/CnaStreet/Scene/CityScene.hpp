@@ -9,6 +9,7 @@
 #include "CnaStreet/Sim/PedestrianSystem.hpp"
 #include "CnaStreet/Sim/TrafficSystem.hpp"
 #include "CnaStreet/Render/CameraController.hpp"
+#include "CnaStreet/Assets/ModelLibrary.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
 #include "CnaStreet/Render/RenderSettings.hpp"
 #include "CnaStreet/Scene/CityLayout.hpp"
@@ -42,7 +43,7 @@ class CityScene
 {
 public:
     CityScene(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
-              SceneRenderer& renderer, MaterialLibrary& materials);
+              SceneRenderer& renderer, MaterialLibrary& materials, ModelLibrary& models);
     ~CityScene();
 
     CityScene(const CityScene&) = delete;
@@ -133,6 +134,10 @@ private:
     /// Shop fascias and house numbers, on the anchors the façade generator
     /// left behind while it was building the elevations.
     void buildSignage(Rng& rng, const RenderSettings& settings);
+    /// Stands one imported model on each display plinth the shopfronts left
+    /// behind. Silently does nothing when the external assets have not been
+    /// fetched, which is the same contract the compiled surfaces have.
+    void buildShopDisplays(const RenderSettings& settings);
     void buildTrafficAndPeople(const RenderSettings& settings);
     /// Advances every pedestrian's animation and submits the crowd.
     void submitPeople(const RenderSettings& settings);
@@ -140,9 +145,11 @@ private:
     Microsoft::Xna::Framework::Graphics::GraphicsDevice& device_;
     SceneRenderer&  renderer_;
     MaterialLibrary& materials_;
+    ModelLibrary&    models_;
     CityLayout      layout_;
     std::vector<Crossing> crossings_;
     std::vector<FacadeAnchor> anchors_;
+    std::vector<ShopDisplay>  displays_;
 
     std::vector<std::unique_ptr<GpuMesh>> meshes_;
     std::vector<Viewpoint> viewpoints_;

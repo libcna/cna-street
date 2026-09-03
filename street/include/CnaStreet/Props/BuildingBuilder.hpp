@@ -55,6 +55,37 @@ struct FacadeAnchor
     int plotIndex = 0;
 };
 
+/// What a shop unit sells. It decides the fittings, the products and the
+/// lettering on the fascia, and it is chosen once per plot so the three cannot
+/// disagree -- a shoe shop with a bread counter is worse than an empty one.
+enum class ShopKind
+{
+    Bakery,
+    Clothing,
+    Convenience,
+    Electrical,
+    Florist,
+    Optician,
+    Furniture,
+    Office,
+    Vacant,
+    Count
+};
+
+/// A place inside a shop window where one authored prop can stand, worked out
+/// while the interior is generated. The scene fills these from the imported
+/// glTF catalogue if it has one and leaves them empty if it does not.
+struct ShopDisplay
+{
+    /// World transform of the display surface: origin at its centre, +Y up,
+    /// +Z out toward the glass.
+    Microsoft::Xna::Framework::Matrix stand;
+    /// How much room the prop has, in metres.
+    float span = 0.5f;
+    ShopKind kind = ShopKind::Vacant;
+    int plotIndex = 0;
+};
+
 /**
  * @brief Turns a plot into a building.
  *
@@ -72,12 +103,24 @@ public:
     BuildingBuilder(const MaterialLibrary& materials, const CityLayout& layout);
 
     /// Builds one plot into the collector. Anchors found along the way are
-    /// appended to @p anchors.
-    void build(const Plot& plot, int plotIndex, GeometryCollector& collector, Rng& rng,
-               std::vector<FacadeAnchor>& anchors);
+    /// appended to @p anchors, and any window display the shop unit wants to
+    /// @p displays.
+    /// @p interiors receives everything *behind* the glass. Kept apart from the
+    /// building's own geometry because it wants different treatment in every
+    /// respect: it is invisible past the width of the street, it can never cast
+    /// a shadow anything outside can see, and batching it with the façade would
+    /// mean a wall of shelving is drawn whenever the wall in front of it is.
+    void build(const Plot& plot, int plotIndex, GeometryCollector& collector,
+               GeometryCollector& interiors, Rng& rng, std::vector<FacadeAnchor>& anchors,
+               std::vector<ShopDisplay>& displays);
 
     /// The palette a plot's `colourIndex` selects from.
     [[nodiscard]] static int renderColourCount();
+
+    /// What this plot's ground floor sells. Derived from the plot alone, so the
+    /// fascia lettering and the fittings behind the glass agree.
+    [[nodiscard]] static ShopKind shopKindFor(const Plot& plot, int plotIndex);
+    [[nodiscard]] static const char* shopKindName(ShopKind kind);
 
 private:
     struct Palette
@@ -102,7 +145,8 @@ private:
                    Rng& rng);
     void buildFacade(const Plot& plot, int plotIndex, const FacadeFrame& frame,
                      const Palette& palette, GeometryCollector& collector, Rng& rng,
-                     std::vector<FacadeAnchor>& anchors, bool primary);
+                     GeometryCollector& interiors, std::vector<FacadeAnchor>& anchors,
+                     std::vector<ShopDisplay>& displays, bool primary);
     /// Emits the wall as strips around @p openings. Rows are formed from
     /// openings whose vertical extents overlap, which is what keeps a façade
     /// with balcony doors on one storey and ordinary windows on the next from
@@ -117,12 +161,17 @@ private:
                      bool arched, std::vector<Opening>& openings);
     void buildShopfront(const Plot& plot, int plotIndex, const FacadeFrame& frame,
                         const Palette& palette, GeometryCollector& collector, Rng& rng,
-                        std::vector<FacadeAnchor>& anchors, std::vector<Opening>& openings);
+                        GeometryCollector& interiors, std::vector<FacadeAnchor>& anchors,
+                        std::vector<ShopDisplay>& displays, std::vector<Opening>& openings);
     /// The room behind a shopfront. Without it the glazing is a hole straight
     /// through the building to the sky beyond, because the rear elevation's only
     /// face points outward and is back-face culled from inside.
+    ///
+    /// The fittings depend on @p kind, because a shop window is looked *into*
+    /// and an empty white box behind glass is the loudest thing on a street.
     void buildShopInterior(const FacadeFrame& frame, float u0, float u1, float floor, float ceiling,
-                           const Palette& palette, GeometryCollector& collector, Rng& rng);
+                           ShopKind kind, int plotIndex, GeometryCollector& collector, Rng& rng,
+                           std::vector<ShopDisplay>* displays);
     void buildEntrance(const FacadeFrame& frame, float u, float sillHeight,
                        const Palette& palette, GeometryCollector& collector, Rng& rng,
                        std::vector<Opening>& openings);

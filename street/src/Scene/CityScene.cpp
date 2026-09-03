@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "CnaStreet/Scene/CityScene.hpp"
+
+#include "CnaStreet/Assets/Noise.hpp"
 #include "Microsoft/Xna/Framework/Graphics/AnimationPlayer.hpp"
 #include "CnaStreet/Render/SkinnedGpuMesh.hpp"
 
@@ -29,9 +31,9 @@ namespace CnaStreet {
 
 namespace M = Metrics;
 
-CityScene::CityScene(GraphicsDevice& device, SceneRenderer& renderer,
-                     MaterialLibrary& materials)
-    : device_(device), renderer_(renderer), materials_(materials)
+CityScene::CityScene(GraphicsDevice& device, SceneRenderer& renderer, MaterialLibrary& materials,
+                     ModelLibrary& models)
+    : device_(device), renderer_(renderer), materials_(materials), models_(models)
 {
 }
 
@@ -91,13 +93,22 @@ void CityScene::build(const RenderSettings& settings)
     CNA::Logger::Info("cna-street: raising the buildings");
     {
         GeometryCollector collector;
+        GeometryCollector interiors;
         Rng rng = Rng::derive(settings.seed, "buildings");
         BuildingBuilder buildings(materials_, layout_);
         const std::vector<Plot>& plots = layout_.plots();
         for (std::size_t i = 0; i < plots.size(); ++i)
-            buildings.build(plots[i], static_cast<int>(i), collector, rng, anchors_);
+            buildings.build(plots[i], static_cast<int>(i), collector, interiors, rng, anchors_,
+                            displays_);
         publish(collector, 0.0f, settings.shadowDistance);
+        // The rooms behind the glass, on a short leash and casting nothing: a
+        // shop interior is invisible from the far pavement and its shadow is
+        // invisible from anywhere.
+        publish(interiors, 54.0f, 0.0f);
     }
+
+    CNA::Logger::Info("cna-street: dressing the windows");
+    buildShopDisplays(settings);
 
     CNA::Logger::Info("cna-street: closing the skyline");
     {
@@ -182,7 +193,15 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
             // in this same collector, so a collision cannot quietly merge a
             // ground cell with a building.
             collector.setRegionKey(1000000 + coarseX * 64 + coarseZ);
-            MeshBuilder& builder = collector.builder(rng.chance(0.14f) ? grass : ground);
+            // Mostly the hard surface a dense district actually is, with the
+            // occasional green cell for a park or a courtyard. Fourteen per cent
+            // green over a 38 m cell was a chequerboard of meadows from any
+            // camera above the roofline; six per cent, correlated so green cells
+            // touch, reads as two or three parks.
+            const float greenNoise = Noise::fbm((x + kReach) * 0.011f, (z + kReach) * 0.011f, 64,
+                                                2, 2.0f, 0.5f, 7717u);
+            const Material* surface = greenNoise > 0.72f ? grass : ground;
+            MeshBuilder& builder = collector.builder(surface);
             builder.setTileSize(8.0f);
             builder.addQuad(Vector3(x, -0.04f, z), Vector3(x, -0.04f, z1), Vector3(x1, -0.04f, z1),
                             Vector3(x1, -0.04f, z));
@@ -190,22 +209,116 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
 
     // The blocks that continue the street wall past the modelled plots, and the
     // ones that close each arm.
-    const MaterialId walls[] = {MaterialId::RenderGrey, MaterialId::RenderCream,
-                                MaterialId::BrickRed, MaterialId::ConcretePanel,
-                                MaterialId::RenderOchre, MaterialId::BrickBuff};
+    //
+    // They carry a *façade* rather than a wall material: one tiling image of a
+    // whole storey, with openings, sills, frames and glass that is variously
+    // dark, curtained or catching the sky. Painted rather than modelled because
+    // at two hundred metres a real reveal is a sub-pixel -- but the difference
+    // between having windows and not having them is the whole picture, and the
+    // blank massing this replaces was the loudest thing in every aerial shot.
+    const MaterialId walls[] = {MaterialId::ContextFacade0, MaterialId::ContextFacade1,
+                                MaterialId::ContextFacade2, MaterialId::ContextFacade3,
+                                MaterialId::ContextFacade4, MaterialId::ContextFacade5};
 
     auto block = [&](float cx, float cz, float halfX, float halfZ, float height) {
         collector.setRegion(cx, cz);
         const Material* material = &materials_.get(walls[rng.index(std::size(walls))]);
         MeshBuilder& builder = collector.builder(material);
-        builder.setTileSize(2.5f);
+        // One tile is one storey. Setting it to anything else is what makes a
+        // painted façade read as wallpaper: the windows come out the wrong size
+        // for the building and the eye finds it instantly.
+        const float storey = rng.range(3.05f, 3.55f);
+        builder.setTileSize(storey * 1.35f, storey);
+        // Aligned so a tile boundary lands on the ground rather than wherever
+        // the world origin happens to fall, which otherwise cuts the ground
+        // floor of every block off at a different height.
+        builder.setUvOffset(Vector2(0.0f, 0.16f));
         builder.addBox(Vector3(cx - halfX, 0.0f, cz - halfZ),
                        Vector3(cx + halfX, height, cz + halfZ), BoxFaces::allButBottom());
-        MeshBuilder& roof = collector.builder(&materials_.get(MaterialId::RoofFelt));
-        roof.setTileSize(4.0f);
-        roof.addBox(Vector3(cx - halfX - 0.1f, height, cz - halfZ - 0.1f),
-                    Vector3(cx + halfX + 0.1f, height + 0.9f, cz + halfZ + 0.1f),
-                    BoxFaces::allButBottom());
+        builder.setUvOffset(Vector2::Zero);
+
+        // A roof, and one of two kinds. A district of flat roofs seen from
+        // above is a district of grey rectangles; the pitched ones are what
+        // give a roofscape its texture.
+        if (rng.chance(0.45f))
+        {
+            // Pitched, ridged along the block's long axis.
+            MeshBuilder& tiles = collector.builder(&materials_.get(MaterialId::RoofTile));
+            tiles.setTileSize(1.4f);
+            const bool alongX = halfX >= halfZ;
+            const float rise = std::min(alongX ? halfZ : halfX, 4.2f) * 0.85f;
+            const float x0 = cx - halfX - 0.25f, x1 = cx + halfX + 0.25f;
+            const float z0 = cz - halfZ - 0.25f, z1 = cz + halfZ + 0.25f;
+            if (alongX)
+            {
+                const float mz = (z0 + z1) * 0.5f;
+                tiles.addQuadFacing(Vector3(x0, height, z0), Vector3(x1, height, z0),
+                                    Vector3(x1, height + rise, mz), Vector3(x0, height + rise, mz),
+                                    Vector3::Up);
+                tiles.addQuadFacing(Vector3(x0, height, z1), Vector3(x1, height, z1),
+                                    Vector3(x1, height + rise, mz), Vector3(x0, height + rise, mz),
+                                    Vector3::Up);
+                MeshBuilder& gable = collector.builder(material);
+                gable.setTileSize(storey * 1.35f, storey);
+                gable.addTriangle(Vector3(x0, height, z0), Vector3(x0, height, z1),
+                                  Vector3(x0, height + rise, mz));
+                gable.addTriangle(Vector3(x1, height, z1), Vector3(x1, height, z0),
+                                  Vector3(x1, height + rise, mz));
+            }
+            else
+            {
+                const float mx = (x0 + x1) * 0.5f;
+                tiles.addQuadFacing(Vector3(x0, height, z0), Vector3(x0, height, z1),
+                                    Vector3(mx, height + rise, z1), Vector3(mx, height + rise, z0),
+                                    Vector3::Up);
+                tiles.addQuadFacing(Vector3(x1, height, z0), Vector3(x1, height, z1),
+                                    Vector3(mx, height + rise, z1), Vector3(mx, height + rise, z0),
+                                    Vector3::Up);
+                MeshBuilder& gable = collector.builder(material);
+                gable.setTileSize(storey * 1.35f, storey);
+                gable.addTriangle(Vector3(x0, height, z0), Vector3(x1, height, z0),
+                                  Vector3(mx, height + rise, z0));
+                gable.addTriangle(Vector3(x1, height, z1), Vector3(x0, height, z1),
+                                  Vector3(mx, height + rise, z1));
+            }
+            // A stack or two, because a pitched roof without chimneys is a tent.
+            MeshBuilder& stack = collector.builder(&materials_.get(MaterialId::BrickRed));
+            stack.setTileSize(0.9f);
+            const int stacks = rng.intRange(1, 3);
+            for (int i = 0; i < stacks; ++i)
+            {
+                const float sx = cx + rng.signed_(halfX * 0.7f);
+                const float sz = cz + rng.signed_(halfZ * 0.35f);
+                stack.addBox(Vector3(sx - 0.45f, height, sz - 0.35f),
+                             Vector3(sx + 0.45f, height + rise + rng.range(0.6f, 1.4f), sz + 0.35f),
+                             BoxFaces::allButBottom());
+            }
+        }
+        else
+        {
+            MeshBuilder& roof = collector.builder(&materials_.get(MaterialId::RoofFelt));
+            roof.setTileSize(4.0f);
+            roof.addBox(Vector3(cx - halfX - 0.1f, height, cz - halfZ - 0.1f),
+                        Vector3(cx + halfX + 0.1f, height + 0.9f, cz + halfZ + 0.1f),
+                        BoxFaces::allButBottom());
+            // Roof furniture: plant, a lift overrun, a couple of vents. Flat
+            // roofs are never empty and from any camera above the eaves that is
+            // the difference between a city and a set of boxes.
+            MeshBuilder& plant = collector.builder(&materials_.get(MaterialId::GalvanisedSteel));
+            plant.setTileSize(1.2f);
+            const int units = rng.intRange(1, 4);
+            for (int i = 0; i < units; ++i)
+            {
+                const float px = cx + rng.signed_(halfX * 0.62f);
+                const float pz = cz + rng.signed_(halfZ * 0.62f);
+                const float pw = rng.range(0.9f, 2.6f);
+                const float pd = rng.range(0.9f, 2.2f);
+                plant.addBox(Vector3(px - pw * 0.5f, height + 0.55f, pz - pd * 0.5f),
+                             Vector3(px + pw * 0.5f, height + 0.55f + rng.range(0.7f, 2.4f),
+                                     pz + pd * 0.5f),
+                             BoxFaces::allButBottom());
+            }
+        }
     };
 
     // Down both arms of the main street, past the modelled frontage.
@@ -1254,6 +1367,75 @@ void CityScene::buildSignage(Rng& rng, const RenderSettings& settings)
 
     publish(collector, settings.propCullDistance, 0.0f);
     CNA::Logger::Info("cna-street: " + std::to_string(signs) + " shop signs and house numbers");
+}
+
+void CityScene::buildShopDisplays(const RenderSettings& settings)
+{
+    if (displays_.empty()) return;
+
+    // What each kind of shop puts in its window, in preference order. The first
+    // model that is actually present wins, so a tree that has fetched three of
+    // the sixteen still dresses three windows properly rather than none.
+    struct Choice { ShopKind kind; const char* assets[4]; };
+    static const Choice kCatalogue[] = {
+        {ShopKind::Bakery,      {"vase-flowers", "plant", nullptr, nullptr}},
+        {ShopKind::Clothing,    {"corset", "sunglasses", "vase-flowers", nullptr}},
+        {ShopKind::Convenience, {"water-bottle", "avocado", "boombox", nullptr}},
+        {ShopKind::Electrical,  {"boombox", "camera", "water-bottle", nullptr}},
+        {ShopKind::Florist,     {"vase-flowers", "plant", nullptr, nullptr}},
+        {ShopKind::Optician,    {"sunglasses", "camera", nullptr, nullptr}},
+        {ShopKind::Furniture,   {"chair-damask", "plant", "lantern", nullptr}},
+        {ShopKind::Office,      {"plant", "lantern", nullptr, nullptr}},
+    };
+
+    Rng rng = Rng::derive(settings.seed, "displays");
+    int dressed = 0;
+    for (const ShopDisplay& display : displays_)
+    {
+        const Choice* choice = nullptr;
+        for (const Choice& candidate : kCatalogue)
+            if (candidate.kind == display.kind) { choice = &candidate; break; }
+        if (choice == nullptr) continue;
+
+        // Rotate the candidate list per plinth, so two windows of the same trade
+        // are not the same window.
+        const int offset = rng.intRange(0, 3);
+        const ModelLibrary::Imported* model = nullptr;
+        for (int i = 0; i < 4 && model == nullptr; ++i)
+        {
+            const char* name = choice->assets[(i + offset) % 4];
+            if (name == nullptr) continue;
+            model = models_.load(name);
+        }
+        if (model == nullptr) continue;
+
+        // Sized to the plinth rather than to whatever the file was authored at,
+        // and turned a little, because a row of props all square to the glass
+        // reads as a catalogue page.
+        const Matrix fit  = ModelLibrary::fitTo(*model, display.span);
+        const Matrix turn = Matrix::CreateRotationY(rng.range(-0.6f, 0.6f));
+        for (const ModelLibrary::Part& part : model->parts)
+        {
+            SceneItem item;
+            item.mesh        = part.mesh;
+            item.material    = part.material;
+            item.world       = part.bone * fit * turn * display.stand;
+            // A prop inside a shop is invisible past the width of the street: it
+            // is behind glass, in shadow, and forty centimetres across.
+            item.cullDistance   = 46.0f;
+            item.shadowDistance = 0.001f;   // never a shadow caster
+            renderer_.addItem(item);
+            ++buildStats_.staticBatches;
+            buildStats_.triangles += static_cast<std::size_t>(part.mesh->triangleCount());
+        }
+        ++dressed;
+    }
+
+    CNA::Logger::Info("cna-street: " + std::to_string(dressed) + " of "
+                      + std::to_string(displays_.size()) + " window displays dressed from "
+                      + std::to_string(models_.loadedCount()) + " imported model(s)");
+    for (const std::string& failure : models_.failures())
+        CNA::Logger::Debug("cna-street: model unavailable -- " + failure);
 }
 
 void CityScene::buildTrafficAndPeople(const RenderSettings& settings)

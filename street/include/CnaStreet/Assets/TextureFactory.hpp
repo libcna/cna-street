@@ -86,6 +86,21 @@ public:
     /// curtained, some empty — the cheapest convincing interior there is.
     [[nodiscard]] static SurfaceMaps interiorAtlas(int size, std::uint32_t seed);
 
+    /// Stock on a shelf. Blocks of saturated colour at the scale of a packet,
+    /// which is all a product is at the distance a shop window is looked into.
+    [[nodiscard]] static SurfaceMaps shopStock(int size, std::uint32_t seed);
+
+    /// A whole storey of a building, as one tileable image: wall, window
+    /// openings with their reveals and sills, and glass that is dark, curtained
+    /// or reflecting. For the blocks beyond the modelled frontage, where the
+    /// difference between a window and no window is the whole picture and the
+    /// difference between a modelled window and a painted one is nothing.
+    ///
+    /// @p bays how many windows across one tile
+    /// @p wall the render colour of the wall between them
+    [[nodiscard]] static SurfaceMaps facadeGrid(int size, std::uint32_t seed, int bays,
+                                                const float wall[3]);
+
     /// Painted timber, for doors, shopfronts and benches.
     [[nodiscard]] static SurfaceMaps paintedWood(int size, std::uint32_t seed,
                                                  const float colour[3]);

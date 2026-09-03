@@ -1078,6 +1078,131 @@ SurfaceMaps TextureFactory::interiorAtlas(int size, std::uint32_t seed)
 // ---------------------------------------------------------------------------
 // Timber and vegetation
 // ---------------------------------------------------------------------------
+SurfaceMaps TextureFactory::facadeGrid(int size, std::uint32_t seed, int bays,
+                                       const float wall[3])
+{
+    Surface s(size);
+    const int columns = std::max(1, bays);
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+        {
+            const float u = static_cast<float>(x) / static_cast<float>(size);
+            const float v = static_cast<float>(y) / static_cast<float>(size);
+            const int cx = static_cast<int>(u * static_cast<float>(columns));
+            const float fx = u * static_cast<float>(columns) - static_cast<float>(cx);
+
+            // One storey per tile vertically: the opening sits in the upper two
+            // thirds with a spandrel below it, which is what a storey is.
+            const bool inWindowX = fx > 0.24f && fx < 0.76f;
+            const bool inWindowY = v > 0.16f && v < 0.74f;
+            const bool window = inWindowX && inWindowY;
+
+            // Render, with the same plaster mottle the modelled walls have so
+            // that near and far buildings do not read as two materials.
+            const float mottle = fbm(u * 26.0f, v * 26.0f, 26, 3, 2.0f, 0.55f, seed + 5u);
+            const float grime  = smoothstep(0.55f, 1.0f, v) * 0.10f
+                                 + smoothstep(0.80f, 0.30f, v) * 0.06f;
+            float base[3];
+            for (int c = 0; c < 3; ++c)
+                base[c] = wall[c] * (0.90f + mottle * 0.20f) * (1.0f - grime);
+
+            float roughness = 0.72f + mottle * 0.16f;
+            float height = 0.62f + mottle * 0.12f;
+
+            if (window)
+            {
+                // What is behind one pane, decided once per bay and per tile so
+                // a wall of them is a wall of *different* windows: some dark,
+                // some curtained, some catching the sky.
+                const float pick = value2(static_cast<float>(cx) + 0.5f, 0.5f, columns, seed + 31u);
+                const float lit  = value2(static_cast<float>(cx) + 0.5f, 1.5f, columns, seed + 47u);
+                float glass = 0.055f + 0.075f * pick;
+                if (lit > 0.72f) glass = 0.34f + 0.18f * pick;          // curtain or blind
+                // The sky reflected in the upper part of the pane, which is what
+                // stops a far window reading as a black hole.
+                const float sky = smoothstep(0.72f, 0.30f, (v - 0.16f) / 0.58f);
+                base[0] = Mix(glass, 0.30f, sky * 0.55f);
+                base[1] = Mix(glass, 0.34f, sky * 0.55f);
+                base[2] = Mix(glass, 0.42f, sky * 0.55f);
+                roughness = 0.10f;
+                height    = 0.18f;   // set back in the wall
+
+                // The frame: a light cross through the opening.
+                const float mullion = 1.0f - smoothstep(0.0f, 0.020f, std::fabs(fx - 0.50f));
+                const float transom = 1.0f - smoothstep(0.0f, 0.020f, std::fabs(v - 0.52f));
+                const float bar = std::max(mullion, transom);
+                for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], 0.78f, bar);
+                roughness = Mix(roughness, 0.55f, bar);
+                height    = Mix(height, 0.55f, bar);
+            }
+            else if (inWindowX && v > 0.10f && v <= 0.16f)
+            {
+                // The sill, and the dirt that runs off its ends.
+                for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], 0.80f, 0.55f);
+                height = 0.92f;
+            }
+
+            s.albedo.setRgb(x, y, base[0], base[1], base[2]);
+            s.height.setRgb(x, y, saturate(height), 0.0f, 0.0f);
+            s.orm.set(x, y, saturate(window ? 0.72f : 1.0f), saturate(roughness), 0.0f, 1.0f);
+        }
+    // Enough relief that the reveals catch a shadow at a grazing sun, and not
+    // so much that a 200 m wall shimmers.
+    return s.finish(0.55f);
+}
+
+SurfaceMaps TextureFactory::shopStock(int size, std::uint32_t seed)
+{
+    Surface s(size);
+    // A grid of packets. Each cell takes a saturated hue off a small wheel and a
+    // brightness of its own, and the dark seams between them are most of what a
+    // shelf of stock actually is at the distance a shop window is looked into.
+    constexpr int kCells = 12;
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+        {
+            const float u = static_cast<float>(x) / static_cast<float>(size);
+            const float v = static_cast<float>(y) / static_cast<float>(size);
+            const int cx = static_cast<int>(u * kCells);
+            const int cy = static_cast<int>(v * kCells);
+            const float pick = value2(static_cast<float>(cx) + 0.5f, static_cast<float>(cy) + 0.5f,
+                                      kCells, seed + 3u);
+            const float bright =
+                0.28f + 0.52f * value2(static_cast<float>(cx) + 0.5f, static_cast<float>(cy) + 0.5f,
+                                       kCells, seed + 11u);
+            // Six hues around the wheel, which is what a shelf of packaging is.
+            const float hue = std::floor(pick * 6.0f) / 6.0f;
+            const float r = std::fabs(hue * 6.0f - 3.0f) - 1.0f;
+            const float g = 2.0f - std::fabs(hue * 6.0f - 2.0f);
+            const float b = 2.0f - std::fabs(hue * 6.0f - 4.0f);
+            const float sat = 0.35f + 0.45f * pick;
+            float base[3] = {
+                Mix(bright, bright * saturate(r), sat),
+                Mix(bright, bright * saturate(g), sat),
+                Mix(bright, bright * saturate(b), sat),
+            };
+
+            // The seam, and a lighter band across each packet where a label is.
+            const float fx = u * static_cast<float>(kCells) - static_cast<float>(cx);
+            const float fy = v * static_cast<float>(kCells) - static_cast<float>(cy);
+            const float edge = std::min(std::min(fx, 1.0f - fx), std::min(fy, 1.0f - fy));
+            const float seam = 1.0f - smoothstep(0.0f, 0.055f, edge);
+            const float label =
+                smoothstep(0.34f, 0.40f, fy) * (1.0f - smoothstep(0.60f, 0.66f, fy));
+            for (int c = 0; c < 3; ++c)
+            {
+                base[c] = Mix(base[c], base[c] * 0.88f + 0.32f, label * 0.45f);
+                base[c] = Mix(base[c], base[c] * 0.25f, seam);
+            }
+
+            s.albedo.setRgb(x, y, base[0], base[1], base[2]);
+            s.height.setRgb(x, y, saturate(0.72f - seam * 0.60f), 0.0f, 0.0f);
+            s.orm.set(x, y, saturate(1.0f - seam * 0.45f), saturate(0.44f + label * 0.22f), 0.0f,
+                      1.0f);
+        }
+    return s.finish(0.35f);
+}
+
 SurfaceMaps TextureFactory::paintedWood(int size, std::uint32_t seed, const float colour[3])
 {
     Surface s(size);
