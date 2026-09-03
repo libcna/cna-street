@@ -25,6 +25,8 @@ struct Surface
     Image albedo;
     Image height;
     Image orm;
+    /// Optional; only the surfaces that glow fill it in.
+    Image emissive;
 
     explicit Surface(int size)
         : albedo(size, size, 0.5f, 0.5f, 0.5f, 1.0f),
@@ -1358,6 +1360,55 @@ SurfaceMaps TextureFactory::paintedWood(int size, std::uint32_t seed, const floa
                       0.0f, 1.0f);
         }
     return s.finish(1.0f);
+}
+
+SurfaceMaps TextureFactory::lightPool(int size, std::uint32_t seed)
+{
+    Surface s(size);
+    // The pool of light a luminaire throws on the ground.
+    //
+    // Geometry rather than a light, because `PbrEffect` carries one punctual
+    // light per draw and this street has forty lamps. A lit road under a lamp
+    // is a soft-edged ellipse with a hot core, and painting one is a
+    // twenty-line texture; putting forty real lights through a clustered
+    // forward path to draw the same ellipse is a different application.
+    //
+    // Alpha carries the falloff and the emissive carries the colour, so the
+    // quad blends toward the lamp's own tint over whatever it is laid on and
+    // fades to nothing at its rim -- no hard edge, and the tarmac's own
+    // aggregate still shows through the middle of it.
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+        {
+            const float u = (static_cast<float>(x) + 0.5f) / static_cast<float>(size) * 2.0f - 1.0f;
+            const float v = (static_cast<float>(y) + 0.5f) / static_cast<float>(size) * 2.0f - 1.0f;
+            const float r = std::sqrt(u * u + v * v);
+
+            // Inverse-square-ish rather than linear: the ground under a lamp is
+            // bright for a couple of metres and then falls away fast, and a
+            // linear ramp reads as a painted circle.
+            float fall = saturate(1.0f - r);
+            fall = fall * fall * (0.35f + 0.65f * fall);
+            // A little noise on the rim, because a luminaire's cut-off is not a
+            // perfect circle and the surface under it is not flat.
+            const float ragged = 0.86f + 0.28f * fbm(u * 3.0f + 4.0f, v * 3.0f + 4.0f, 0, 3,
+                                                     2.0f, 0.5f, seed + 3u);
+            fall = saturate(fall * ragged);
+
+            s.albedo.set(x, y, 0.0f, 0.0f, 0.0f, fall * 0.72f);
+            s.height.setRgb(x, y, 0.5f, 0.0f, 0.0f);
+            s.orm.set(x, y, 1.0f, 1.0f, 0.0f, 1.0f);
+        }
+    s.emissive = Image(size, size, 0.0f, 0.0f, 0.0f, 1.0f);
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+        {
+            const float a = s.albedo.at(x, y)[3];
+            s.emissive.setRgb(x, y, a, a * 0.90f, a * 0.72f);
+        }
+    SurfaceMaps maps = s.finish(0.0f);
+    maps.emissive = std::move(s.emissive);
+    return maps;
 }
 
 SurfaceMaps TextureFactory::hardwood(int size, std::uint32_t seed)

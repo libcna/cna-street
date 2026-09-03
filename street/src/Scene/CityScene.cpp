@@ -83,6 +83,7 @@ void CityScene::build(const RenderSettings& settings)
 
     CNA::Logger::Info("cna-street: generating materials");
     materials_.build(settings.seed);
+    if (settings.nightLighting()) lightTheStreet(settings);
 
     CNA::Logger::Info("cna-street: laying out the street");
     layout_.generate(settings.seed);
@@ -863,6 +864,30 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
 
     placeProp(lampMain, lampMainAt, "lamp-main", cull, shade);
     placeProp(lampSide, lampSideAt, "lamp-side", cull, shade);
+
+    // The pools they throw, at night only. Placed from the same transform list
+    // as the columns so a pool cannot end up where a lamp is not, and dropped
+    // to the ground: the column's transform has its base on the footway, which
+    // is where the pool wants to be.
+    if (settings.nightLighting())
+    {
+        const PropMesh poolMain = makeProp("light-pool-main", [&](GeometryCollector& c) {
+            props.lightPool(c, 5.4f);
+        });
+        const PropMesh poolSide = makeProp("light-pool-side", [&](GeometryCollector& c) {
+            props.lightPool(c, 3.8f);
+        });
+        // A main-street luminaire is on a 9 m column with a 1.6 m outreach over
+        // the carriageway, so its pool is not centred on its column. The side
+        // street's is a smaller lantern on the footway.
+        std::vector<Matrix> poolMainAt, poolSideAt;
+        poolMainAt.reserve(lampMainAt.size());
+        for (const Matrix& at : lampMainAt)
+            poolMainAt.push_back(Matrix::CreateTranslation(0.0f, 0.0f, 1.6f) * at);
+        poolSideAt = lampSideAt;
+        placeProp(poolMain, poolMainAt, "light-pool-main", 105.0f, 0.0f, false);
+        placeProp(poolSide, poolSideAt, "light-pool-side", 85.0f, 0.0f, false);
+    }
     placeProp(bench, benchAt, "bench", cull * 0.5f, shade * 0.6f);
     placeProp(bollard, bollardAt, "bollard", cull * 0.4f, shade * 0.4f);
     placeProp(bin, binAt, "litter-bin", cull * 0.5f, shade * 0.6f);
@@ -870,6 +895,66 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     placeProp(cabinet, cabinetAt, "cabinet", cull * 0.7f, shade);
     placeProp(bikeStand, bikeAt, "bike-stand", cull * 0.4f, shade * 0.5f);
     placeProp(shelter, shelterAt, "bus-shelter", cull, shade);
+}
+
+void CityScene::lightTheStreet(const RenderSettings& settings)
+{
+    // Everything that is a *lamp* rather than a surface, switched on.
+    //
+    // Done by editing the catalogue rather than by building a second set of
+    // props, because the objects are identical at noon and at midnight -- only
+    // their emission differs -- and a parallel set of night meshes would be a
+    // second thing to keep in step with the first. `PbrEffect` adds the
+    // emissive term after everything else, so a material with an emissive
+    // factor is a light source that costs nothing per frame and cannot be
+    // shadowed, which is exactly right for a lamp seen from outside.
+    //
+    // What this does *not* do is illuminate anything. There is one punctual
+    // light per draw in `PbrEffect` and this street has forty lamps, so the
+    // pools of light on the ground are geometry (see `PropFactory::lightPool`)
+    // and the rooms behind the glass carry theirs baked into their own emissive
+    // maps. That is a light map, which is what a renderer without a many-light
+    // path has always used, and at civil twilight it reads.
+    (void)settings;
+
+    // Sodium-white, and hot enough to bloom: a luminaire seen directly is the
+    // brightest thing in a night frame by two orders of magnitude, and one that
+    // merely goes pale grey reads as switched off.
+    materials_.mutableGet(MaterialId::LampGlass).emissiveFactor =
+        Vector3(5.60f, 5.05f, 3.90f);
+
+    // Dipped beams and the sidelights around them.
+    materials_.mutableGet(MaterialId::CarLightFront).emissiveFactor =
+        Vector3(3.30f, 3.20f, 2.90f);
+    materials_.mutableGet(MaterialId::CarLightRear).emissiveFactor =
+        Vector3(2.10f, 0.13f, 0.08f);
+
+    // The rooms behind the glass, which at night are the light in the street.
+    // The ceiling strips go up and the surfaces they light go up with them,
+    // because the baked bounce is the only thing carrying that light.
+    materials_.mutableGet(MaterialId::ShopCeilingLight).emissiveFactor =
+        Vector3(4.20f, 3.85f, 3.20f);
+    // The fittings take the boost; the room's own big surfaces barely do.
+    //
+    // A shop's *walls* are the largest emissive area in the scene once the sun
+    // is down, and a room lit from a strip in its own ceiling is brightest on
+    // what stands under the strip -- not on four metres of plasterboard. At a
+    // uniform 1.55 the side wall of the nearest unit, seen almost edge-on from
+    // along the footway, was the brightest thing in a night frame: a white
+    // panel with no windows in it, next to a street.
+    for (const MaterialId id : {MaterialId::ShopFitting, MaterialId::ShopStock,
+                                MaterialId::ShopTimber})
+        materials_.mutableGet(id).emissiveFactor =
+            materials_.get(id).emissiveFactor * 1.70f;
+    for (const MaterialId id : {MaterialId::ShopWall, MaterialId::ShopFloor})
+        materials_.mutableGet(id).emissiveFactor =
+            materials_.get(id).emissiveFactor * 1.08f;
+
+    // And the flats above them. The interior atlas is already emissive -- it is
+    // what stops a window reading as a black hole in daylight -- so at night it
+    // only wants turning up, and unevenly: a building where every window is lit
+    // is an office block at six o'clock, not a street of flats at nine.
+    materials_.mutableGet(MaterialId::Interior).emissiveFactor = Vector3(2.35f, 2.15f, 1.80f);
 }
 
 void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)

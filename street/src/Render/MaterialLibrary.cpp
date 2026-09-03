@@ -1002,6 +1002,18 @@ void MaterialLibrary::build(std::uint32_t seed)
         install(MaterialId::Foliage, "foliage", [&] { return TextureFactory::foliageCard(kMedium, s + 29u); },
                 leaves);
 
+        // The lamp pools. Blended and depth-less: they are laid on the road and
+        // the footway a centimetre above the surface, and a pool that wrote
+        // depth would cut a hole in whatever crossed it.
+        Material pool = pbr(1.0f, 0.0f);
+        pool.alphaMode      = AlphaModeEXT::Blend;
+        pool.baseColour     = Vector3::Zero;
+        pool.emissiveFactor = Vector3(1.35f, 1.20f, 0.92f);
+        pool.castsShadow    = false;
+        pool.writesDepth    = false;
+        install(MaterialId::LightPool, "light-pool",
+                [&] { return TextureFactory::lightPool(kMedium, s + 91u); }, pool);
+
         Material hedge = materials_[static_cast<std::size_t>(MaterialId::Foliage)];
         hedge.name       = "hedge";
         hedge.baseColour = Vector3(0.72f, 0.86f, 0.66f);

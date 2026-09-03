@@ -74,6 +74,15 @@ struct RenderSettings
     /// is most of what makes a street look photographed.
     float sunElevationDegrees = 48.0f;
     float sunAzimuthDegrees   = 250.0f;
+
+    /// Whether the street's own lights are burning.
+    ///
+    /// Derived from the sun rather than set independently, because that is the
+    /// relationship it has: a photocell on a lamp column switches at civil
+    /// dusk, and a demo where the sun is down and the lamps are off is a demo
+    /// with a bug in it. Three degrees is about when a street stops being lit
+    /// by the sky.
+    [[nodiscard]] bool nightLighting() const { return sunElevationDegrees < 3.0f; }
     float sunIntensity        = 3.0f;
     /// Image based lighting from the baked sky cubemap. Off falls back to a
     /// hemisphere ambient term, which is also what a renderer without IBL gets.

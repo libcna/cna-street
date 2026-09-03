@@ -111,6 +111,12 @@ public:
                                                  const float colour[3]);
 
     /// Oiled hardwood, for bench slats.
+    /// The pool of light a luminaire throws on the ground: alpha carries the
+    /// falloff, emissive the colour. Geometry rather than a punctual light,
+    /// because `PbrEffect` carries one of those per draw and a street has forty
+    /// lamps.
+    [[nodiscard]] static SurfaceMaps lightPool(int size, std::uint32_t seed);
+
     [[nodiscard]] static SurfaceMaps hardwood(int size, std::uint32_t seed);
 
     /// Tree bark.

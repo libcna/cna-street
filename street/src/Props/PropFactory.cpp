@@ -559,6 +559,23 @@ void PropFactory::groundScruff(GeometryCollector& collector, Rng& rng, float rad
     }
 }
 
+void PropFactory::lightPool(GeometryCollector& collector, float radius) const
+{
+    MeshBuilder& pool = collector.builder(&materials_.get(MaterialId::LightPool));
+    pool.setUvMode(UvMode::Explicit);
+    // A centimetre and a half off the ground. Enough to clear the paving and
+    // the road markings without floating: the material does not write depth, so
+    // what decides whether a pool is in front of a kerb is the sorted
+    // transparent pass, and being *at* ground level makes that call correctly.
+    const float y = 0.015f;
+    // Facing stated rather than implied. Those four corners in that order wind
+    // clockwise seen from above, so the quad's derived normal points at the
+    // ground and every pool was back-face culled: forty invisible lights.
+    pool.addQuadFacingUv(Vector3(-radius, y, -radius), Vector3(radius, y, -radius),
+                         Vector3(radius, y, radius), Vector3(-radius, y, radius),
+                         Vector3::Up);
+}
+
 void PropFactory::treeGrate(GeometryCollector& collector) const
 {
     MeshBuilder& iron = collector.builder(&materials_.get(MaterialId::DrainGrate));

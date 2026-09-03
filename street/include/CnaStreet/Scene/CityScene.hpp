@@ -139,6 +139,9 @@ private:
     /// fetched, which is the same contract the compiled surfaces have.
     void buildShopDisplays(const RenderSettings& settings);
     void buildTrafficAndPeople(const RenderSettings& settings);
+    /// Switches on everything in the catalogue that is a lamp rather than a
+    /// surface. Called once, before anything is built, when the sun is down.
+    void lightTheStreet(const RenderSettings& settings);
     /// Advances every pedestrian's animation and submits the crowd.
     void submitPeople(const RenderSettings& settings);
 

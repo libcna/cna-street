@@ -73,6 +73,10 @@ public:
     /// branching depth and the card count, for the trees at the far end.
     void tree(GeometryCollector& collector, Rng& rng, TreeSpecies species, float height,
               bool fullDetail = true) const;
+    /// The pool a street lamp throws on the ground, as a horizontal quad of
+    /// @p radius metres. Placed only when the lamps are burning.
+    void lightPool(GeometryCollector& collector, float radius) const;
+
     /// The cast-iron grating around a tree pit.
     void treeGrate(GeometryCollector& collector) const;
     /// The scruff at the base of a wall or a tree pit: tufts of weed, a few

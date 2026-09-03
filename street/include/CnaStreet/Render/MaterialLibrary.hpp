@@ -72,6 +72,10 @@ enum class MaterialId
     // --- vegetation ---
     Bark, Foliage, Hedge,
 
+    /// The pool a street lamp throws on the ground at night. A material rather
+    /// than a light, for the reason given in `TextureFactory::lightPool`.
+    LightPool,
+
     Count
 };
 

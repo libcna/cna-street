@@ -112,6 +112,7 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --no-shadows --no-bloom --no-ssao --no-fog --no-clouds --no-ibl\n"
                 "  --no-traffic --no-pedestrians --no-vegetation --no-overlay\n"
                 "  --sun <elevation> <azimuth>       sun position in degrees\n"
+                "  --night                           civil twilight, street lights on\n"
                 "  --dump-settings                   print the settings JSON and exit\n"
                 "  --help                            this text\n",
                 settings_.seed);
@@ -186,6 +187,28 @@ bool StreetApplication::configure(int argc, char** argv)
             }
             settings_.sunElevationDegrees = static_cast<float>(std::atof(elevation));
             settings_.sunAzimuthDegrees   = static_cast<float>(std::atof(azimuth));
+        }
+        else if (arg == "--night")
+        {
+            // One flag rather than three, because the three go together. The
+            // sun is 4 degrees below the horizon -- civil twilight, when a
+            // street is lit by its own lamps and the sky is still a colour
+            // rather than black -- and the exposure follows, because a scene
+            // lit at a hundredth of the irradiance needs the aperture opened
+            // and no amount of tone mapping substitutes for that. Everything
+            // else that changes at night follows from the sun's elevation
+            // through `RenderSettings::nightLighting`.
+            settings_.sunElevationDegrees = -4.0f;
+            // 1.0 against the daylight 0.42, which is a stop and a quarter
+            // rather than the two and a half the first attempt used. The sky
+            // at civil twilight carries almost nothing -- its ambient is
+            // (0.008, 0.001, 0.000) -- so what the frame is actually exposed
+            // for is the lamps, the shop windows and the flats above them, and
+            // opening up far enough to lift the *pavement* to mid grey turns a
+            // night street into an overcast afternoon with the lights on.
+            settings_.exposure            = 1.0f;
+            settings_.bloomThreshold      = 0.72f;
+            settings_.bloomIntensity      = 0.55f;
         }
         else if (arg == "--dump-settings")
         {
