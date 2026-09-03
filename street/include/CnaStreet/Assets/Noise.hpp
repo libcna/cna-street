@@ -180,9 +180,19 @@ namespace CnaStreet::Noise {
 
 [[nodiscard]] inline float saturate(float v) { return std::clamp(v, 0.0f, 1.0f); }
 
+/**
+ * @brief Hermite interpolation between two edges, in either direction.
+ *
+ * GLSL leaves `smoothstep` undefined when `edge0 >= edge1`; this one does not,
+ * and that matters because a *descending* pair is how you write "1 where the
+ * value is small". Rejecting it — returning a hard 0/1 step instead — silently
+ * turns every such ramp in a texture generator into a binary mask, which is a
+ * class of bug you can look straight at without seeing: the texture is still
+ * plausible, just hard-edged everywhere it should be soft.
+ */
 [[nodiscard]] inline float smoothstep(float edge0, float edge1, float x)
 {
-    if (edge1 <= edge0) return x < edge0 ? 0.0f : 1.0f;
+    if (edge0 == edge1) return x < edge0 ? 0.0f : 1.0f;
     const float t = saturate((x - edge0) / (edge1 - edge0));
     return t * t * (3.0f - 2.0f * t);
 }

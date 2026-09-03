@@ -33,3 +33,10 @@ set(CNA_STREET_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets" CACHE PATH
 target_compile_definitions(cna_street_core PUBLIC
     CNA_STREET_DEFAULT_ASSET_DIR="${CNA_STREET_ASSET_DIR}")
 
+
+# --- offline asset bake ------------------------------------------------------
+# Headless: no GraphicsDevice, no display. It is both the source stage of the
+# content pipeline and the only way to look at a generated texture on a machine
+# with no GPU.
+add_executable(bake-assets "${CMAKE_SOURCE_DIR}/tools/bake/BakeAssets.cpp")
+target_link_libraries(bake-assets PRIVATE CnaStreet::Core CnaStreet::Warnings)

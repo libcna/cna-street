@@ -825,101 +825,149 @@ SurfaceMaps TextureFactory::windowGlass(int size, std::uint32_t seed)
 SurfaceMaps TextureFactory::interiorAtlas(int size, std::uint32_t seed)
 {
     Surface s(size);
-    // A 4x4 atlas of room interiors seen through a window. Each cell is one
-    // "room": a back wall in shadow, a ceiling catching some light, and
-    // sometimes a lit fitting, a curtain or a blind. Which cell a window uses is
-    // chosen per window by its UV transform, so no two panes on a façade show
-    // the same room.
+    // A 4x4 atlas of rooms seen through a window. Each window on the street
+    // picks one cell through its material's texture transform, and may mirror it,
+    // so sixteen rooms cover a façade of sixty windows without an obvious repeat.
+    //
+    // What makes a window read as a window is not the room -- it is that the
+    // room is *much darker than the wall around it* and has a few bright,
+    // legible things in it. Everything below is built around that: a very dark
+    // base, a lighter ceiling, and one or two of curtain / blind / lamp /
+    // furniture on top.
     constexpr int kCells = 4;
+    const int cell = size / kCells;
+
+    float wallColour[3], ceilingColour[3], floorColour[3];
+    Srgb8(wallColour, 104, 98, 90);
+    Srgb8(ceilingColour, 176, 172, 166);
+    Srgb8(floorColour, 92, 74, 58);
 
     for (int cy = 0; cy < kCells; ++cy)
         for (int cx = 0; cx < kCells; ++cx)
         {
-            const std::uint32_t cellSeed = hash2(cx, cy, seed);
-            const float roll = static_cast<float>(cellSeed) * (1.0f / 4294967296.0f);
-            const float roll2 = static_cast<float>(hashInt(cellSeed)) * (1.0f / 4294967296.0f);
+            const std::uint32_t cellSeed = hash2(cx * 31 + 7, cy * 17 + 3, seed);
+            auto roll = [&](int index) {
+                return static_cast<float>(hashInt(cellSeed + static_cast<std::uint32_t>(index)
+                                                  * 2654435761u))
+                       * (1.0f / 4294967296.0f);
+            };
 
-            enum class Kind { Empty, Curtain, Blind, Lit } kind = Kind::Empty;
-            if (roll < 0.30f)      kind = Kind::Curtain;
-            else if (roll < 0.46f) kind = Kind::Blind;
-            else if (roll < 0.60f) kind = Kind::Lit;
+            const float dressing = roll(1);
+            const bool  hasCurtain = dressing < 0.34f;
+            const bool  hasBlind   = !hasCurtain && dressing < 0.55f;
+            const bool  hasLamp    = roll(2) < 0.30f;
+            const bool  hasFurniture = roll(3) < 0.62f;
+            const float curtainDraw = 0.22f + roll(4) * 0.55f;
+            const bool  curtainLeft = roll(5) < 0.5f;
+            const float blindDrop   = 0.22f + roll(6) * 0.48f;
+            const float lampX       = 0.22f + roll(7) * 0.56f;
+            const float lampY       = 0.16f + roll(8) * 0.26f;
+            const float furnitureTop = 0.62f + roll(9) * 0.22f;
+            const float furnitureL  = roll(10) * 0.35f;
+            const float furnitureR  = 0.55f + roll(11) * 0.45f;
+            const float roomTone    = 0.55f + roll(12) * 0.9f;
 
-            float wall[3];
-            Srgb8(wall, 96, 92, 86);
-            for (int c = 0; c < 3; ++c) wall[c] *= 0.55f + roll2 * 0.7f;
-
-            const int x0 = cx * size / kCells, x1 = (cx + 1) * size / kCells;
-            const int y0 = cy * size / kCells, y1 = (cy + 1) * size / kCells;
-
-            for (int y = y0; y < y1; ++y)
-                for (int x = x0; x < x1; ++x)
+            for (int y = 0; y < cell; ++y)
+                for (int x = 0; x < cell; ++x)
                 {
-                    const float fu = static_cast<float>(x - x0) / static_cast<float>(x1 - x0);
-                    const float fv = static_cast<float>(y - y0) / static_cast<float>(y1 - y0);
+                    const float fu = (static_cast<float>(x) + 0.5f) / static_cast<float>(cell);
+                    const float fv = (static_cast<float>(y) + 0.5f) / static_cast<float>(cell);
 
-                    // A room falls off into darkness toward the top and the
-                    // corners; that gradient alone is most of the depth cue.
-                    float depth = smoothstep(0.0f, 0.75f, fv) * 0.75f + 0.25f;
-                    depth *= 1.0f - smoothstep(0.55f, 1.0f, std::fabs(fu - 0.5f) * 2.0f) * 0.5f;
-
+                    // The back wall, lit only by what gets past the glass: dark,
+                    // and darker toward the top where the daylight does not reach.
+                    const float lightFall = smoothstep(0.0f, 0.85f, fv);
                     float base[3];
-                    for (int c = 0; c < 3; ++c) base[c] = wall[c] * depth * 0.35f;
-                    float emissive = 0.0f;
-                    float roughness = 0.9f;
+                    for (int c = 0; c < 3; ++c)
+                        base[c] = wallColour[c] * roomTone * (0.020f + lightFall * 0.075f);
 
-                    if (kind == Kind::Curtain)
+                    // Ceiling: the brightest thing in an unlit room, because it
+                    // is the surface facing the window's own skylight.
+                    const float ceiling = smoothstep(0.16f, 0.0f, fv);
+                    for (int c = 0; c < 3; ++c)
+                        base[c] = Mix(base[c], ceilingColour[c] * roomTone * 0.115f, ceiling);
+
+                    // Floor, glimpsed at the very bottom.
+                    const float floor = smoothstep(0.90f, 1.0f, fv);
+                    for (int c = 0; c < 3; ++c)
+                        base[c] = Mix(base[c], floorColour[c] * roomTone * 0.10f, floor * 0.8f);
+
+                    // The reveal: the window opening's own sides, which are in
+                    // deep shadow and frame everything else.
+                    const float reveal = std::max(smoothstep(0.075f, 0.0f, fu),
+                                                  smoothstep(0.925f, 1.0f, fu));
+                    for (int c = 0; c < 3; ++c) base[c] *= 1.0f - reveal * 0.72f;
+
+                    float emissive = 0.0f;
+
+                    if (hasFurniture && fv > furnitureTop && fu > furnitureL && fu < furnitureR)
                     {
-                        // Gathered fabric: vertical folds, bright where the
-                        // daylight goes through them.
-                        const float fold = 0.5f + 0.5f * std::sin(fu * kPi * 14.0f
-                                                                  + roll2 * 6.0f);
-                        float curtain[3];
-                        Srgb8(curtain, 214, 206, 190);
-                        const float draw = 0.35f + roll2 * 0.6f;
-                        const float mask = smoothstep(draw + 0.06f, draw - 0.06f, fu);
-                        for (int c = 0; c < 3; ++c)
-                            base[c] = Mix(base[c], curtain[c] * (0.45f + fold * 0.5f), mask);
-                        roughness = 0.95f;
+                        // A wardrobe, a sofa back, a desk: a hard-edged dark mass
+                        // low in the opening. Silhouette, not detail -- through
+                        // glass at 8 metres that is all there is.
+                        const float edge = smoothstep(furnitureTop, furnitureTop + 0.03f, fv);
+                        for (int c = 0; c < 3; ++c) base[c] *= Mix(1.0f, 0.35f, edge);
                     }
-                    else if (kind == Kind::Blind)
+
+                    if (hasLamp)
                     {
-                        const float drop = 0.30f + roll2 * 0.55f;
-                        if (fv < drop)
+                        const float dx = (fu - lampX) * 1.35f;
+                        const float dy = fv - lampY;
+                        const float d = std::sqrt(dx * dx + dy * dy);
+                        const float core = smoothstep(0.075f, 0.02f, d);
+                        const float halo = smoothstep(0.42f, 0.05f, d);
+                        float warm[3];
+                        Srgb8(warm, 255, 206, 148);
+                        for (int c = 0; c < 3; ++c)
+                            base[c] = Mix(base[c], warm[c] * 0.55f, saturate(halo * 0.55f + core));
+                        emissive = core * 2.4f + halo * halo * 0.5f;
+                    }
+
+                    if (hasCurtain)
+                    {
+                        // Gathered fabric: the folds are what read as cloth, and
+                        // the daylight coming through makes it the brightest
+                        // thing in the opening.
+                        const float across = curtainLeft ? fu : 1.0f - fu;
+                        const float mask = smoothstep(curtainDraw + 0.05f, curtainDraw - 0.05f,
+                                                      across);
+                        if (mask > 0.0f)
                         {
-                            const float slat = 0.5f + 0.5f * std::sin(fv * kPi * 46.0f);
-                            float blind[3];
-                            Srgb8(blind, 196, 190, 178);
-                            for (int c = 0; c < 3; ++c) base[c] = blind[c] * (0.42f + slat * 0.45f);
+                            const float fold = 0.5f
+                                               + 0.5f * std::sin(across * kPi * 26.0f
+                                                                 + roll(13) * 6.0f);
+                            float fabricColour[3];
+                            Srgb8(fabricColour, 226, 216, 198);
+                            const float tint = roll(14);
+                            if (tint > 0.72f) Srgb8(fabricColour, 196, 176, 152);
+                            else if (tint < 0.18f) Srgb8(fabricColour, 178, 190, 196);
+                            for (int c = 0; c < 3; ++c)
+                                base[c] = Mix(base[c],
+                                              fabricColour[c] * (0.16f + fold * 0.20f)
+                                                  * (0.7f + lightFall * 0.5f),
+                                              mask);
                         }
                     }
-                    else if (kind == Kind::Lit)
+
+                    if (hasBlind && fv < blindDrop)
                     {
-                        // A warm fitting somewhere behind the glass.
-                        const float lx = 0.30f + roll2 * 0.4f;
-                        const float ly = 0.18f + roll * 0.2f;
-                        const float d = std::sqrt((fu - lx) * (fu - lx) + (fv - ly) * (fv - ly));
-                        const float glow = smoothstep(0.55f, 0.0f, d);
-                        float warm[3];
-                        Srgb8(warm, 255, 208, 148);
+                        const float slat = 0.5f + 0.5f * std::sin(fv * kPi
+                                                                  * static_cast<float>(cell) * 0.22f);
+                        float blindColour[3];
+                        Srgb8(blindColour, 216, 210, 198);
+                        const float edge = smoothstep(blindDrop, blindDrop - 0.02f, fv);
                         for (int c = 0; c < 3; ++c)
-                            base[c] = Mix(base[c], warm[c] * 0.55f, glow * 0.85f);
-                        emissive = glow * glow * 1.4f;
+                            base[c] = Mix(base[c], blindColour[c] * (0.10f + slat * 0.13f), edge);
                     }
 
-                    // A hint of a ceiling and a floor edge.
-                    base[1] += smoothstep(0.14f, 0.0f, fv) * 0.02f;
+                    // A little grain so a large window is not a flat gradient.
+                    const float grain = fbm(fu * 9.0f, fv * 9.0f, 9, 3, 2.0f, 0.5f, cellSeed);
+                    for (int c = 0; c < 3; ++c) base[c] *= 0.86f + grain * 0.28f;
 
-                    const float noise = fbm(static_cast<float>(x) * 0.09f,
-                                            static_cast<float>(y) * 0.09f, size, 2, 2.0f, 0.5f,
-                                            cellSeed);
-                    for (int c = 0; c < 3; ++c) base[c] *= 0.88f + noise * 0.24f;
-
-                    s.albedo.set(x, y, base[0], base[1], base[2], 1.0f);
-                    s.height.setRgb(x, y, 0.5f, 0.0f, 0.0f);
-                    s.orm.set(x, y, 1.0f, roughness, 0.0f, 1.0f);
-                    // Stash the emissive strength in the height map's green
-                    // channel; the caller lifts it out below.
-                    s.height.at(x, y)[1] = emissive;
+                    const int px = cx * cell + x;
+                    const int py = cy * cell + y;
+                    s.albedo.set(px, py, base[0], base[1], base[2], 1.0f);
+                    s.height.set(px, py, 0.5f, emissive, 0.0f, 1.0f);
+                    s.orm.set(px, py, 1.0f, 0.88f, 0.0f, 1.0f);
                 }
         }
 
@@ -929,8 +977,10 @@ SurfaceMaps TextureFactory::interiorAtlas(int size, std::uint32_t seed)
         for (int x = 0; x < size; ++x)
         {
             const float e = s.height.at(x, y)[1];
-            const float* a = maps.albedo.at(x, y);
-            maps.emissive.setRgb(x, y, a[0] * e, a[1] * e, a[2] * e);
+            if (e <= 0.0f) continue;
+            float warm[3];
+            Srgb8(warm, 255, 198, 138);
+            maps.emissive.setRgb(x, y, warm[0] * e, warm[1] * e, warm[2] * e);
         }
     return maps;
 }
