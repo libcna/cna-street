@@ -145,8 +145,15 @@ void DebugOverlay::draw(const SceneRenderer& renderer, const CityScene& scene, c
 {
     if (!ready_) return;
 
-    const float frameMs = static_cast<float>(
-        gameTime.getElapsedGameTimeProperty().getTotalSecondsProperty()) * 1000.0f;
+    // The renderer's own wall clock, not GameTime's. GameTime reports the *game*
+    // step, which under a fixed time step is a constant whatever the frame
+    // actually cost, and a frame-time readout that cannot show a spike is worse
+    // than none.
+    const float frameMs = renderer.stats().frameMs > 0.0f
+                              ? renderer.stats().frameMs
+                              : static_cast<float>(gameTime.getElapsedGameTimeProperty()
+                                                       .getTotalSecondsProperty())
+                                    * 1000.0f;
     frameHistory_[historyIndex_] = frameMs;
     historyIndex_ = (historyIndex_ + 1) % frameHistory_.size();
     // An exponential average for the headline number and the raw history for the
@@ -163,12 +170,19 @@ void DebugOverlay::draw(const SceneRenderer& renderer, const CityScene& scene, c
     lines.push_back(Format("cna-street %s   %s renderer   %dx%d", CNA_STREET_VERSION,
                            CNA_STREET_RENDERER_NAME, static_cast<int>(settings.windowWidth),
                            static_cast<int>(settings.windowHeight)));
-    lines.push_back(Format("%.1f fps   %.2f ms cpu   cull %.2f  shadow %.2f  opaque %.2f  post %.2f",
+    // Two lines, because they answer two questions. The first is how it is
+    // running; the second is where the frame went, and its parts sum to *this*
+    // frame rather than to the average -- an average broken down by stage is a
+    // number nobody can act on.
+    lines.push_back(Format("%.1f fps   %.2f ms average   %.2f ms this frame",
                            smoothedMs_ > 0.0f ? 1000.0 / static_cast<double>(smoothedMs_) : 0.0,
-                           static_cast<double>(smoothedMs_), static_cast<double>(stats.cullMs),
-                           static_cast<double>(stats.shadowMs),
-                           static_cast<double>(stats.opaqueMs),
-                           static_cast<double>(stats.postMs)));
+                           static_cast<double>(smoothedMs_),
+                           static_cast<double>(stats.frameMs)));
+    lines.push_back(Format(
+        "cull %.2f  shadow %.2f  prepass %.2f  sky %.2f  opaque %.2f  post %.2f",
+        static_cast<double>(stats.cullMs), static_cast<double>(stats.shadowMs),
+        static_cast<double>(stats.prepassMs), static_cast<double>(stats.skyMs),
+        static_cast<double>(stats.opaqueMs), static_cast<double>(stats.postMs)));
     lines.push_back(Format("draws %d (+%d shadow, %d instanced)   tris %zu",
                            stats.drawCalls, stats.shadowDrawCalls, stats.instancedDrawCalls,
                            stats.triangles));

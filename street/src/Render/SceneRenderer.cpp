@@ -308,8 +308,6 @@ void SceneRenderer::submitDynamic(const GpuMesh* mesh, const Material* material,
 
 void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
 {
-    Stopwatch watch = Stopwatch::StartNew();
-
     if (!sceneSorted_)
     {
         // Sort by material so that a run of draws shares its textures and
@@ -393,7 +391,6 @@ void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
         stats_.visibleInstances += static_cast<int>(visible.size());
     }
 
-    stats_.cullMs = Milliseconds(watch);
 }
 
 void SceneRenderer::applyLighting(const RenderSettings& settings)
@@ -517,8 +514,6 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
     stats_.drewShadows = false;
     if (shadows_ == nullptr || !settings.shadows) return;
 
-    Stopwatch watch = Stopwatch::StartNew();
-
     DirectionalLightEXT light;
     light.Direction = sky_.lightDirection();
     light.Color     = sky_.sunColour();
@@ -610,7 +605,6 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
     }
 
     stats_.drewShadows = stats_.shadowDrawCalls > 0;
-    stats_.shadowMs = Milliseconds(watch);
 }
 
 void SceneRenderer::drawPrepass(const Camera& camera, const RenderSettings& settings)
@@ -647,8 +641,6 @@ void SceneRenderer::drawPrepass(const Camera& camera, const RenderSettings& sett
 
 void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& settings)
 {
-    Stopwatch watch = Stopwatch::StartNew();
-
     usingSceneTarget_ = pipeline_ != nullptr && pipeline_->isUsingSceneTarget();
     device_.setDepthStencilStateProperty(DepthStencilState::Default);
     device_.setBlendStateProperty(BlendState::Opaque);
@@ -695,7 +687,6 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
         stats_.triangles += static_cast<std::size_t>(mesh->triangleCount()) * visible.size();
     }
 
-    stats_.opaqueMs = Milliseconds(watch);
 }
 
 void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& settings)
@@ -783,11 +774,20 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     stats_.instancedDrawCalls = 0;
     stats_.triangles = 0;
 
-    cull(camera, settings);
-    drawShadows(camera, settings);
-    drawPrepass(camera, settings);
-
+    // One clock for the whole frame, and every stage a slice of it. The stages
+    // used to be timed by separate stopwatches whose spans overlapped, so
+    // "post" was really "everything after culling that is not the opaque pass",
+    // it counted the shadow pass twice, and the numbers in the overlay summed to
+    // five times the frame they were measuring.
     Stopwatch watch = Stopwatch::StartNew();
+
+    cull(camera, settings);
+    const float afterCull = Milliseconds(watch);
+    drawShadows(camera, settings);
+    const float afterShadow = Milliseconds(watch);
+    drawPrepass(camera, settings);
+    const float afterPrepass = Milliseconds(watch);
+
     if (gpuTimer_ != nullptr) pipeline_->setGpuTimingEnabledEXT(true);
 
     pipeline_->setTransparentScene([&] { drawTransparent(camera, settings); });
@@ -800,13 +800,22 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     device_.setBlendStateProperty(BlendState::Opaque);
     sky_.draw(camera.view(), camera.projection(), width_, height_, timeSeconds);
 
+    const float afterSky = Milliseconds(watch);
     drawOpaque(camera, settings);
+    const float afterOpaque = Milliseconds(watch);
     pipeline_->end();
 
     const auto pipelineStats = pipeline_->getStatistics();
     stats_.postPasses = pipelineStats.passesRun;
     stats_.usedSceneTarget = pipelineStats.usedSceneTarget;
-    stats_.postMs = Milliseconds(watch) - stats_.opaqueMs;
+
+    stats_.cullMs    = afterCull;
+    stats_.shadowMs  = afterShadow - afterCull;
+    stats_.prepassMs = afterPrepass - afterShadow;
+    stats_.skyMs     = afterSky - afterPrepass;
+    stats_.opaqueMs  = afterOpaque - afterSky;
+    stats_.postMs    = Milliseconds(watch) - afterOpaque;
+    stats_.frameMs   = Milliseconds(watch);
 }
 
 }  // namespace CnaStreet

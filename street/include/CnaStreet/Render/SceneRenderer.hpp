@@ -94,10 +94,19 @@ public:
         int postPasses = 0;
         bool usedSceneTarget = false;
         bool drewShadows = false;
+        /// Non-overlapping slices of one frame, in the order they run. They sum
+        /// to `frameMs` by construction, which is the only way a breakdown is
+        /// worth showing at all.
         float cullMs = 0.0f;
         float shadowMs = 0.0f;
+        float prepassMs = 0.0f;
+        float skyMs = 0.0f;
         float opaqueMs = 0.0f;
         float postMs = 0.0f;
+        /// The renderer's own wall-clock frame time. `GameTime` reports the game
+        /// step, which is not the same thing and is a constant under a fixed
+        /// time step.
+        float frameMs = 0.0f;
         double gpuFrameMs = -1.0;
     };
 
