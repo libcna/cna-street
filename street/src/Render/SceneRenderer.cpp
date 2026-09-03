@@ -26,11 +26,13 @@
 #include "Microsoft/Xna/Framework/Graphics/RasterizerState.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SamplerState.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ShaderEffect.hpp"
+#include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 #include "Microsoft/Xna/Framework/Graphics/TextureTransformEXT.hpp"
 #include "System/Diagnostics/Stopwatch.hpp"
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 using namespace Microsoft::Xna::Framework;
 using namespace Microsoft::Xna::Framework::Graphics;
@@ -532,15 +534,30 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
     ShaderEffect* caster = shadows_->getCasterEffect();
     if (caster == nullptr) return;
 
+    if (!loggedCascades_)
+    {
+        loggedCascades_ = true;
+        std::string splits;
+        for (int i = 0; i < shadows_->getCascadeCount(); ++i)
+            splits += std::to_string(shadows_->getSplitDistance(i)) + " ";
+        CNA::Logger::Info("cna-street: shadow cascades " + std::to_string(shadows_->getCascadeCount())
+                          + " at " + std::to_string(shadows_->getCascadeSize()) + " px, splits "
+                          + splits);
+    }
+
     const Vector3& eye = camera.position();
     const float propShadowLimit = settings.propShadowDistance;
+
+    // State first, then the pass: CNA's own cascade example sets the render
+    // states before begin(), and applying the caster effect is the last thing
+    // begin() does.
+    device_.setRasterizerStateProperty(RasterizerState::CullCounterClockwise);
+    device_.setDepthStencilStateProperty(DepthStencilState::Default);
+    device_.setBlendStateProperty(BlendState::Opaque);
 
     for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
     {
         shadows_->begin(cascade);
-        device_.setRasterizerStateProperty(RasterizerState::CullCounterClockwise);
-        device_.setDepthStencilStateProperty(DepthStencilState::Default);
-        device_.setBlendStateProperty(BlendState::Opaque);
 
         // Each cascade covers a distance band; anything past its split is drawn
         // by a coarser cascade and would only cost fill here.
@@ -716,6 +733,47 @@ void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& 
         instanced.draw(*effect_);
         stats_.drawCalls += instanced.getLastDrawCallCount();
     }
+}
+
+void SceneRenderer::dumpShadowAtlas(const std::string& path) const
+{
+    if (shadows_ == nullptr) { CNA::Logger::Warn("cna-street: no shadow map to dump"); return; }
+    Texture2D* atlas = shadows_->getShadowTexture();
+    if (atlas == nullptr) { CNA::Logger::Warn("cna-street: the shadow atlas is null"); return; }
+    // Read it back rather than SaveAsPng: a render target holds no CPU-side copy
+    // of what the GPU wrote into it, so the direct save reports there is nothing
+    // to write.
+    const int width = atlas->getWidthProperty();
+    const int height = atlas->getHeightProperty();
+    std::vector<Color> pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height),
+                              Color::Black);
+    atlas->GetData(pixels.data(), static_cast<int>(pixels.size()));
+
+    int darkest = 255, brightest = 0;
+    double mean = 0.0;
+    for (const Color& pixel : pixels)
+    {
+        const int red = static_cast<int>(pixel.getRProperty());
+        darkest = std::min(darkest, red);
+        brightest = std::max(brightest, red);
+        mean += static_cast<double>(red);
+    }
+    mean /= static_cast<double>(pixels.size());
+
+    std::vector<std::uint8_t> rgba(pixels.size() * 4u);
+    for (std::size_t i = 0; i < pixels.size(); ++i)
+    {
+        rgba[i * 4 + 0] = static_cast<std::uint8_t>(pixels[i].getRProperty());
+        rgba[i * 4 + 1] = static_cast<std::uint8_t>(pixels[i].getGProperty());
+        rgba[i * 4 + 2] = static_cast<std::uint8_t>(pixels[i].getBProperty());
+        rgba[i * 4 + 3] = 255;
+    }
+    Texture2D copy = Texture2D::CreateFromPixels(device_, width, height, rgba);
+    copy.SaveAsPng(path);
+    CNA::Logger::Info("cna-street: shadow atlas " + std::to_string(width) + "x"
+                      + std::to_string(height) + " -> " + path + "  range "
+                      + std::to_string(darkest) + ".." + std::to_string(brightest) + ", mean "
+                      + std::to_string(mean));
 }
 
 void SceneRenderer::render(const Camera& camera, const RenderSettings& settings, float timeSeconds)

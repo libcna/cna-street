@@ -137,6 +137,10 @@ public:
     [[nodiscard]] const std::vector<std::string>& limitations() const { return limitations_; }
     [[nodiscard]] std::size_t geometryBytes() const { return geometryBytes_; }
 
+    /// Writes the cascade atlas to a PNG. The only way to tell an empty shadow
+    /// map from a correct one that is being sampled wrongly, and worth keeping.
+    void dumpShadowAtlas(const std::string& path) const;
+
 private:
     void drawOpaque(const Camera& camera, const RenderSettings& settings);
     void drawTransparent(const Camera& camera, const RenderSettings& settings);
@@ -174,6 +178,7 @@ private:
     /// Whether this frame renders into the pipeline's float scene target, which
     /// decides who owns the sRGB encode.
     bool usingSceneTarget_ = false;
+    mutable bool loggedCascades_ = false;
     std::size_t geometryBytes_ = 0;
 
     Stats stats_;

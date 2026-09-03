@@ -52,18 +52,29 @@ struct RenderSettings
     int   shadowQuality = 2;
     float shadowDistance = 190.0f;
     float shadowSplitLambda = 0.86f;
-    float shadowDepthBias = 0.0016f;
+    /// Bigger than CNA's 0.0015 default, and it has to be. The cascade atlas is
+    /// an 8-bit colour target holding light-space distance, so one quantisation
+    /// step is 1/255 = 0.0039 — larger than that default, which guarantees
+    /// self-shadowing acne on every surface facing the sun.
+    float shadowDepthBias = 0.0060f;
     float shadowBlendBand = 0.12f;
     bool  shadowDebugTint = false;
 
     // --- atmosphere ---
-    /// Sun elevation and azimuth in degrees. 34/128 is a mid-afternoon sun from
-    /// the south-west, which rakes the façades on one side of the street and
-    /// leaves the other in shadow — the light that makes a street look like a
-    /// photograph rather than like a render.
-    float sunElevationDegrees = 34.0f;
-    float sunAzimuthDegrees   = 128.0f;
-    float sunIntensity        = 2.6f;
+    /// Sun elevation and azimuth in degrees, azimuth measured clockwise from
+    /// north.
+    ///
+    /// The elevation is the number that matters, and it is a geometry problem
+    /// rather than a taste one. A 17 m building throws a shadow 17/tan(elevation)
+    /// long; the street is 18.6 m between building lines. Below about 43 degrees
+    /// that shadow crosses the whole carriageway and the entire canyon is in
+    /// shade — physically right, and a flat, sunless picture. At 56 degrees it
+    /// reaches 15.3 m, which puts a crisp shadow edge down the road with the
+    /// eastern few metres and the far footway still in full sun. That contrast
+    /// is most of what makes a street look photographed.
+    float sunElevationDegrees = 48.0f;
+    float sunAzimuthDegrees   = 250.0f;
+    float sunIntensity        = 3.0f;
     /// Image based lighting from the baked sky cubemap. Off falls back to a
     /// hemisphere ambient term, which is also what a renderer without IBL gets.
     bool  imageBasedLighting  = true;

@@ -3,6 +3,7 @@
 
 #include "CnaStreet/Geometry/MeshBuilder.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -40,6 +41,14 @@ public:
     [[nodiscard]] static int regionKeyFor(float x, float z);
 
     /// The builder for one material in the current cell, created on demand.
+    ///
+    /// The returned reference stays valid for the collector's lifetime. That is
+    /// not a detail: the generators hold several of these at once — a wall, a
+    /// frame and a pane of glass are interleaved while one window is built — and
+    /// an implementation that stored the builders directly in a `std::vector`
+    /// would invalidate the first reference the moment the third material was
+    /// asked for. It did, and the result was a use-after-free that looked like a
+    /// crash somewhere else entirely.
     [[nodiscard]] Geometry::MeshBuilder& builder(const Material* material);
 
     struct Batch
@@ -63,7 +72,7 @@ private:
         Geometry::MeshBuilder builder;
     };
 
-    std::vector<Entry> entries_;
+    std::vector<std::unique_ptr<Entry>> entries_;
     int current_ = 0;
 };
 

@@ -91,6 +91,7 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --screenshot <file.png>           write one frame and exit\n"
                 "  --capture <dir>                   write every viewpoint into dir and exit\n"
                 "  --exposure <v>                    exposure multiplier\n"
+                "  --shadow-debug                    tint each shadow cascade\n"
                 "  --no-shadows --no-bloom --no-ssao --no-fog --no-clouds --no-ibl\n"
                 "  --no-traffic --no-pedestrians --no-vegetation --no-overlay\n"
                 "  --sun <elevation> <azimuth>       sun position in degrees\n"
@@ -125,6 +126,11 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--capture")    { const char* v = next(i); if (v) captureDirectory_ = v; }
         else if (arg == "--exposure")  { const char* v = next(i); if (v) settings_.exposure = static_cast<float>(std::atof(v)); }
         else if (arg == "--no-ibl")         settings_.imageBasedLighting = false;
+        else if (arg == "--shadow-debug")   settings_.shadowDebugTint = true;
+        else if (arg == "--shadow-distance") { const char* v = next(i); if (v) settings_.shadowDistance = static_cast<float>(std::atof(v)); }
+        else if (arg == "--cascades")      { const char* v = next(i); if (v) settings_.shadowCascades = std::atoi(v); }
+        else if (arg == "--shadow-bias")   { const char* v = next(i); if (v) settings_.shadowDepthBias = static_cast<float>(std::atof(v)); }
+        else if (arg == "--dump-shadow")  { const char* v = next(i); if (v) shadowDumpPath_ = v; }
         else if (arg == "--no-shadows")     settings_.shadows = false;
         else if (arg == "--no-bloom")       settings_.bloom = false;
         else if (arg == "--no-ssao")        settings_.ssao = false;
@@ -369,6 +375,11 @@ void StreetApplication::Draw(const GameTime& gameTime)
 
     ++framesDrawn_;
 
+    if (!shadowDumpPath_.empty() && framesDrawn_ >= 3)
+    {
+        renderer_->dumpShadowAtlas(shadowDumpPath_);
+        shadowDumpPath_.clear();
+    }
     if (!screenshotPath_.empty() && framesDrawn_ >= 3)
     {
         captureScreenshot(screenshotPath_);

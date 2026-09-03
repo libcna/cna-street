@@ -119,6 +119,22 @@ public:
                  const Microsoft::Xna::Framework::Vector3& c,
                  const Microsoft::Xna::Framework::Vector3& d);
 
+    /**
+     * @brief A quad wound so that its normal points the same way as @p hint.
+     *
+     * The corner order of a quad decides which way it faces, and getting it
+     * wrong produces geometry that is *visible but lit from behind* -- a roof
+     * slope that stays grey in full sun, a lane marking that renders black on
+     * black asphalt. Both happened here. Where the intended facing is known and
+     * the corner order is derived from something else (a direction of travel, a
+     * side of the street), state the facing and let this sort the order out.
+     */
+    bool addQuadFacing(const Microsoft::Xna::Framework::Vector3& a,
+                       const Microsoft::Xna::Framework::Vector3& b,
+                       const Microsoft::Xna::Framework::Vector3& c,
+                       const Microsoft::Xna::Framework::Vector3& d,
+                       const Microsoft::Xna::Framework::Vector3& hint);
+
     /// Explicit-UV quad. UVs are given per corner in the same order.
     bool addQuadUv(const Microsoft::Xna::Framework::Vector3& a,
                    const Microsoft::Xna::Framework::Vector3& b,
@@ -156,6 +172,13 @@ public:
     void addCylinder(const Microsoft::Xna::Framework::Vector3& baseCentre, float baseRadius,
                      float topRadius, float height, int segments,
                      bool capBottom = true, bool capTop = true);
+
+    /// Cylinder between two arbitrary points. `addCylinder` only ever runs along
+    /// world +Y, which is right for a lamp column and useless for a mast arm, a
+    /// handrail or a bicycle stand.
+    void addCylinderBetween(const Microsoft::Xna::Framework::Vector3& from,
+                            const Microsoft::Xna::Framework::Vector3& to, float radius,
+                            int segments, bool capEnds = true);
 
     /// A flat disc facing +Y (or -Y when @p faceUp is false).
     void addDisc(const Microsoft::Xna::Framework::Vector3& centre, float radius, int segments,

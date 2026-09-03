@@ -216,6 +216,14 @@ bool MeshBuilder::addQuad(const Vector3& a, const Vector3& b, const Vector3& c, 
                      planarUv(d, normal));
 }
 
+bool MeshBuilder::addQuadFacing(const Vector3& a, const Vector3& b, const Vector3& c,
+                                const Vector3& d, const Vector3& hint)
+{
+    const Vector3 raw = Vector3::Cross(b - a, c - a);
+    if (Vector3::Dot(raw, hint) < 0.0f) return addQuad(a, d, c, b);
+    return addQuad(a, b, c, d);
+}
+
 bool MeshBuilder::addQuadUnitUv(const Vector3& a, const Vector3& b, const Vector3& c,
                                 const Vector3& d)
 {
@@ -328,6 +336,34 @@ void MeshBuilder::addCylinder(const Vector3& baseCentre, float baseRadius, float
     if (capBottom && baseRadius > kEpsilon) addDisc(baseCentre, baseRadius, segments, false);
     if (capTop && topRadius > kEpsilon)
         addDisc(baseCentre + Vector3(0.0f, height, 0.0f), topRadius, segments, true);
+}
+
+void MeshBuilder::addCylinderBetween(const Vector3& from, const Vector3& to, float radius,
+                                     int segments, bool capEnds)
+{
+    const Vector3 axis = to - from;
+    const float length = std::sqrt(axis.X * axis.X + axis.Y * axis.Y + axis.Z * axis.Z);
+    if (length < 1e-5f || radius <= 0.0f) return;
+
+    // Build it along +Y in a local frame and transform, so the tangent frames and
+    // the UV wrap come from the same code path as every other cylinder.
+    const Vector3 up = Vector3(axis.X / length, axis.Y / length, axis.Z / length);
+    const Vector3 reference = std::fabs(up.Y) > 0.99f ? Vector3::Forward : Vector3::Up;
+    const Vector3 right = SafeNormalize(Vector3::Cross(reference, up), Vector3::Right);
+    const Vector3 forward = Vector3::Cross(up, right);
+
+    MeshBuilder local;
+    local.tileU_ = tileU_;
+    local.tileV_ = tileV_;
+    local.uvMode_ = uvMode_;
+    local.addCylinder(Vector3::Zero, radius, radius, length, segments, capEnds, capEnds);
+
+    Matrix frame = Matrix::getIdentityProperty();
+    frame.M11 = right.X;   frame.M12 = right.Y;   frame.M13 = right.Z;
+    frame.M21 = up.X;      frame.M22 = up.Y;      frame.M23 = up.Z;
+    frame.M31 = forward.X; frame.M32 = forward.Y; frame.M33 = forward.Z;
+    frame.M41 = from.X;    frame.M42 = from.Y;    frame.M43 = from.Z;
+    append(local.mesh(), frame);
 }
 
 void MeshBuilder::addDisc(const Vector3& centre, float radius, int segments, bool faceUp)

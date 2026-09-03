@@ -53,10 +53,13 @@ void Stripe(MeshBuilder& builder, float x0, float z0, float x1, float z1, float 
     const float px = uz * width * 0.5f, pz = -ux * width * 0.5f;
     const float v1 = length / 0.60f;   // one texture repeat per 60 cm of line
 
-    builder.addQuadUv(Vector3(x0 - px, y, z0 - pz), Vector3(x0 + px, y, z0 + pz),
-                      Vector3(x1 + px, y, z1 + pz), Vector3(x1 - px, y, z1 - pz),
-                      Vector2(0.0f, 0.0f), Vector2(1.0f, 0.0f), Vector2(1.0f, v1),
-                      Vector2(0.0f, v1));
+    // Wound so the face points up whichever way the line runs: the corner order
+    // here comes from the direction of travel, and half the markings on the
+    // street would otherwise face into the ground.
+    builder.addQuadUv(Vector3(x0 - px, y, z0 - pz), Vector3(x1 - px, y, z1 - pz),
+                      Vector3(x1 + px, y, z1 + pz), Vector3(x0 + px, y, z0 + pz),
+                      Vector2(0.0f, 0.0f), Vector2(0.0f, v1), Vector2(1.0f, v1),
+                      Vector2(1.0f, 0.0f));
 }
 
 /// A broken line: `mark` metres painted, `gap` metres blank.
@@ -377,8 +380,9 @@ void RoadBuilder::buildFootways(GeometryCollector& collector, Rng& rng)
             MeshBuilder& builder = collector.builder(setts);
             builder.setTileSize(0.8f);
             const float ox = towardRoadX * M::kGutterWidth, oz = towardRoadZ * M::kGutterWidth;
-            builder.addQuad(Vector3(ax, 0.004f, az), Vector3(bx, 0.004f, bz),
-                            Vector3(bx + ox, 0.004f, bz + oz), Vector3(ax + ox, 0.004f, az + oz));
+            builder.addQuadFacing(Vector3(ax, 0.004f, az), Vector3(bx, 0.004f, bz),
+                                  Vector3(bx + ox, 0.004f, bz + oz),
+                                  Vector3(ax + ox, 0.004f, az + oz), Vector3::Up);
         }
     };
 
@@ -475,7 +479,7 @@ void RoadBuilder::buildFootways(GeometryCollector& collector, Rng& rng)
             const float ax = crossing.walkDirection.X, az = crossing.walkDirection.Y;
             // Across the walking direction is the crossing's own width.
             const float bx = -az, bz = ax;
-            builder.addQuad(
+            builder.addQuadFacing(
                 Vector3(cx - ax * halfAcross - bx * halfAlong, kFootwayY + 0.004f,
                         cz - az * halfAcross - bz * halfAlong),
                 Vector3(cx - ax * halfAcross + bx * halfAlong, kFootwayY + 0.004f,
@@ -483,7 +487,7 @@ void RoadBuilder::buildFootways(GeometryCollector& collector, Rng& rng)
                 Vector3(cx + ax * halfAcross + bx * halfAlong, kFootwayY + 0.004f,
                         cz + az * halfAcross + bz * halfAlong),
                 Vector3(cx + ax * halfAcross - bx * halfAlong, kFootwayY + 0.004f,
-                        cz + az * halfAcross - bz * halfAlong));
+                        cz + az * halfAcross - bz * halfAlong), Vector3::Up);
         }
     }
     (void)rng;

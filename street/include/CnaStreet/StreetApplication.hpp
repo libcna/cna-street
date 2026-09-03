@@ -80,6 +80,7 @@ private:
     int         captureIndex_    = 0;
     int         captureSettle_   = 0;
     std::string screenshotPath_;
+    std::string shadowDumpPath_;
     std::string settingsPath_;
     int         startViewpoint_  = 0;
 };

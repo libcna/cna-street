@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "CnaStreet/Props/BuildingBuilder.hpp"
 #include "CnaStreet/Props/RoadBuilder.hpp"
 #include "CnaStreet/Render/CameraController.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
@@ -80,6 +81,7 @@ private:
     /// Uploads one mesh and keeps it alive.
     const GpuMesh* upload(const Geometry::MeshData& data, const std::string& name);
 
+    void buildContext(GeometryCollector& collector, Rng& rng);
     void buildStreetFurniture(GeometryCollector& collector, Rng& rng);
     void buildVegetation(GeometryCollector& collector, Rng& rng);
     void buildSignals(Rng& rng);
@@ -91,6 +93,7 @@ private:
     MaterialLibrary& materials_;
     CityLayout      layout_;
     std::vector<Crossing> crossings_;
+    std::vector<FacadeAnchor> anchors_;
 
     std::vector<std::unique_ptr<GpuMesh>> meshes_;
     std::vector<Viewpoint> viewpoints_;

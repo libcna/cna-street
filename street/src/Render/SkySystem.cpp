@@ -418,7 +418,25 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
                                                                 lightDirection(), turbidity_)
                                        * skyIntensity_;
                     const float fade = std::clamp(-direction.Y * 2.2f, 0.0f, 1.0f);
-                    radiance = up * (0.16f + 0.05f * (1.0f - fade));
+                    radiance = up * (0.20f + 0.06f * (1.0f - fade));
+                }
+
+                // Urban inter-reflection. Half a street's ambient light is the
+                // sunlit building opposite, not the sky: a façade in shade is
+                // lit by a big warm grey reflector across the road, and without
+                // it every shadowed elevation in the scene reads as flat blue.
+                // Applied around the horizon, where the buildings are, and
+                // scaled by how much sun there is to bounce.
+                const float horizonBand = 1.0f - std::clamp(std::fabs(direction.Y) * 2.6f, 0.0f,
+                                                            1.0f);
+                if (horizonBand > 0.0f)
+                {
+                    const Vector3 facade(0.94f, 0.90f, 0.82f);   // sunlit render, roughly
+                    const float lit = std::clamp(sunDirection_.Y, 0.0f, 1.0f);
+                    const Vector3 bounce = Vector3(sunColour_.X * facade.X, sunColour_.Y * facade.Y,
+                                                   sunColour_.Z * facade.Z)
+                                           * (0.13f * lit);
+                    radiance = radiance + bounce * horizonBand;
                 }
 
                 face[static_cast<std::size_t>(y) * kFaceSize + static_cast<std::size_t>(x)] =
