@@ -29,6 +29,12 @@ public:
     /// drives crack density, patch count, oil staining and aggregate exposure.
     [[nodiscard]] static SurfaceMaps asphalt(int size, std::uint32_t seed, float wear);
 
+    /// The polished band a tyre leaves in a travel lane: dark, smoother than the
+    /// asphalt around it, and alpha-masked so its edge is a diffuse boundary
+    /// rather than a stencil cut. Laid as a decal along a lane, because which
+    /// way the traffic runs is a property of the road, not of the material.
+    [[nodiscard]] static SurfaceMaps wheelTrack(int size, std::uint32_t seed);
+
     /// Cast concrete paving slabs, 3x3 to the tile.
     [[nodiscard]] static SurfaceMaps concretePaving(int size, std::uint32_t seed);
 

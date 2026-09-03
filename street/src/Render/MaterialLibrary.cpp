@@ -180,12 +180,31 @@ void MaterialLibrary::build(std::uint32_t seed)
     // ---------------------------------------------------------------------
     // Highway surfaces
     // ---------------------------------------------------------------------
-    install(MaterialId::AsphaltMain, "asphalt-main", TextureFactory::asphalt(kLarge, s + 1u, 0.55f),
-            pbr(0.88f, 0.0f));
-    install(MaterialId::AsphaltSide, "asphalt-side", TextureFactory::asphalt(kLarge, s + 2u, 0.32f),
-            pbr(0.90f, 0.0f));
-    install(MaterialId::AsphaltWorn, "asphalt-worn", TextureFactory::asphalt(kLarge, s + 3u, 0.92f),
-            pbr(0.92f, 0.0f));
+    {
+        // The road is the largest single surface in the picture and the one the
+        // camera gets closest to, so its normal is dialled back further still:
+        // at full strength the grazing view down the street shimmered.
+        Material asphalt = pbr(0.88f, 0.0f);
+        asphalt.normalScale = 0.7f;
+        install(MaterialId::AsphaltMain, "asphalt-main",
+                TextureFactory::asphalt(kLarge, s + 1u, 0.55f), asphalt);
+        asphalt.roughness = 0.90f;
+        install(MaterialId::AsphaltSide, "asphalt-side",
+                TextureFactory::asphalt(kLarge, s + 2u, 0.32f), asphalt);
+        asphalt.roughness = 0.92f;
+        install(MaterialId::AsphaltWorn, "asphalt-worn",
+                TextureFactory::asphalt(kLarge, s + 3u, 0.92f), asphalt);
+    }
+
+    {
+        Material track = pbr(0.58f, 0.0f);
+        track.alphaMode   = AlphaModeEXT::Mask;
+        track.alphaCutoff = 0.5f;
+        track.castsShadow = false;
+        track.writesDepth = false;
+        install(MaterialId::WheelTrack, "wheel-track",
+                TextureFactory::wheelTrack(kMedium, s + 4u), track);
+    }
 
     {
         Material paint = pbr(0.66f, 0.0f);

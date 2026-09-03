@@ -236,6 +236,56 @@ void RoadBuilder::buildCarriageway(GeometryCollector& collector, Rng& rng)
         }
     }
 
+    // --- wheel tracks ------------------------------------------------------
+    // A pair of polished bands down each travel lane, laid as decals along the
+    // direction of travel. This cannot live in the road material: a tiling
+    // texture has no idea which way the traffic runs, and the version that tried
+    // put the bands across the carriageway and repeated them every three metres.
+    {
+        const Material* track = &materials_.get(MaterialId::WheelTrack);
+        const float mainLane = kMainHalfRoad - M::kParkingLaneWidth - M::kMainLaneWidth * 0.5f;
+        const float sideLane = kSideHalfRoad * 0.5f;
+        // 1.65 m apart, which is about the track width of a European car.
+        constexpr float kTrackGap  = 0.82f;
+        constexpr float kTrackHalf = 0.36f;
+        constexpr float kLift      = M::kMarkingLift * 0.35f;
+
+        auto band = [&](float x0, float z0, float x1, float z1, bool alongZ) {
+            for (float t = std::min(alongZ ? z0 : x0, alongZ ? z1 : x1);
+                 t < std::max(alongZ ? z0 : x0, alongZ ? z1 : x1); t += 20.0f)
+            {
+                const float t1 = std::min(t + 20.0f, std::max(alongZ ? z0 : x0, alongZ ? z1 : x1));
+                collector.setRegion(alongZ ? x0 : (t + t1) * 0.5f, alongZ ? (t + t1) * 0.5f : z0);
+                MeshBuilder& builder = collector.builder(track);
+                builder.setUvMode(UvMode::Explicit);
+                // One repeat of the band across its width, and one every four
+                // metres along it, so the fraying at the edge never lines up.
+                const float length = (t1 - t) / 2.6f;
+                if (alongZ)
+                    builder.addQuadUv(Vector3(x0 - kTrackHalf, kLift, t),
+                                      Vector3(x0 - kTrackHalf, kLift, t1),
+                                      Vector3(x0 + kTrackHalf, kLift, t1),
+                                      Vector3(x0 + kTrackHalf, kLift, t),
+                                      Vector2(0.0f, 0.0f), Vector2(length, 0.0f),
+                                      Vector2(length, 1.0f), Vector2(0.0f, 1.0f));
+                else
+                    builder.addQuadUv(Vector3(t, kLift, z0 + kTrackHalf),
+                                      Vector3(t1, kLift, z0 + kTrackHalf),
+                                      Vector3(t1, kLift, z0 - kTrackHalf),
+                                      Vector3(t, kLift, z0 - kTrackHalf),
+                                      Vector2(0.0f, 0.0f), Vector2(length, 0.0f),
+                                      Vector2(length, 1.0f), Vector2(0.0f, 1.0f));
+            }
+        };
+
+        for (const float side : {-1.0f, 1.0f})
+            for (const float offset : {-kTrackGap, kTrackGap})
+            {
+                band(side * mainLane + offset, -kMainEnd, side * mainLane + offset, kMainEnd, true);
+                band(-kSideEnd, side * sideLane + offset, kSideEnd, side * sideLane + offset, false);
+            }
+    }
+
     // Two resurfaced patches on the main street: a real street has been dug up.
     for (int i = 0; i < 3; ++i)
     {

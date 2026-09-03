@@ -112,8 +112,13 @@ SurfaceMaps TextureFactory::asphalt(int size, std::uint32_t seed, float wear)
             // --- aggregate ---------------------------------------------------
             // Two cellular scales: the coarse 8–16 mm stones you can see, and a
             // fine sand fraction between them.
+            // 46 cells across a tile the road lays at six metres made every
+            // stone 13 cm across: from the footway the carriageway looked like
+            // bubble wrap. A 6 m tile in a 512 px map is 1.2 cm per texel, so
+            // the largest aggregate that can be resolved at all is about 4 cm,
+            // and that is what this draws.
             float second = 0.0f;
-            const float coarse = worley2(u * 46.0f, v * 46.0f, 46, seed + 11u, &second);
+            const float coarse = worley2(u * 140.0f, v * 140.0f, 140, seed + 11u, &second);
             const float stone  = smoothstep(0.42f, 0.05f, coarse);
             const float fine   = fbm(u * lattice * 4.0f, v * lattice * 4.0f,
                                      static_cast<int>(lattice * 4.0f), 4, 2.0f, 0.55f, seed + 23u);
@@ -142,26 +147,23 @@ SurfaceMaps TextureFactory::asphalt(int size, std::uint32_t seed, float wear)
                 if (edge > 0.0f) height += edge * 0.05f * patch;
             }
 
-            // --- wheel tracks --------------------------------------------------
-            // Two polished bands where every tyre runs, one metre either side of
-            // the lane centre. Rubber fills the surface voids, so the track is
-            // darker *and* smoother than the asphalt beside it.
-            const float trackCentre = std::fabs(std::fmod(v * 2.0f + 0.5f, 1.0f) - 0.5f);
-            const float track = smoothstep(0.16f, 0.03f, trackCentre) * (0.30f + 0.5f * wear);
-            for (int c = 0; c < 3; ++c) base[c] *= (1.0f - track * 0.30f);
-            roughness -= track * 0.22f;
-            height -= track * 0.05f;
+            // Wheel tracks are not here, and the reason is worth writing down.
+            // A tiling texture has no idea which way the road runs: the bands
+            // this used to draw came out *across* the carriageway and repeated
+            // every three metres, which is a road surface no vehicle has ever
+            // made. Polished wheel tracks belong to a lane, not to a material,
+            // and the road builder lays them as geometry.
 
             // --- cracking --------------------------------------------------------
             // Ridged noise thresholded near its crest gives branching lines that
             // meet at angles, which is what a fatigue crack actually does.
-            const float crackField = ridged(u * 9.0f, v * 9.0f, 9, 4, seed + 137u);
-            const float crack = smoothstep(0.78f - 0.14f * wear, 0.96f, crackField)
+            const float crackField = ridged(u * 5.0f, v * 5.0f, 5, 4, seed + 137u);
+            const float crack = smoothstep(0.80f - 0.14f * wear, 0.97f, crackField)
                                 * (0.15f + 0.85f * wear);
             if (crack > 0.0f)
             {
                 for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], 0.008f, crack * 0.9f);
-                height -= crack * 0.34f;
+                height -= crack * 0.22f;
                 occlusion -= crack * 0.45f;
                 roughness = Mix(roughness, 0.95f, crack);
             }
@@ -182,7 +184,46 @@ SurfaceMaps TextureFactory::asphalt(int size, std::uint32_t seed, float wear)
             s.orm.set(x, y, saturate(occlusion), saturate(roughness), 0.0f, 1.0f);
         }
 
-    return s.finish(1.5f);
+    // A gentler normal than the rest of the catalogue. Tarmac has almost no
+    // relief at the scale a person walking past resolves, and the strong map
+    // this used to carry read as gravel from two metres away.
+    return s.finish(0.75f);
+}
+
+SurfaceMaps TextureFactory::wheelTrack(int size, std::uint32_t seed)
+{
+    Surface s(size);
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+        {
+            const float u = static_cast<float>(x) / static_cast<float>(size);
+            const float v = static_cast<float>(y) / static_cast<float>(size);
+
+            // Across the band: full in the middle, gone at the edges. The
+            // threshold is broken up by noise so the boundary looks worn rather
+            // than cut, which is what lets an alpha *mask* stand in for a blend
+            // and saves the sorting a transparent decal on a road would need.
+            const float across = std::fabs(v - 0.5f) * 2.0f;
+            const float fray = fbm(u * 44.0f, v * 20.0f, 44, 4, 2.0f, 0.55f, seed + 3u);
+            const float speckle = value2(u * 150.0f, v * 60.0f, 150, seed + 29u);
+            // A wide, noisy ramp rather than an edge. The mask is binary per
+            // texel, so what makes the boundary read as wear rather than as a
+            // stencil is that the *density* of kept texels falls off gradually
+            // and the mip chain averages them.
+            const float coverage = smoothstep(0.92f, 0.10f,
+                                              across + (fray - 0.5f) * 0.26f
+                                                  + (speckle - 0.5f) * 0.70f);
+
+            // Rubber in the surface voids. This is mostly a roughness
+            // difference, not a colour one: a wheel track that is markedly
+            // darker than the road reads as a spill, not as polish.
+            const float polish = fbm(u * 30.0f, v * 9.0f, 30, 3, 2.0f, 0.5f, seed + 17u);
+            const float shade = 0.036f + polish * 0.014f;
+            s.albedo.set(x, y, shade, shade, shade * 1.03f, coverage);
+            s.height.setRgb(x, y, 0.5f, 0.0f, 0.0f);
+            s.orm.set(x, y, 1.0f, 0.62f + polish * 0.10f, 0.0f, 1.0f);
+        }
+    return s.finish(0.2f);
 }
 
 // ---------------------------------------------------------------------------

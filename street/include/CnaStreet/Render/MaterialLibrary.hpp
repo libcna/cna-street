@@ -27,7 +27,7 @@ enum class MaterialId
     AsphaltMain, AsphaltSide, AsphaltWorn,
     RoadMarking,
     ConcretePaving, TactilePaving, GraniteSetts, GraniteKerb,
-    ManholeIron, DrainGrate,
+    ManholeIron, DrainGrate, WheelTrack,
     Grass, Soil,
 
     // --- façades ---
