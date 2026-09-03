@@ -311,8 +311,10 @@ void CityScene::update(float deltaSeconds, const RenderSettings& settings)
     if (settings.pedestrians) pedestrians_.update(deltaSeconds, signals_);
 }
 
-void CityScene::submit(const RenderSettings& settings)
+void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
 {
+    cameraPosition_ = eye;
+
     // --- signal lenses ------------------------------------------------------
     // Drawn per frame rather than instanced, because which of them is lit
     // changes: a lit lens and a dark one are the same mesh with a different
@@ -358,15 +360,44 @@ void CityScene::submit(const RenderSettings& settings)
     }
 
     // --- vehicles -----------------------------------------------------------
-    if (settings.traffic)
+    if (settings.traffic && !vehicleMeshes_.empty())
+    {
         for (const Vehicle& vehicle : traffic_.vehicles())
         {
             const int variant = std::clamp(vehicle.variant, 0,
                                            static_cast<int>(vehicleMeshes_.size()) - 1);
-            if (vehicleMeshes_.empty()) break;
-            submitProp(vehicleMeshes_[static_cast<std::size_t>(variant)],
-                       vehicle.transform(traffic_.lanes()));
+            const VehicleMesh& mesh = vehicleMeshes_[static_cast<std::size_t>(variant)];
+            const Matrix world = vehicle.transform(traffic_.lanes());
+            const Vector2 at   = vehicle.groundPosition(traffic_.lanes());
+            const float distance = std::sqrt((at.X - eye.X) * (at.X - eye.X)
+                                             + (at.Y - eye.Z) * (at.Y - eye.Z));
+            if (distance > settings.propCullDistance) continue;
+
+            // One switch for the whole vehicle. Below 38 m the body is the full
+            // mesh with its shut lines, mirrors and interior; past it the same
+            // silhouette at a third of the stations, which is three pixels of
+            // difference and two thirds of the triangles.
+            const bool near = distance < 38.0f;
+            submitProp(near ? mesh.body : mesh.distantBody, world);
+            if (vehicle.braking && brakeLit_ != nullptr && distance < 90.0f)
+                submitProp(mesh.brakeLamps, world, brakeLit_);
+
+            const PropMesh& wheel = near ? mesh.wheel : mesh.distantWheel;
+            if (wheel.empty()) continue;
+            for (const WheelPlacement& place : mesh.wheels)
+            {
+                // Rolling first, then steer, then the placement. A steered wheel
+                // that rolls about the *steered* axis walks sideways out of its
+                // arch, which is the classic version of this bug.
+                Matrix local = Matrix::CreateRotationX(vehicle.wheelAngle * place.side);
+                if (place.steered && vehicle.steerAngle != 0.0f)
+                    local = local * Matrix::CreateRotationY(vehicle.steerAngle);
+                if (place.side < 0.0f) local = local * Matrix::CreateScale(-1.0f, 1.0f, 1.0f);
+                submitProp(wheel,
+                           local * Matrix::CreateTranslation(place.centre) * world);
+            }
         }
+    }
 
     // --- people -------------------------------------------------------------
     if (settings.pedestrians && pedestrianPoseCount_ > 0)
@@ -1129,12 +1160,39 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         Vector3(0.30f, 0.06f, 0.07f),   // dark red
         Vector3(0.10f, 0.20f, 0.14f),   // British racing green
         Vector3(0.66f, 0.30f, 0.06f),   // copper
+        Vector3(0.30f, 0.33f, 0.36f),   // slate
+        Vector3(0.55f, 0.50f, 0.36f),   // sand
         Vector3(0.72f, 0.72f, 0.71f),   // white van
     };
+    static_assert(std::size(kPaints) == static_cast<std::size_t>(TrafficSystem::kVariantCount),
+                  "every vehicle variant needs a paint colour, or the last ones come out black");
 
     const VehicleFactory vehicles(materials_);
     vehicleMeshes_.clear();
     vehicleMeshes_.reserve(TrafficSystem::kVariantCount);
+    // Wheels are built per class, not per paint variant: an alloy wheel is the
+    // same object on a silver car and a red one, and building twelve copies of
+    // it would cost twelve draw calls' worth of instance groups for nothing.
+    std::vector<PropMesh> wheelByType(static_cast<std::size_t>(VehicleType::Count));
+    std::vector<PropMesh> distantWheelByType(static_cast<std::size_t>(VehicleType::Count));
+    for (int t = 0; t < static_cast<int>(VehicleType::Count); ++t)
+    {
+        const VehicleType type = static_cast<VehicleType>(t);
+        const std::string tag  = VehicleFactory::name(type);
+        wheelByType[static_cast<std::size_t>(t)] =
+            makeProp("wheel-" + tag, [&](GeometryCollector& c) {
+                vehicles.buildWheel(c, type, VehicleFactory::Detail::Full);
+            });
+        distantWheelByType[static_cast<std::size_t>(t)] =
+            makeProp("wheel-far-" + tag, [&](GeometryCollector& c) {
+                vehicles.buildWheel(c, type, VehicleFactory::Detail::Distant);
+            });
+    }
+
+    brakeLit_ = materials_.deriveTinted("car-brake-lit", MaterialId::CarLightRear,
+                                        Vector3(0.72f, 0.06f, 0.05f),
+                                        Vector3(3.4f, 0.16f, 0.10f));
+
     for (int variant = 0; variant < TrafficSystem::kVariantCount; ++variant)
     {
         const std::string suffix = std::to_string(variant);
@@ -1143,9 +1201,22 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
             kPaints[static_cast<std::size_t>(variant)]);
         Rng rng = Rng::derive(settings.seed, "vehicle-" + suffix);
         const VehicleType type = TrafficSystem::typeForVariant(variant);
-        vehicleMeshes_.push_back(makeProp("vehicle-" + suffix, [&](GeometryCollector& c) {
-            vehicles.build(c, type, paint, rng);
-        }));
+
+        VehicleMesh entry;
+        entry.body = makeProp("vehicle-" + suffix, [&](GeometryCollector& c) {
+            vehicles.build(c, type, paint, rng, VehicleFactory::Detail::Full);
+        });
+        entry.distantBody = makeProp("vehicle-far-" + suffix, [&](GeometryCollector& c) {
+            Rng far = Rng::derive(settings.seed, "vehicle-far-" + suffix);
+            vehicles.build(c, type, paint, far, VehicleFactory::Detail::Distant);
+        });
+        entry.wheel        = wheelByType[static_cast<std::size_t>(type)];
+        entry.distantWheel = distantWheelByType[static_cast<std::size_t>(type)];
+        entry.wheels       = VehicleFactory::wheelsFor(type);
+        entry.brakeLamps   = makeProp("brake-" + suffix, [&](GeometryCollector& c) {
+            vehicles.buildBrakeLamps(c, type);
+        });
+        vehicleMeshes_.push_back(std::move(entry));
     }
 
     // --- the people ---------------------------------------------------------
@@ -1212,7 +1283,11 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
     // The counts a shopping street of this size actually carries. They are
     // affordable because the renderer culls a mover by distance as well as by
     // frustum: what is on screen is a few dozen, whatever the population is.
-    traffic_.build(settings.seed, 30, 44);
+    lineup_ = settings.vehicleLineup;
+    if (settings.vehicleLineup)
+        traffic_.buildLineup(settings.seed);
+    else
+        traffic_.build(settings.seed, 30, 44);
     pedestrians_.build(layout_, crossings_, settings.seed, 78);
     buildStats_.vehicles = static_cast<int>(traffic_.vehicles().size());
     buildStats_.people   = static_cast<int>(pedestrians_.people().size());
@@ -1264,6 +1339,50 @@ void CityScene::buildViewpoints()
     // Far enough back to see a whole shopfront rather than one pane of it.
     viewpoints_.push_back(Viewpoint{"Shopfronts, close",
                                     Vector3(-5.9f, eye, 58.0f), kWest + 0.42f, 0.05f, 1.15f});
+
+    // --- the close-ups ------------------------------------------------------
+    // The set above answers "does this look like a street". These answer the
+    // harder question: does it survive being *looked at*. Each one is aimed
+    // squarely at something that used to be a weakness, from the distance a
+    // person would actually see it from, and none of them is a forgiving angle.
+
+    // A parked car at three metres, three-quarter front. Parked bays run down
+    // the parking lane at x = ±4.40, on a 6.05 m pitch from z = 26.65.
+    viewpoints_.push_back(Viewpoint{"Car, three metres",
+                                    Vector3(0.6f, 1.42f, 34.6f), kSouth + 0.36f, -0.075f, 0.90f});
+    // A pedestrian at four metres on the far footway, from a normal eye height.
+    viewpoints_.push_back(Viewpoint{"Pedestrian, four metres",
+                                    Vector3(-6.4f, eye, 24.0f), kSouth - 0.06f, -0.055f, 0.80f});
+    // Close enough to a shop window to see the glass, what is behind it, and
+    // what is reflected in it, all at once.
+    viewpoints_.push_back(Viewpoint{"Shop window",
+                                    Vector3(-6.5f, 1.55f, 40.6f), kWest + 0.30f, -0.02f, 0.86f});
+    // A low camera along the asphalt: aggregate, markings, the kerb line and a
+    // gully, in one frame, at the angle that exposes tiling worst.
+    viewpoints_.push_back(Viewpoint{"Road surface",
+                                    Vector3(1.6f, 0.42f, 30.0f), kSouth - 0.20f, -0.10f, 1.05f});
+    // A street tree from under it: trunk, branch structure, leaf silhouette.
+    viewpoints_.push_back(Viewpoint{"Street tree",
+                                    Vector3(-4.6f, 1.50f, 39.0f), kWest - 0.55f, 0.42f, 1.15f});
+    // One bay of a façade filling the frame: reveal depth, sill, material scale.
+    viewpoints_.push_back(Viewpoint{"Facade detail",
+                                    Vector3(-6.2f, 3.10f, 52.0f), kWest + 0.18f, 0.30f, 0.80f});
+
+    if (!lineup_) return;
+    // The development line-up: a square side view and a three-quarter front of
+    // every variant, in variant order, so `--lineup --capture` produces a
+    // contact sheet of the whole fleet.
+    for (int variant = 0; variant < TrafficSystem::kVariantCount; ++variant)
+    {
+        const Vector2 at = TrafficSystem::lineupPlace(variant);
+        const std::string tag = std::to_string(variant) + " "
+                                + VehicleFactory::name(TrafficSystem::typeForVariant(variant));
+        viewpoints_.push_back(Viewpoint{"Side " + tag, Vector3(at.X - 7.4f, 0.95f, at.Y),
+                                        kEast, 0.0f, 0.42f});
+        viewpoints_.push_back(Viewpoint{"Front " + tag,
+                                        Vector3(at.X - 5.4f, 1.45f, at.Y + 5.6f),
+                                        kEast + 0.72f, -0.16f, 0.62f});
+    }
 }
 
 }  // namespace CnaStreet

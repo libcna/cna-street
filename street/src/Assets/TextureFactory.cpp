@@ -806,24 +806,36 @@ SurfaceMaps TextureFactory::carPaint(int size, std::uint32_t seed, const float c
 
             // Clear-coated automotive paint: near-mirror, with the faint orange
             // peel every real body panel has and a metallic flake if asked for.
-            const float peel = fbm(u * 55.0f, v * 55.0f, 55, 2, 2.0f, 0.5f, seed + 5u);
-            const float flake = value2(u * 400.0f, v * 400.0f, 400, seed + 19u);
-            const float dust = fbm(u * 3.0f, v * 6.0f, 3, 3, 2.0f, 0.5f, seed + 41u);
+            //
+            // The peel is the thing to get right, and the first version had it
+            // an order of magnitude too strong: real orange peel is a
+            // millimetre across and a few microns deep, so at any distance a
+            // human looks at a car it is a *sheen* variation, not a shape. At
+            // 0.35 of relief over a 2 m tile it became a quilt crawling over
+            // every panel and it was the single most obvious thing about the
+            // fleet.
+            const float peel  = fbm(u * 140.0f, v * 140.0f, 140, 2, 2.0f, 0.5f, seed + 5u);
+            const float flake = value2(u * 512.0f, v * 512.0f, 512, seed + 19u);
+            const float dust  = fbm(u * 7.0f, v * 11.0f, 7, 3, 2.0f, 0.5f, seed + 41u);
 
             float base[3];
             for (int c = 0; c < 3; ++c)
-                base[c] = colour[c] * (0.97f + (peel - 0.5f) * 0.05f)
-                          + metallic * (flake - 0.5f) * 0.06f;
+                base[c] = colour[c] * (0.995f + (peel - 0.5f) * 0.014f)
+                          + metallic * (flake - 0.5f) * 0.035f;
             // Road film gathers along the lower body and behind the wheels.
-            const float film = smoothstep(0.55f, 0.95f, dust) * 0.20f;
-            for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 0.75f + 0.02f, film);
+            const float film = smoothstep(0.66f, 0.99f, dust) * 0.16f;
+            for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 0.72f + 0.015f, film);
 
             s.albedo.setRgb(x, y, base[0], base[1], base[2]);
-            s.height.setRgb(x, y, saturate(0.5f + (peel - 0.5f) * 0.35f), 0.0f, 0.0f);
-            s.orm.set(x, y, 1.0f, saturate(0.13f + film * 0.35f + (peel - 0.5f) * 0.04f),
-                      std::clamp(metallic, 0.0f, 1.0f) * 0.75f, 1.0f);
+            s.height.setRgb(x, y, saturate(0.5f + (peel - 0.5f) * 0.9f), 0.0f, 0.0f);
+            // 0.085 is a clearcoat, not a mirror: at 0.13 the reflection of a
+            // 96 px environment cube is a hard bright blob, and at 0.05 every
+            // parked car has a white disc of sky on its roof.
+            s.orm.set(x, y, 1.0f, saturate(0.085f + film * 0.42f + (peel - 0.5f) * 0.02f),
+                      std::clamp(metallic, 0.0f, 1.0f) * 0.78f, 1.0f);
         }
-    return s.finish(0.35f);
+    // Relief in the thousandths, which is what a paint film has.
+    return s.finish(0.015f);
 }
 
 // ---------------------------------------------------------------------------
@@ -861,6 +873,43 @@ SurfaceMaps TextureFactory::windowGlass(int size, std::uint32_t seed)
             s.orm.set(x, y, 1.0f, saturate(0.045f + grime * 0.30f), 0.0f, 1.0f);
         }
     return s.finish(0.25f);
+}
+
+SurfaceMaps TextureFactory::vehicleGlass(int size, std::uint32_t seed)
+{
+    Surface s(size);
+    for (int y = 0; y < size; ++y)
+        for (int x = 0; x < size; ++x)
+        {
+            const float u = static_cast<float>(x) / static_cast<float>(size);
+            const float v = static_cast<float>(y) / static_cast<float>(size);
+
+            // Automotive glazing is *not* window glass. It is tinted, it is
+            // laminated, and what you see of it from outside is almost entirely
+            // reflection -- so its base colour is nearly black and the thing
+            // that varies is where the wiper has and has not been. Reusing the
+            // shop-window generator here gave every car a pale, milky
+            // greenhouse: that image is 214,226,220, which is a *white* surface
+            // once the sky reflects off it too.
+            const float wiperArc = std::fabs(v - 0.34f) * 2.4f
+                                   + std::fabs(u - 0.5f) * std::fabs(u - 0.5f) * 1.6f;
+            const float wiped = 1.0f - smoothstep(0.30f, 0.62f, wiperArc);
+            const float film = fbm(u * 26.0f, v * 26.0f, 26, 3, 2.0f, 0.5f, seed + 11u);
+            const float edge = (1.0f - smoothstep(0.0f, 0.06f, std::min(u, 1.0f - u)))
+                               + (1.0f - smoothstep(0.0f, 0.05f, std::min(v, 1.0f - v)));
+            const float grime = saturate((film * 0.5f + 0.12f) * (1.0f - wiped * 0.75f)
+                                         + edge * 0.35f);
+
+            float base[3];
+            Srgb8(base, 16, 19, 20);
+            for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], 0.34f, grime * 0.30f);
+
+            s.albedo.setRgb(x, y, base[0], base[1], base[2]);
+            s.height.setRgb(x, y, 0.5f, 0.0f, 0.0f);
+            // A swept screen is a mirror; the unswept band at the edge is not.
+            s.orm.set(x, y, 1.0f, saturate(0.035f + grime * 0.24f), 0.0f, 1.0f);
+        }
+    return s.finish(0.02f);
 }
 
 SurfaceMaps TextureFactory::interiorAtlas(int size, std::uint32_t seed)

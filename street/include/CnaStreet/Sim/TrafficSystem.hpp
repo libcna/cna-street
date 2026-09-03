@@ -50,7 +50,37 @@ struct Vehicle
     Microsoft::Xna::Framework::Vector2 parkedAt{0.0f, 0.0f};
     float parkedHeading = 0.0f;
 
+    // --- what the eye notices about a moving car -------------------------
+    /// Accumulated wheel rotation, in radians. Distance divided by the rolling
+    /// radius and nothing else: a wheel that turns at any other rate is the
+    /// most obvious animation error there is, and both directions of the error
+    /// have a name.
+    float wheelAngle = 0.0f;
+    /// Front-wheel steer, in radians, positive to the right.
+    float steerAngle = 0.0f;
+    /// Decelerating hard enough that a driver would be on the brake.
+    bool  braking = false;
+    /// -1 left, +1 right, 0 off. Set while a turn is signalled and taken.
+    int   indicator = 0;
+
+    // --- turning through the junction -------------------------------------
+    /// Destination lane once through the junction, or -1 to go straight on.
+    int   turnTo = -1;
+    /// 0 while approaching, then 0..1 across the arc.
+    float turnPhase = 0.0f;
+    bool  inTurn = false;
+    /// The quadratic Bézier the turn follows: entry, the intersection of the
+    /// two lane centre lines, and exit.
+    Microsoft::Xna::Framework::Vector2 turnFrom{0.0f, 0.0f};
+    Microsoft::Xna::Framework::Vector2 turnVia{0.0f, 0.0f};
+    Microsoft::Xna::Framework::Vector2 turnTail{0.0f, 0.0f};
+    float turnLength = 0.0f;
+
+    /// Where the body sits this frame, turn included.
     [[nodiscard]] Microsoft::Xna::Framework::Matrix transform(const std::vector<Lane>& lanes) const;
+    /// Where it is on the ground, turn included.
+    [[nodiscard]] Microsoft::Xna::Framework::Vector2 groundPosition(
+        const std::vector<Lane>& lanes) const;
 };
 
 /**
@@ -75,6 +105,15 @@ public:
 
     /// Lays out the lanes from the street's own dimensions and populates them.
     void build(std::uint32_t seed, int movingCount, int parkedCount);
+
+    /// One of every variant, parked in a row on a known pitch, nothing moving.
+    /// A development mode, and the only sane way to work on vehicle geometry:
+    /// hunting for a particular class among seventy randomly placed cars costs
+    /// more time than the tool does, and it is how three shape bugs survived
+    /// into the first screenshots.
+    void buildLineup(std::uint32_t seed);
+    /// Where the nth line-up vehicle stands.
+    [[nodiscard]] static Microsoft::Xna::Framework::Vector2 lineupPlace(int index);
     void update(float deltaSeconds, const TrafficSignalController& signals);
 
     [[nodiscard]] const std::vector<Lane>& lanes() const { return lanes_; }
@@ -88,7 +127,7 @@ public:
                                 float radius) const;
 
     /// How many distinct vehicle meshes the scene has to build.
-    static constexpr int kVariantCount = 10;
+    static constexpr int kVariantCount = 12;
     [[nodiscard]] static VehicleType typeForVariant(int variant);
 
 private:
@@ -96,6 +135,8 @@ private:
     void spawnMoving(Rng& rng, int count);
     void spawnParked(Rng& rng, int count);
     [[nodiscard]] float gapAhead(const Vehicle& vehicle, std::size_t index) const;
+    /// Sets up the Bézier for a vehicle about to leave its lane at the junction.
+    void beginTurn(Vehicle& vehicle) const;
 
     std::vector<Lane>    lanes_;
     std::vector<Vehicle> vehicles_;

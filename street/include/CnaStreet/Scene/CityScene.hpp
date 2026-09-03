@@ -52,8 +52,13 @@ public:
     void build(const RenderSettings& settings);
 
     void update(float deltaSeconds, const RenderSettings& settings);
-    /// Submits this frame's moving objects to the renderer.
-    void submit(const RenderSettings& settings);
+    /// Submits this frame's moving objects to the renderer. @p eye decides which
+    /// level of detail each vehicle and each pedestrian is drawn at, which is
+    /// the renderer's business everywhere else -- but a dynamic object is
+    /// submitted per frame rather than registered as an instance group, so the
+    /// choice has to be made here, before the draw exists.
+    void submit(const RenderSettings& settings,
+                const Microsoft::Xna::Framework::Vector3& eye);
 
     [[nodiscard]] const CityLayout& layout() const { return layout_; }
     [[nodiscard]] MaterialLibrary& materials() { return materials_; }
@@ -154,12 +159,29 @@ private:
 
     // --- prop meshes ------------------------------------------------------
     PropMesh lensRed_, lensAmber_, lensGreen_, lensWalkRed_, lensWalkGreen_;
-    std::vector<PropMesh> vehicleMeshes_;
+    /// One entry per paint variant: the body at two levels of detail, the wheel
+    /// it runs on, where its four wheels sit, and the pair of lamp lenses that
+    /// light up when it brakes.
+    struct VehicleMesh
+    {
+        PropMesh body;
+        PropMesh distantBody;
+        PropMesh wheel;
+        PropMesh distantWheel;
+        PropMesh brakeLamps;
+        std::vector<WheelPlacement> wheels;
+    };
+    std::vector<VehicleMesh> vehicleMeshes_;
     std::vector<PropMesh> pedestrianMeshes_;   ///< variant-major, then pose
     int pedestrianPoseCount_ = 0;
     /// Lit and dark variants of each lens colour, in the order red, amber,
     /// green, pedestrian red, pedestrian green.
     std::vector<const Material*> lensLit_, lensDark_;
+    /// The rear lamp, lit. One material shared by the whole fleet.
+    const Material* brakeLit_ = nullptr;
+
+    Microsoft::Xna::Framework::Vector3 cameraPosition_{0.0f, 1.7f, 0.0f};
+    bool lineup_ = false;
 
     BuildStats buildStats_;
 };

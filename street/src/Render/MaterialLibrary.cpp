@@ -544,15 +544,20 @@ void MaterialLibrary::build(std::uint32_t seed)
         install(MaterialId::CarBody, "car-body",
                 [&] { return TextureFactory::carPaint(kMedium, s + 24u, whiteRgb, 0.6f); }, body);
 
+        // Tinted, and much less transparent than a shop window. Car glazing
+        // transmits about a quarter of the light at the angles a street is seen
+        // from, and the rest of what reaches the eye is reflection -- so alpha
+        // 0.52 with a pale texture behind it produced a fleet of greenhouses.
         Material glass = pbr(0.05f, 0.0f);
         glass.alphaMode   = AlphaModeEXT::Blend;
-        glass.alpha       = 0.52f;
-        glass.baseColour  = Vector3(0.14f, 0.16f, 0.17f);
+        glass.alpha       = 0.80f;
+        glass.baseColour  = Vector3(0.055f, 0.062f, 0.068f);
         glass.ior         = 1.52f;
+        glass.specular    = 1.0f;
         glass.castsShadow = false;
         glass.writesDepth = false;
-        install(MaterialId::CarGlass, "car-glass", [&] { return TextureFactory::windowGlass(kSmall, s + 25u); },
-                glass);
+        install(MaterialId::CarGlass, "car-glass",
+                [&] { return TextureFactory::vehicleGlass(kSmall, s + 25u); }, glass);
 
         float tyreRgb[3] = {0.026f, 0.026f, 0.028f};
         install(MaterialId::CarTyre, "car-tyre", [&] { return TextureFactory::flat(8, tyreRgb, 0.92f, 0.0f); },
@@ -572,6 +577,33 @@ void MaterialLibrary::build(std::uint32_t seed)
         Rgb(frontRgb, front.baseColour);
         install(MaterialId::CarLightFront, "car-light-front",
                 [&] { return TextureFactory::flat(8, frontRgb, 0.10f, 0.0f); }, front);
+
+        // Everything you see *through* the glass. A car's cabin is a dark
+        // grey-brown, and its exact colour matters far less than the fact that
+        // there is something there: with a glazed greenhouse and no interior a
+        // parked car is a coloured shell with the building behind showing
+        // through it.
+        Material interior = pbr(0.86f, 0.0f);
+        interior.baseColour = Srgb(28, 27, 29);
+        float interiorRgb[3];
+        Rgb(interiorRgb, interior.baseColour);
+        install(MaterialId::CarInterior, "car-interior",
+                [&] { return TextureFactory::flat(8, interiorRgb, 0.86f, 0.0f); }, interior);
+
+        Material underbody = pbr(0.95f, 0.0f);
+        underbody.baseColour = Srgb(20, 20, 21);
+        float underRgb[3];
+        Rgb(underRgb, underbody.baseColour);
+        install(MaterialId::CarUnderbody, "car-underbody",
+                [&] { return TextureFactory::flat(8, underRgb, 0.95f, 0.0f); }, underbody);
+
+        // A brake disc seen through the spokes: rusty-dark iron, half metal.
+        Material brake = pbr(0.62f, 0.55f);
+        brake.baseColour = Srgb(52, 48, 46);
+        float brakeRgb[3];
+        Rgb(brakeRgb, brake.baseColour);
+        install(MaterialId::CarBrake, "car-brake",
+                [&] { return TextureFactory::flat(8, brakeRgb, 0.62f, 0.55f); }, brake);
 
         Material plate = pbr(0.36f, 0.0f);
         install(MaterialId::LicencePlate, "licence-plate",

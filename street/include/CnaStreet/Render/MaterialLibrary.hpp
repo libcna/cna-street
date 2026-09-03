@@ -58,6 +58,7 @@ enum class MaterialId
 
     // --- vehicles ---
     CarBody, CarGlass, CarTrim, CarTyre, CarLightRear, CarLightFront, LicencePlate,
+    CarInterior, CarUnderbody, CarBrake,
 
     // --- people ---
     Skin, Clothing,

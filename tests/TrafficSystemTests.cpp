@@ -230,15 +230,39 @@ int main()
             CHECK(d.height > 1.2f && d.height < 2.8f);
             CHECK(d.wheelbase < d.length - 1.0f);
             CHECK(d.wheelRadius > 0.25f && d.wheelRadius < 0.40f);
-            // The greenhouse runs front to back in order, and the windscreen is
-            // ahead of the roof.
-            CHECK(d.cabinRear < d.roofRear);
-            CHECK(d.roofRear < d.roofFront);
-            CHECK(d.roofFront < d.cabinFront);
+            // The greenhouse runs front to back in order: the bottom of the
+            // backlight is behind its top, which is behind the top of the
+            // windscreen, which is behind its base.
+            CHECK(d.backlightBaseZ < d.backlightTopZ);
+            CHECK(d.backlightTopZ < d.screenTopZ);
+            CHECK(d.screenTopZ < d.screenBaseZ);
+            // The side glass lies inside the pillars it is bounded by.
+            CHECK(d.dloRearZ >= d.backlightBaseZ - 0.05f);
+            CHECK(d.dloFrontZ <= d.screenBaseZ + 0.05f);
+            // The axles are inside the vehicle, and the overhangs are overhangs.
+            CHECK(d.rearAxleZ() > d.rearZ() && d.frontAxleZ() < d.frontZ());
+            CHECK(d.frontZ() - d.frontAxleZ() > 0.4f);
+            // The arch clears the wheel, and does not swallow it.
+            CHECK(d.archRadius > d.wheelRadius + 0.02f);
+            CHECK(d.archRadius < d.wheelRadius + 0.14f);
             // The bonnet is a bonnet, not a runway.
-            const float bonnet = (0.5f - d.cabinFront) * d.length;
-            CHECK_MSG(bonnet > 0.6f && bonnet < 2.0f,
+            const float bonnet = d.frontZ() - d.screenBaseZ;
+            CHECK_MSG(bonnet > 0.6f && bonnet < 2.2f,
                       std::string("implausible bonnet length ") + std::to_string(bonnet));
+            // The roof is above the shoulder is above the rocker, everywhere.
+            for (float z = d.rearZ() + 0.05f; z < d.frontZ() - 0.05f; z += 0.10f)
+            {
+                CHECK_MSG(d.roof.at(z) > d.belt.at(z) + 0.02f,
+                          std::string("roof below the beltline at z=") + std::to_string(z));
+                CHECK_MSG(d.belt.at(z) > d.rocker.at(z) + 0.10f,
+                          std::string("beltline below the rocker at z=") + std::to_string(z));
+                CHECK_MSG(d.halfWidth.at(z) > d.topHalf.at(z),
+                          std::string("no tumblehome at z=") + std::to_string(z));
+                CHECK_MSG(d.halfWidth.at(z) <= d.width * 0.5f + 1e-4f,
+                          std::string("wider than the vehicle at z=") + std::to_string(z));
+                CHECK_MSG(d.roof.at(z) <= d.height + 1e-3f,
+                          std::string("taller than the vehicle at z=") + std::to_string(z));
+            }
         }
     }
 

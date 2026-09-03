@@ -226,6 +226,7 @@ inline constexpr float kTreePitSize = 1.60f;
 // ---------------------------------------------------------------------------
 // Vehicles (exterior dimensions of the real classes they represent)
 // ---------------------------------------------------------------------------
+inline constexpr float kCarCityLength  = 3.60f, kCarCityWidth  = 1.68f, kCarCityHeight  = 1.52f;
 inline constexpr float kCarHatchLength = 4.28f, kCarHatchWidth = 1.79f, kCarHatchHeight = 1.46f;
 inline constexpr float kCarSedanLength = 4.71f, kCarSedanWidth = 1.83f, kCarSedanHeight = 1.44f;
 inline constexpr float kCarEstateLength = 4.77f, kCarEstateWidth = 1.85f, kCarEstateHeight = 1.51f;

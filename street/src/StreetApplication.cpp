@@ -99,6 +99,8 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --seed <n>                        procedural seed (default: %u)\n"
                 "  --viewpoint <n>                   start at named viewpoint n (1-based)\n"
                 "  --camera x,y,z,yaw,pitch          start at an explicit camera (radians)\n"
+                "  --lineup                          park one of every vehicle in a row, and\n"
+                "                                    add a side and a front viewpoint for each\n"
                 "  --frames <n>                      render n frames and exit\n"
                 "  --screenshot <file.png>           write one frame and exit\n"
                 "  --capture <dir>                   write every viewpoint into dir and exit\n"
@@ -166,6 +168,7 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--no-traffic")     settings_.traffic = false;
         else if (arg == "--no-pedestrians") settings_.pedestrians = false;
         else if (arg == "--no-vegetation")  settings_.vegetation = false;
+        else if (arg == "--lineup") { settings_.vehicleLineup = true; }
         else if (arg == "--no-overlay")     settings_.debugOverlay = false;
         else if (arg == "--vsync")          settings_.vsync = true;
         else if (arg == "--no-vsync")       settings_.vsync = false;
@@ -422,7 +425,7 @@ void StreetApplication::Draw(const GameTime& gameTime)
     if (!captureDirectory_.empty()) runCaptureScript();
 
     renderer_->beginFrame();
-    scene_->submit(settings_);
+    scene_->submit(settings_, camera_.position());
     renderer_->render(camera_, settings_, elapsedSeconds_);
 
     if (settings_.debugOverlay && overlay_ != nullptr)

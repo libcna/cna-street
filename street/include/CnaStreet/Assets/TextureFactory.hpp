@@ -78,6 +78,10 @@ public:
     /// from reading as a hole.
     [[nodiscard]] static SurfaceMaps windowGlass(int size, std::uint32_t seed);
 
+    /// Automotive glazing: tinted nearly black, with a wiped arc across it.
+    /// Not the same surface as a shop window and never was.
+    [[nodiscard]] static SurfaceMaps vehicleGlass(int size, std::uint32_t seed);
+
     /// What is behind the glass. A row-and-column grid of rooms, some lit, some
     /// curtained, some empty — the cheapest convincing interior there is.
     [[nodiscard]] static SurfaceMaps interiorAtlas(int size, std::uint32_t seed);
