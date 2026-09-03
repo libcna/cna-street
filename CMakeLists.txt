@@ -55,6 +55,8 @@ endforeach()
 
 add_subdirectory(street)
 
+include(CnaStreetContent)
+
 if(CNA_STREET_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)

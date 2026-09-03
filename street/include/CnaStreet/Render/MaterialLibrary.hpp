@@ -7,11 +7,15 @@
 #include "Microsoft/Xna/Framework/Vector3.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
+namespace Microsoft::Xna::Framework::Content {
+    class ContentManager;
+}
 namespace Microsoft::Xna::Framework::Graphics {
     class GraphicsDevice;
     class Texture2D;
@@ -85,15 +89,32 @@ enum class MaterialId
 class MaterialLibrary
 {
 public:
-    explicit MaterialLibrary(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device);
+    /// @p device may be null, and is in the offline bake: generating a surface
+    /// needs no GPU, and the tool that writes the content pipeline's source
+    /// images runs on a build machine with no display.
+    explicit MaterialLibrary(Microsoft::Xna::Framework::Graphics::GraphicsDevice* device);
     ~MaterialLibrary();
 
     MaterialLibrary(const MaterialLibrary&) = delete;
     MaterialLibrary& operator=(const MaterialLibrary&) = delete;
 
-    /// Generates and uploads every texture. Reports progress through the
-    /// callback so the loading screen can say what it is waiting for.
+    /// Generates and uploads every texture -- or loads them, or writes them,
+    /// depending on which of the two modes below is set.
     void build(std::uint32_t seed);
+
+    /// Load compiled assets from @p content instead of generating them. A
+    /// surface that is missing from the content root is generated as usual, so a
+    /// partial or absent build is a slower start-up rather than a failure.
+    void setContentSource(Microsoft::Xna::Framework::Content::ContentManager* content);
+
+    /// Write every generated surface into @p directory as PNG and upload
+    /// nothing. This is the source stage of the content pipeline: the images
+    /// written here are what `cna_tool_source_to_cnb` compiles.
+    void setBakeDirectory(const std::string& directory);
+
+    /// How the textures got here, for the overlay and for the log.
+    [[nodiscard]] std::size_t texturesLoaded() const { return loadedCount_; }
+    [[nodiscard]] std::size_t texturesGenerated() const { return generatedCount_; }
 
     [[nodiscard]] const Material& get(MaterialId id) const;
     [[nodiscard]] Material& mutableGet(MaterialId id);
@@ -135,11 +156,27 @@ private:
     /// Uploads one linear or sRGB image with a full mip chain.
     Microsoft::Xna::Framework::Graphics::Texture2D* upload(const Assets::Image& image, bool srgb,
                                                            const std::string& name);
-    /// Uploads a generated surface's three maps and fills in a material.
-    void install(MaterialId id, const std::string& name, const Assets::SurfaceMaps& maps,
-                 Material material);
+    /// Loads one compiled map, or nullptr when the content root has not got it.
+    Microsoft::Xna::Framework::Graphics::Texture2D* load(const std::string& asset);
+    /// Fills in a material's maps from the content root. Returns false, having
+    /// changed nothing, when any required map is missing.
+    bool installFromContent(Material& material, const std::string& name);
+    /// Writes a surface's maps to the bake directory as PNG.
+    void bake(const std::string& name, const Assets::SurfaceMaps& maps);
 
-    Microsoft::Xna::Framework::Graphics::GraphicsDevice& device_;
+    /// Installs one material. @p generate is called only when the surface is not
+    /// already compiled into the content root, which is the whole point of the
+    /// pipeline: a full content build turns a nine-second start-up into a
+    /// one-second one, and generating the images and then throwing them away
+    /// would save nothing.
+    void install(MaterialId id, const std::string& name,
+                 const std::function<Assets::SurfaceMaps()>& generate, Material material);
+
+    Microsoft::Xna::Framework::Graphics::GraphicsDevice* device_ = nullptr;
+    Microsoft::Xna::Framework::Content::ContentManager* content_ = nullptr;
+    std::string bakeDirectory_;
+    std::size_t loadedCount_ = 0;
+    std::size_t generatedCount_ = 0;
     std::vector<std::unique_ptr<Microsoft::Xna::Framework::Graphics::Texture2D>> textures_;
     std::vector<Material> materials_;
     std::unordered_map<std::string, std::unique_ptr<Material>> derived_;

@@ -5,3 +5,8 @@ cmake-build-*/
 *.user
 compile_commands.json
 /screenshots/
+
+# The compiled content set. A build product of `cmake --build build --target
+# content`, not a source: 69 MB of .cnb regenerated from the same seed by two
+# offline tools, and the demo runs without it.
+/assets/content/

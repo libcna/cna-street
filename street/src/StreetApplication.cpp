@@ -3,6 +3,8 @@
 
 #include "CnaStreet/Render/DebugOverlay.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
+
+#include "Microsoft/Xna/Framework/Content/ContentManager.hpp"
 #include "CnaStreet/Render/SceneRenderer.hpp"
 #include "CnaStreet/Scene/CityScene.hpp"
 #include "CnaStreet/Scene/StreetMetrics.hpp"
@@ -84,6 +86,7 @@ bool StreetApplication::configure(int argc, char** argv)
                 "Usage: cna-street [options]\n\n"
                 "  --preset <low|medium|high|ultra>  quality preset (default: high)\n"
                 "  --settings <file.json>            load a settings document\n"
+                "  --content <dir>                   load compiled assets from dir\n"
                 "  --width <n> --height <n>          window size\n"
                 "  --seed <n>                        procedural seed (default: %u)\n"
                 "  --viewpoint <n>                   start at named viewpoint n (1-based)\n"
@@ -118,6 +121,7 @@ bool StreetApplication::configure(int argc, char** argv)
             }
         }
         else if (arg == "--settings")   { const char* v = next(i); if (v) settingsPath_ = v; }
+        else if (arg == "--content")    { const char* v = next(i); if (v) contentDirectory_ = v; }
         else if (arg == "--width")      { const char* v = next(i); if (v) settings_.windowWidth = std::atoi(v); }
         else if (arg == "--height")     { const char* v = next(i); if (v) settings_.windowHeight = std::atoi(v); }
         else if (arg == "--seed")       { const char* v = next(i); if (v) settings_.seed = static_cast<std::uint32_t>(std::strtoul(v, nullptr, 10)); }
@@ -247,7 +251,26 @@ void StreetApplication::LoadContent()
     const int width  = viewport.getWidthProperty();
     const int height = viewport.getHeightProperty();
 
-    materials_ = std::make_unique<MaterialLibrary>(device);
+    materials_ = std::make_unique<MaterialLibrary>(&device);
+
+    // If a content build has been run, load the surfaces from it instead of
+    // generating them. A missing content root is not an error and not a warning:
+    // it is how the demo runs out of a fresh clone, and it costs start-up time
+    // rather than anything visible.
+    const std::filesystem::path contentRoot =
+        contentDirectory_.empty()
+            ? std::filesystem::path(CNA_STREET_DEFAULT_ASSET_DIR) / "content"
+            : std::filesystem::path(contentDirectory_);
+    if (std::filesystem::is_directory(contentRoot)
+        && !std::filesystem::is_empty(contentRoot))
+    {
+        content_ = std::make_unique<Microsoft::Xna::Framework::Content::ContentManager>(
+            nullptr, contentRoot.string());
+        content_->setGraphicsDevice(device);
+        materials_->setContentSource(content_.get());
+        CNA::Logger::Info("cna-street: content root " + contentRoot.string());
+    }
+
     renderer_  = std::make_unique<SceneRenderer>(device, *materials_);
     renderer_->resize(width, height);
     renderer_->initialise(settings_);

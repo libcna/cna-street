@@ -17,6 +17,10 @@ namespace Microsoft::Xna::Framework {
     class GraphicsDeviceManager;
 }
 
+namespace Microsoft::Xna::Framework::Content {
+    class ContentManager;
+}
+
 namespace CnaStreet {
 
 class CityScene;
@@ -82,6 +86,9 @@ private:
     std::string screenshotPath_;
     std::string shadowDumpPath_;
     std::string settingsPath_;
+    /// Where `--content` points, or empty for `<assets>/content`.
+    std::string contentDirectory_;
+    std::unique_ptr<Microsoft::Xna::Framework::Content::ContentManager> content_;
     int         startViewpoint_  = 0;
     /// `--camera x,y,z,yaw,pitch` overrides the starting viewpoint. Not a
     /// feature so much as a tool: every visual defect in this project was

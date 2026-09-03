@@ -14,6 +14,7 @@
 #include "CnaStreet/Assets/Canvas.hpp"
 #include "CnaStreet/Assets/SignFactory.hpp"
 #include "CnaStreet/Assets/TextureFactory.hpp"
+#include "CnaStreet/Render/MaterialLibrary.hpp"
 
 #include <cstdio>
 #include <cstdlib>
@@ -33,6 +34,10 @@ struct Options
     int  size = 512;
     bool maps = true;    ///< also write the normal and ORM maps
     bool font = true;
+    /// When set, write the *content pipeline's* source images instead of the
+    /// gallery: every surface the material catalogue installs, under the name
+    /// the runtime asks the content manager for.
+    std::filesystem::path content;
 };
 
 int Written = 0;
@@ -104,6 +109,7 @@ int main(int argc, char** argv)
             return argv[++i];
         };
         if (arg == "--output" || arg == "-o") options.output = value("--output");
+        else if (arg == "--content") options.content = value("--content");
         else if (arg == "--seed")  options.seed = static_cast<std::uint32_t>(std::strtoul(value("--seed"), nullptr, 10));
         else if (arg == "--size")  options.size = std::atoi(value("--size"));
         else if (arg == "--no-maps") options.maps = false;
@@ -115,6 +121,8 @@ int main(int argc, char** argv)
                         "      --seed <n>       procedural seed (default: 20260903)\n"
                         "      --size <n>       base texture size (default: 512)\n"
                         "      --no-maps        albedo only, no normal/ORM\n"
+                        "      --content <dir>  write the content pipeline's source images\n"
+                        "                       (every catalogue surface, runtime names)\n"
                         "      --no-font        skip the overlay font atlas\n");
             return 0;
         }
@@ -123,6 +131,24 @@ int main(int argc, char** argv)
             std::fprintf(stderr, "bake-assets: unknown option '%s'\n", arg.c_str());
             return 2;
         }
+    }
+
+    // The content-pipeline stage. The material catalogue itself writes the
+    // images, so the names and the parameters are the ones the runtime will ask
+    // for -- a second list here would be a second list to keep in step, and it
+    // would be wrong within a week. No GraphicsDevice: generating a surface
+    // needs no GPU, which is what lets this run on a build machine.
+    if (!options.content.empty())
+    {
+        CnaStreet::MaterialLibrary catalogue(nullptr);
+        catalogue.setBakeDirectory(options.content.string());
+        catalogue.build(options.seed);
+        int count = 0;
+        for (const auto& entry : std::filesystem::directory_iterator(options.content))
+            if (entry.path().extension() == ".png") ++count;
+        std::printf("bake-assets: wrote %d content source images to %s\n", count,
+                    options.content.string().c_str());
+        return 0;
     }
 
     std::filesystem::create_directories(options.output);

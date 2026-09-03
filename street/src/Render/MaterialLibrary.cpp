@@ -6,11 +6,13 @@
 #include "CnaStreet/Core/Rng.hpp"
 
 #include "CNA/Logger.hpp"
+#include "Microsoft/Xna/Framework/Content/ContentManager.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SurfaceFormat.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 
 #include <cmath>
+#include <filesystem>
 #include <stdexcept>
 
 using namespace Microsoft::Xna::Framework;
@@ -20,6 +22,7 @@ using CnaStreet::Assets::SignFace;
 using CnaStreet::Assets::SignFactory;
 using CnaStreet::Assets::SurfaceMaps;
 using CnaStreet::Assets::TextureFactory;
+using Microsoft::Xna::Framework::Content::ContentManager;
 
 namespace CnaStreet {
 
@@ -49,9 +52,17 @@ void Rgb(float out[3], const Vector3& v) { out[0] = v.X; out[1] = v.Y; out[2] = 
 
 }  // namespace
 
-MaterialLibrary::MaterialLibrary(GraphicsDevice& device) : device_(device)
+MaterialLibrary::MaterialLibrary(GraphicsDevice* device) : device_(device)
 {
     materials_.resize(static_cast<std::size_t>(MaterialId::Count));
+}
+
+void MaterialLibrary::setContentSource(ContentManager* content) { content_ = content; }
+
+void MaterialLibrary::setBakeDirectory(const std::string& directory)
+{
+    bakeDirectory_ = directory;
+    if (!bakeDirectory_.empty()) std::filesystem::create_directories(bakeDirectory_);
 }
 
 MaterialLibrary::~MaterialLibrary() = default;
@@ -132,7 +143,8 @@ Texture2D* MaterialLibrary::upload(const Image& image, bool srgb, const std::str
     // A full mip chain, always. Without one, a road surface at a grazing angle
     // aliases into a shimmer that no amount of anti-aliasing afterwards can fix,
     // because the detail was already lost when the texel was sampled.
-    auto texture = std::make_unique<Texture2D>(device_, image.width(), image.height(), true,
+    if (device_ == nullptr) return nullptr;
+    auto texture = std::make_unique<Texture2D>(*device_, image.width(), image.height(), true,
                                                SurfaceFormat::Color);
     Image level = image;
     int index = 0;
@@ -154,14 +166,79 @@ Texture2D* MaterialLibrary::upload(const Image& image, bool srgb, const std::str
     return raw;
 }
 
-void MaterialLibrary::install(MaterialId id, const std::string& name, const SurfaceMaps& maps,
-                              Material material)
+Texture2D* MaterialLibrary::load(const std::string& asset)
 {
-    material.name   = name;
+    if (content_ == nullptr) return nullptr;
+    try
+    {
+        auto texture = std::make_unique<Texture2D>(content_->Load<Texture2D>(asset));
+        if (texture->getWidthProperty() <= 0) return nullptr;
+        textureBytes_ += static_cast<std::size_t>(texture->getWidthProperty())
+                         * static_cast<std::size_t>(texture->getHeightProperty()) * 4u;
+        textures_.push_back(std::move(texture));
+        return textures_.back().get();
+    }
+    catch (const std::exception&)
+    {
+        // A missing asset is the normal case for a tree that has never had a
+        // content build run in it, and it is not an error: the surface is
+        // generated instead. Anything else the loader throws is treated the same
+        // way for the same reason -- a broken .cnb should cost start-up time,
+        // not the whole street.
+        return nullptr;
+    }
+}
+
+bool MaterialLibrary::installFromContent(Material& material, const std::string& name)
+{
+    Texture2D* albedo = load(name + ".albedo");
+    if (albedo == nullptr) return false;
+    Texture2D* normal = load(name + ".normal");
+    Texture2D* orm    = load(name + ".orm");
+    if (normal == nullptr || orm == nullptr) return false;
+
+    material.albedo   = albedo;
+    material.normal   = normal;
+    material.orm      = orm;
+    material.emissive = load(name + ".emissive");   // optional
+    return true;
+}
+
+void MaterialLibrary::bake(const std::string& name, const SurfaceMaps& maps)
+{
+    const std::filesystem::path root(bakeDirectory_);
+    maps.albedo.writePng((root / (name + ".albedo.png")).string(), true);
+    maps.normal.writePng((root / (name + ".normal.png")).string(), false);
+    maps.orm.writePng((root / (name + ".orm.png")).string(), false);
+    if (maps.hasEmissive())
+        maps.emissive.writePng((root / (name + ".emissive.png")).string(), true);
+}
+
+void MaterialLibrary::install(MaterialId id, const std::string& name,
+                              const std::function<SurfaceMaps()>& generate, Material material)
+{
+    material.name = name;
+
+    if (!bakeDirectory_.empty())
+    {
+        bake(name, generate());
+        materials_[static_cast<std::size_t>(id)] = std::move(material);
+        return;
+    }
+
+    if (installFromContent(material, name))
+    {
+        ++loadedCount_;
+        materials_[static_cast<std::size_t>(id)] = std::move(material);
+        return;
+    }
+
+    const SurfaceMaps maps = generate();
     material.albedo = upload(maps.albedo, true, name + ".albedo");
     material.normal = upload(maps.normal, false, name + ".normal");
     material.orm    = upload(maps.orm, false, name + ".orm");
     if (maps.hasEmissive()) material.emissive = upload(maps.emissive, true, name + ".emissive");
+    ++generatedCount_;
     materials_[static_cast<std::size_t>(id)] = std::move(material);
 }
 
@@ -187,13 +264,13 @@ void MaterialLibrary::build(std::uint32_t seed)
         Material asphalt = pbr(0.88f, 0.0f);
         asphalt.normalScale = 0.7f;
         install(MaterialId::AsphaltMain, "asphalt-main",
-                TextureFactory::asphalt(kLarge, s + 1u, 0.55f), asphalt);
+                [&] { return TextureFactory::asphalt(kLarge, s + 1u, 0.55f); }, asphalt);
         asphalt.roughness = 0.90f;
         install(MaterialId::AsphaltSide, "asphalt-side",
-                TextureFactory::asphalt(kLarge, s + 2u, 0.32f), asphalt);
+                [&] { return TextureFactory::asphalt(kLarge, s + 2u, 0.32f); }, asphalt);
         asphalt.roughness = 0.92f;
         install(MaterialId::AsphaltWorn, "asphalt-worn",
-                TextureFactory::asphalt(kLarge, s + 3u, 0.92f), asphalt);
+                [&] { return TextureFactory::asphalt(kLarge, s + 3u, 0.92f); }, asphalt);
     }
 
     {
@@ -203,7 +280,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         track.castsShadow = false;
         track.writesDepth = false;
         install(MaterialId::WheelTrack, "wheel-track",
-                TextureFactory::wheelTrack(kMedium, s + 4u), track);
+                [&] { return TextureFactory::wheelTrack(kMedium, s + 61u); }, track);
     }
 
     {
@@ -216,22 +293,22 @@ void MaterialLibrary::build(std::uint32_t seed)
         paint.castsShadow = false;
         paint.writesDepth = false;
         install(MaterialId::RoadMarking, "road-marking",
-                TextureFactory::roadPaint(kMedium, s + 4u, 0.45f), paint);
+                [&] { return TextureFactory::roadPaint(kMedium, s + 4u, 0.45f); }, paint);
     }
 
     install(MaterialId::ConcretePaving, "concrete-paving",
-            TextureFactory::concretePaving(kLarge, s + 5u), pbr(0.80f, 0.0f));
+            [&] { return TextureFactory::concretePaving(kLarge, s + 5u); }, pbr(0.80f, 0.0f));
     install(MaterialId::TactilePaving, "tactile-paving",
-            TextureFactory::tactilePaving(kMedium, s + 6u), pbr(0.82f, 0.0f));
+            [&] { return TextureFactory::tactilePaving(kMedium, s + 6u); }, pbr(0.82f, 0.0f));
     install(MaterialId::GraniteSetts, "granite-setts",
-            TextureFactory::graniteSetts(kLarge, s + 7u), pbr(0.62f, 0.0f));
-    install(MaterialId::GraniteKerb, "granite-kerb", TextureFactory::graniteKerb(kMedium, s + 8u),
+            [&] { return TextureFactory::graniteSetts(kLarge, s + 7u); }, pbr(0.62f, 0.0f));
+    install(MaterialId::GraniteKerb, "granite-kerb", [&] { return TextureFactory::graniteKerb(kMedium, s + 8u); },
             pbr(0.64f, 0.0f));
 
     {
         Material iron = pbr(0.72f, 0.7f);
         install(MaterialId::ManholeIron, "manhole-iron",
-                TextureFactory::manholeCover(kMedium, s + 9u), iron);
+                [&] { return TextureFactory::manholeCover(kMedium, s + 9u); }, iron);
         // The gully grate shares the ironwork, differing only in its tint.
         Material grate = materials_[static_cast<std::size_t>(MaterialId::ManholeIron)];
         grate.name       = "drain-grate";
@@ -239,12 +316,12 @@ void MaterialLibrary::build(std::uint32_t seed)
         materials_[static_cast<std::size_t>(MaterialId::DrainGrate)] = grate;
     }
 
-    install(MaterialId::Grass, "grass", TextureFactory::grass(kMedium, s + 10u), pbr(0.92f, 0.0f));
+    install(MaterialId::Grass, "grass", [&] { return TextureFactory::grass(kMedium, s + 10u); }, pbr(0.92f, 0.0f));
     {
         const Vector3 soil = Srgb(74, 60, 46);
         float c[3];
         Rgb(c, soil);
-        install(MaterialId::Soil, "soil", TextureFactory::flat(8, c, 0.95f, 0.0f), pbr(0.95f, 0.0f));
+        install(MaterialId::Soil, "soil", [&] { return TextureFactory::flat(8, c, 0.95f, 0.0f); }, pbr(0.95f, 0.0f));
     }
 
     // ---------------------------------------------------------------------
@@ -252,10 +329,10 @@ void MaterialLibrary::build(std::uint32_t seed)
     // pattern of a lime render does not depend on what colour it was painted, so
     // seven façade colours cost one 512² texture set rather than seven.
     // ---------------------------------------------------------------------
-    install(MaterialId::BrickRed, "brick-red", TextureFactory::brick(kLarge, s + 11u, 0.08f, 0.55f),
+    install(MaterialId::BrickRed, "brick-red", [&] { return TextureFactory::brick(kLarge, s + 11u, 0.08f, 0.55f); },
             pbr(0.86f, 0.0f));
     install(MaterialId::BrickBuff, "brick-buff",
-            TextureFactory::brick(kLarge, s + 12u, 0.85f, 0.40f), pbr(0.86f, 0.0f));
+            [&] { return TextureFactory::brick(kLarge, s + 12u, 0.85f, 0.40f); }, pbr(0.86f, 0.0f));
     {
         Material engineering = materials_[static_cast<std::size_t>(MaterialId::BrickRed)];
         engineering.name       = "brick-engineering";
@@ -266,8 +343,9 @@ void MaterialLibrary::build(std::uint32_t seed)
 
     {
         const float whiteRgb[3] = {1.0f, 1.0f, 1.0f};
-        const SurfaceMaps renderMaps = TextureFactory::plaster(kLarge, s + 13u, whiteRgb, 0.60f);
-        install(MaterialId::RenderCream, "render", renderMaps, pbr(0.88f, 0.0f));
+        install(MaterialId::RenderCream, "render",
+                [&] { return TextureFactory::plaster(kLarge, s + 13u, whiteRgb, 0.60f); },
+                pbr(0.88f, 0.0f));
 
         struct Tint { MaterialId id; const char* name; Vector3 colour; };
         // A real street's palette: the ochres and creams of lime render, one
@@ -292,23 +370,23 @@ void MaterialLibrary::build(std::uint32_t seed)
         }
     }
 
-    install(MaterialId::Ashlar, "ashlar", TextureFactory::ashlar(kLarge, s + 14u, 0.55f),
+    install(MaterialId::Ashlar, "ashlar", [&] { return TextureFactory::ashlar(kLarge, s + 14u, 0.55f); },
             pbr(0.82f, 0.0f));
     {
         Material panel = pbr(0.74f, 0.0f);
         panel.baseColour = Vector3(0.72f, 0.72f, 0.70f);
         install(MaterialId::ConcretePanel, "concrete-panel",
-                TextureFactory::concretePaving(kLarge, s + 15u), panel);
+                [&] { return TextureFactory::concretePaving(kLarge, s + 15u); }, panel);
         // Precast cladding is a large flat panel, not paving: keep the aggregate
         // and weathering but scale the joints out of sight with a large tile.
         materials_[static_cast<std::size_t>(MaterialId::ConcretePanel)].roughness = 0.70f;
     }
 
-    install(MaterialId::RoofTile, "roof-tile", TextureFactory::roofTile(kMedium, s + 16u),
+    install(MaterialId::RoofTile, "roof-tile", [&] { return TextureFactory::roofTile(kMedium, s + 16u); },
             pbr(0.80f, 0.0f));
-    install(MaterialId::RoofFelt, "roof-felt", TextureFactory::roofFelt(kMedium, s + 17u),
+    install(MaterialId::RoofFelt, "roof-felt", [&] { return TextureFactory::roofFelt(kMedium, s + 17u); },
             pbr(0.88f, 0.0f));
-    install(MaterialId::RoofZinc, "roof-zinc", TextureFactory::sheetMetal(kMedium, s + 18u),
+    install(MaterialId::RoofZinc, "roof-zinc", [&] { return TextureFactory::sheetMetal(kMedium, s + 18u); },
             pbr(0.50f, 0.85f));
 
     // ---------------------------------------------------------------------
@@ -323,7 +401,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         glass.specular    = 1.0f;
         glass.castsShadow = false;   // a pane casting an opaque shadow is a tell
         glass.writesDepth = false;
-        install(MaterialId::Glazing, "glazing", TextureFactory::windowGlass(kMedium, s + 19u),
+        install(MaterialId::Glazing, "glazing", [&] { return TextureFactory::windowGlass(kMedium, s + 19u); },
                 glass);
 
         Material shop = materials_[static_cast<std::size_t>(MaterialId::Glazing)];
@@ -337,7 +415,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         Material interior = pbr(0.90f, 0.0f);
         interior.emissiveFactor = Vector3(1.0f, 1.0f, 1.0f);
         install(MaterialId::Interior, "interior",
-                TextureFactory::interiorAtlas(kLarge, s + 20u), interior);
+                [&] { return TextureFactory::interiorAtlas(kLarge, s + 20u); }, interior);
     }
 
     // ---------------------------------------------------------------------
@@ -346,8 +424,8 @@ void MaterialLibrary::build(std::uint32_t seed)
     // ---------------------------------------------------------------------
     {
         const float whiteRgb[3] = {1.0f, 1.0f, 1.0f};
-        install(MaterialId::FrameWhite, "painted", TextureFactory::paintedMetal(kSmall, s + 21u,
-                                                                                whiteRgb, 0.38f),
+        install(MaterialId::FrameWhite, "painted", [&] { return TextureFactory::paintedMetal(kSmall, s + 21u,
+                                                                                whiteRgb, 0.38f); },
                 pbr(0.38f, 0.0f));
         const Material painted = materials_[static_cast<std::size_t>(MaterialId::FrameWhite)];
 
@@ -388,9 +466,9 @@ void MaterialLibrary::build(std::uint32_t seed)
         }
     }
 
-    install(MaterialId::DoorOak, "door-oak", TextureFactory::hardwood(kSmall, s + 22u),
+    install(MaterialId::DoorOak, "door-oak", [&] { return TextureFactory::hardwood(kSmall, s + 22u); },
             pbr(0.46f, 0.0f));
-    install(MaterialId::Timber, "timber", TextureFactory::hardwood(kSmall, s + 23u),
+    install(MaterialId::Timber, "timber", [&] { return TextureFactory::hardwood(kSmall, s + 23u); },
             pbr(0.52f, 0.0f));
 
     // ---------------------------------------------------------------------
@@ -413,13 +491,13 @@ void MaterialLibrary::build(std::uint32_t seed)
             Material m = pbr(0.18f, 0.0f);
             m.baseColour     = lens.colour * 0.25f;
             m.emissiveFactor = Vector3::Zero;   // lit by the signal controller
-            install(lens.id, lens.name, TextureFactory::flat(8, c, 0.18f, 0.0f), m);
+            install(lens.id, lens.name, [&] { return TextureFactory::flat(8, c, 0.18f, 0.0f); }, m);
         }
         float glassRgb[3] = {0.85f, 0.85f, 0.82f};
         Material lamp = pbr(0.12f, 0.0f);
         lamp.baseColour     = Vector3(0.86f, 0.86f, 0.82f);
         lamp.emissiveFactor = Vector3::Zero;
-        install(MaterialId::LampGlass, "lamp-glass", TextureFactory::flat(8, glassRgb, 0.12f, 0.0f),
+        install(MaterialId::LampGlass, "lamp-glass", [&] { return TextureFactory::flat(8, glassRgb, 0.12f, 0.0f); },
                 lamp);
     }
 
@@ -442,7 +520,7 @@ void MaterialLibrary::build(std::uint32_t seed)
             m.alphaCutoff = 0.5f;
             m.doubleSided = false;
             install(face.id, std::string("sign-") + SignFactory::faceName(face.face),
-                    SignFactory::face(face.face, kSign, s + 40u), m);
+                    [&] { return SignFactory::face(face.face, kSign, s + 40u); }, m);
         }
         // Two plates, because the two streets have two names and the lettering
         // is baked into the texture. Everything else about them is identical, so
@@ -450,9 +528,9 @@ void MaterialLibrary::build(std::uint32_t seed)
         // needed rather than one texture and two tints.
         Material plate = pbr(0.30f, 0.0f);
         install(MaterialId::SignFaceStreetName, "sign-street-name",
-                SignFactory::streetPlate("LINDENSTRASSE", kSign, kSign / 4, s + 41u), plate);
+                [&] { return SignFactory::streetPlate("LINDENSTRASSE", kSign, kSign / 4, s + 41u); }, plate);
         install(MaterialId::SignFaceStreetNameSide, "sign-street-name-side",
-                SignFactory::streetPlate("MARKTGASSE", kSign, kSign / 4, s + 42u), plate);
+                [&] { return SignFactory::streetPlate("MARKTGASSE", kSign, kSign / 4, s + 42u); }, plate);
     }
 
     // ---------------------------------------------------------------------
@@ -464,7 +542,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         // White so the per-instance tint decides the colour of each car.
         body.baseColour = Vector3::One;
         install(MaterialId::CarBody, "car-body",
-                TextureFactory::carPaint(kMedium, s + 24u, whiteRgb, 0.6f), body);
+                [&] { return TextureFactory::carPaint(kMedium, s + 24u, whiteRgb, 0.6f); }, body);
 
         Material glass = pbr(0.05f, 0.0f);
         glass.alphaMode   = AlphaModeEXT::Blend;
@@ -473,11 +551,11 @@ void MaterialLibrary::build(std::uint32_t seed)
         glass.ior         = 1.52f;
         glass.castsShadow = false;
         glass.writesDepth = false;
-        install(MaterialId::CarGlass, "car-glass", TextureFactory::windowGlass(kSmall, s + 25u),
+        install(MaterialId::CarGlass, "car-glass", [&] { return TextureFactory::windowGlass(kSmall, s + 25u); },
                 glass);
 
         float tyreRgb[3] = {0.026f, 0.026f, 0.028f};
-        install(MaterialId::CarTyre, "car-tyre", TextureFactory::flat(8, tyreRgb, 0.92f, 0.0f),
+        install(MaterialId::CarTyre, "car-tyre", [&] { return TextureFactory::flat(8, tyreRgb, 0.92f, 0.0f); },
                 pbr(0.92f, 0.0f));
 
         Material rear = pbr(0.22f, 0.0f);
@@ -486,18 +564,18 @@ void MaterialLibrary::build(std::uint32_t seed)
         float rearRgb[3];
         Rgb(rearRgb, rear.baseColour);
         install(MaterialId::CarLightRear, "car-light-rear",
-                TextureFactory::flat(8, rearRgb, 0.22f, 0.0f), rear);
+                [&] { return TextureFactory::flat(8, rearRgb, 0.22f, 0.0f); }, rear);
 
         Material front = pbr(0.10f, 0.0f);
         front.baseColour = Vector3(0.82f, 0.84f, 0.86f);
         float frontRgb[3];
         Rgb(frontRgb, front.baseColour);
         install(MaterialId::CarLightFront, "car-light-front",
-                TextureFactory::flat(8, frontRgb, 0.10f, 0.0f), front);
+                [&] { return TextureFactory::flat(8, frontRgb, 0.10f, 0.0f); }, front);
 
         Material plate = pbr(0.36f, 0.0f);
         install(MaterialId::LicencePlate, "licence-plate",
-                SignFactory::licencePlate("B MX 4271", kSmall * 2, kSmall / 2), plate);
+                [&] { return SignFactory::licencePlate("B MX 4271", kSmall * 2, kSmall / 2); }, plate);
     }
 
     // ---------------------------------------------------------------------
@@ -507,18 +585,18 @@ void MaterialLibrary::build(std::uint32_t seed)
         const float whiteRgb[3] = {1.0f, 1.0f, 1.0f};
         Material skin = pbr(0.54f, 0.0f);
         skin.baseColour = Vector3::One;   // tinted per pedestrian
-        install(MaterialId::Skin, "skin", TextureFactory::skin(kSmall, s + 26u, whiteRgb), skin);
+        install(MaterialId::Skin, "skin", [&] { return TextureFactory::skin(kSmall, s + 26u, whiteRgb); }, skin);
 
         Material cloth = pbr(0.90f, 0.0f);
         cloth.baseColour = Vector3::One;
         install(MaterialId::Clothing, "clothing",
-                TextureFactory::fabric(kSmall, s + 27u, whiteRgb), cloth);
+                [&] { return TextureFactory::fabric(kSmall, s + 27u, whiteRgb); }, cloth);
     }
 
     // ---------------------------------------------------------------------
     // Vegetation
     // ---------------------------------------------------------------------
-    install(MaterialId::Bark, "bark", TextureFactory::bark(kMedium, s + 28u), pbr(0.90f, 0.0f));
+    install(MaterialId::Bark, "bark", [&] { return TextureFactory::bark(kMedium, s + 28u); }, pbr(0.90f, 0.0f));
     {
         Material leaves = pbr(0.82f, 0.0f);
         // Alpha-masked and double-sided: a leaf card seen from behind must still
@@ -526,7 +604,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         leaves.alphaMode   = AlphaModeEXT::Mask;
         leaves.alphaCutoff = 0.42f;
         leaves.doubleSided = true;
-        install(MaterialId::Foliage, "foliage", TextureFactory::foliageCard(kMedium, s + 29u),
+        install(MaterialId::Foliage, "foliage", [&] { return TextureFactory::foliageCard(kMedium, s + 29u); },
                 leaves);
 
         Material hedge = materials_[static_cast<std::size_t>(MaterialId::Foliage)];
