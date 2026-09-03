@@ -79,6 +79,29 @@ private:
     int   frameBudget_    = 0;
     bool  contentLoaded_  = false;
 
+    /// Frame times gathered over a `--frames` run and reported on the way out.
+    ///
+    /// The overlay shows a smoothed headline and one frame's breakdown, which is
+    /// the right thing to look at while flying the camera and the wrong thing to
+    /// tune against: the first frames of a run are warm-up, and a single frame's
+    /// stage times are dominated by whatever the driver happened to be doing.
+    /// A profile wants the median and the tail over a settled run, so that is
+    /// what this collects.
+    struct FrameProfile
+    {
+        std::vector<float> frameMs;
+        double cullMs = 0.0, shadowMs = 0.0, prepassMs = 0.0;
+        double skyMs = 0.0, opaqueMs = 0.0, postMs = 0.0;
+        long long draws = 0, shadowDraws = 0, triangles = 0;
+        int samples = 0;
+    };
+    FrameProfile profile_;
+    /// How many frames to discard before measuring. Three is what the screenshot
+    /// path already treats as settled.
+    static constexpr int kProfileWarmup = 6;
+    void recordFrame();
+    void reportProfile();
+
     /// `--capture DIR` renders every named viewpoint into DIR and exits. This is
     /// the mechanism behind the screenshot set in the README and the visual
     /// regression views.

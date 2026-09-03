@@ -23,11 +23,13 @@
 #include "Microsoft/Xna/Framework/MathHelper.hpp"
 #include "System/NotSupportedException.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <iomanip>
 #include <sstream>
 #include <vector>
 
@@ -436,6 +438,7 @@ void StreetApplication::Draw(const GameTime& gameTime)
         overlay_->draw(*renderer_, *scene_, camera_, controller_, settings_, gameTime);
 
     ++framesDrawn_;
+    recordFrame();
 
     if (!shadowDumpPath_.empty() && framesDrawn_ >= 3)
     {
@@ -450,7 +453,73 @@ void StreetApplication::Draw(const GameTime& gameTime)
         // viewpoints to walk and ends when the script says so.
         if (frameBudget_ == 0 && captureDirectory_.empty()) Exit();
     }
-    if (frameBudget_ > 0 && framesDrawn_ >= frameBudget_) Exit();
+    if (frameBudget_ > 0 && framesDrawn_ >= frameBudget_)
+    {
+        reportProfile();
+        Exit();
+    }
+}
+
+void StreetApplication::recordFrame()
+{
+    if (frameBudget_ <= 0 || framesDrawn_ <= kProfileWarmup) return;
+    const SceneRenderer::Stats& stats = renderer_->stats();
+    profile_.frameMs.push_back(stats.frameMs);
+    profile_.cullMs    += stats.cullMs;
+    profile_.shadowMs  += stats.shadowMs;
+    profile_.prepassMs += stats.prepassMs;
+    profile_.skyMs     += stats.skyMs;
+    profile_.opaqueMs  += stats.opaqueMs;
+    profile_.postMs    += stats.postMs;
+    profile_.draws       += stats.drawCalls;
+    profile_.shadowDraws += stats.shadowDrawCalls;
+    profile_.triangles   += static_cast<long long>(stats.triangles);
+    ++profile_.samples;
+}
+
+void StreetApplication::reportProfile()
+{
+    if (profile_.samples <= 0) return;
+    std::vector<float> sorted = profile_.frameMs;
+    std::sort(sorted.begin(), sorted.end());
+    const auto at = [&](double q) {
+        const std::size_t i = static_cast<std::size_t>(
+            q * static_cast<double>(sorted.size() - 1) + 0.5);
+        return sorted[i];
+    };
+    const double n = static_cast<double>(profile_.samples);
+    double mean = 0.0;
+    for (const float ms : sorted) mean += static_cast<double>(ms);
+    mean /= n;
+
+    const auto fixed = [](double value, int places) {
+        std::ostringstream out;
+        out << std::fixed << std::setprecision(places) << value;
+        return out.str();
+    };
+
+    CNA::Logger::Info("cna-street: frame profile over " + std::to_string(profile_.samples)
+                      + " settled frames at "
+                      + std::to_string(getGraphicsDeviceProperty().getViewportProperty().getWidthProperty())
+                      + "x"
+                      + std::to_string(getGraphicsDeviceProperty().getViewportProperty().getHeightProperty()));
+    CNA::Logger::Info("cna-street:   mean " + fixed(mean, 2) + " ms ("
+                      + fixed(1000.0 / std::max(mean, 0.001), 1) + " fps)"
+                      + "  median " + fixed(at(0.5), 2)
+                      + "  p95 " + fixed(at(0.95), 2)
+                      + "  min " + fixed(sorted.front(), 2)
+                      + "  max " + fixed(sorted.back(), 2) + " ms");
+    CNA::Logger::Info("cna-street:   cull " + fixed(profile_.cullMs / n, 2)
+                      + "  shadow " + fixed(profile_.shadowMs / n, 2)
+                      + "  prepass " + fixed(profile_.prepassMs / n, 2)
+                      + "  sky " + fixed(profile_.skyMs / n, 2)
+                      + "  opaque " + fixed(profile_.opaqueMs / n, 2)
+                      + "  post " + fixed(profile_.postMs / n, 2) + " ms");
+    CNA::Logger::Info("cna-street:   "
+                      + std::to_string(profile_.draws / profile_.samples) + " draws, "
+                      + std::to_string(profile_.shadowDraws / profile_.samples) + " shadow draws, "
+                      + std::to_string(profile_.triangles / profile_.samples)
+                      + " triangles per frame");
 }
 
 void StreetApplication::runCaptureScript()
