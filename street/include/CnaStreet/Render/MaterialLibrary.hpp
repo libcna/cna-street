@@ -171,6 +171,25 @@ private:
     /// Writes a surface's maps to the bake directory as PNG.
     void bake(const std::string& name, const Assets::SurfaceMaps& maps);
 
+    /// Rescales @p material's roughness and metalness factors so that, once
+    /// `PbrEffect` multiplies them by the ORM map, the *average* is the value
+    /// the material declared. See the implementation for what this is fixing;
+    /// the short version is that the factor and the map both carried the
+    /// physical value and the shader multiplied them.
+    void applyNominals(Material& material);
+    /// Records what one generator wrote into its ORM map.
+    void measureNominals(const std::string& name, const Assets::Image& orm);
+    /// Writes the measured nominals into the content root, so a content-backed
+    /// start-up -- which never runs a generator -- can still normalise.
+    void writeNominals(const std::string& directory) const;
+    /// Reads them back. Idempotent; warns once when the content root has none.
+    void loadNominals();
+    /// What the generator actually wrote, by material name. A variant that
+    /// shares another surface's textures but wants a different roughness has to
+    /// divide by these itself: it never passes through @ref applyNominals.
+    [[nodiscard]] float nominalRoughnessOf(const std::string& name) const;
+    [[nodiscard]] float nominalMetallicOf(const std::string& name) const;
+
     /// Installs one material. @p generate is called only when the surface is not
     /// already compiled into the content root, which is the whole point of the
     /// pipeline: a full content build turns a nine-second start-up into a
@@ -187,6 +206,9 @@ private:
     std::vector<std::unique_ptr<Microsoft::Xna::Framework::Graphics::Texture2D>> textures_;
     std::vector<Material> materials_;
     std::unordered_map<std::string, std::unique_ptr<Material>> derived_;
+    std::unordered_map<std::string, float> nominalRoughness_;
+    std::unordered_map<std::string, float> nominalMetallic_;
+    bool nominalsLoaded_ = false;
     std::size_t textureBytes_ = 0;
 };
 

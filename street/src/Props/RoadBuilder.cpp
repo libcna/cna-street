@@ -18,6 +18,19 @@ using CnaStreet::Geometry::UvMode;
 
 namespace CnaStreet {
 
+namespace {
+/// How much road one repeat of the asphalt map covers, in metres.
+///
+/// Five, not six, and the reason is texels rather than taste: the asphalt map
+/// is 1024 square, so five metres is 0.49 cm per texel and a 3 cm chip is six
+/// texels across. At six metres over a 512 map it was 1.2 cm per texel and the
+/// aggregate could not be drawn at all -- whatever the generator did, the only
+/// thing that survived to the screen was the coarse noise laid on top of it,
+/// which is why the carriageway read as weather rather than as a surface.
+constexpr float kAsphaltTile = 5.0f;
+}  // namespace
+
+
 namespace M = Metrics;
 
 namespace {
@@ -144,7 +157,7 @@ void RoadBuilder::buildCarriageway(GeometryCollector& collector, Rng& rng)
         {
             collector.setRegion(0.0f, (z0 + z1) * 0.5f);
             MeshBuilder& builder = collector.builder(main);
-            builder.setTileSize(6.0f);
+            builder.setTileSize(kAsphaltTile);
             Slab(builder, -kMainHalfRoad, z0, kMainHalfRoad, z1, 0.0f);
         }
         else
@@ -154,14 +167,14 @@ void RoadBuilder::buildCarriageway(GeometryCollector& collector, Rng& rng)
             {
                 collector.setRegion(0.0f, z0);
                 MeshBuilder& builder = collector.builder(main);
-                builder.setTileSize(6.0f);
+                builder.setTileSize(kAsphaltTile);
                 Slab(builder, -kMainHalfRoad, z0, kMainHalfRoad, -kSideHalfRoad, 0.0f);
             }
             if (z1 > kSideHalfRoad)
             {
                 collector.setRegion(0.0f, z1);
                 MeshBuilder& builder = collector.builder(main);
-                builder.setTileSize(6.0f);
+                builder.setTileSize(kAsphaltTile);
                 Slab(builder, -kMainHalfRoad, kSideHalfRoad, kMainHalfRoad, z1, 0.0f);
             }
         }
@@ -176,7 +189,7 @@ void RoadBuilder::buildCarriageway(GeometryCollector& collector, Rng& rng)
         {
             collector.setRegion((x0 + x1) * 0.5f, 0.0f);
             MeshBuilder& builder = collector.builder(side);
-            builder.setTileSize(6.0f);
+            builder.setTileSize(kAsphaltTile);
             Slab(builder, x0, -kSideHalfRoad, x1, kSideHalfRoad, 0.0f);
         }
         else
@@ -185,14 +198,14 @@ void RoadBuilder::buildCarriageway(GeometryCollector& collector, Rng& rng)
             {
                 collector.setRegion(x0, 0.0f);
                 MeshBuilder& builder = collector.builder(side);
-                builder.setTileSize(6.0f);
+                builder.setTileSize(kAsphaltTile);
                 Slab(builder, x0, -kSideHalfRoad, -kMainHalfRoad, kSideHalfRoad, 0.0f);
             }
             if (x1 > kMainHalfRoad)
             {
                 collector.setRegion(x1, 0.0f);
                 MeshBuilder& builder = collector.builder(side);
-                builder.setTileSize(6.0f);
+                builder.setTileSize(kAsphaltTile);
                 Slab(builder, kMainHalfRoad, -kSideHalfRoad, x1, kSideHalfRoad, 0.0f);
             }
         }
@@ -205,7 +218,7 @@ void RoadBuilder::buildCarriageway(GeometryCollector& collector, Rng& rng)
     collector.setRegion(0.0f, 0.0f);
     {
         MeshBuilder& builder = collector.builder(worn);
-        builder.setTileSize(6.0f);
+        builder.setTileSize(kAsphaltTile);
         Slab(builder, -kMainHalfRoad, -kSideHalfRoad, kMainHalfRoad, kSideHalfRoad, 0.0f);
 
         for (int corner = 0; corner < 4; ++corner)

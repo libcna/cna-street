@@ -50,6 +50,19 @@ foreach(source IN LISTS sources)
     math(EXPR compiled "${compiled} + 1")
 endforeach()
 
+# The surface nominals, which the bake wrote beside its images. Not a texture
+# and so not compiled: MaterialLibrary reads it directly to work out how far to
+# scale each material's roughness and metalness factor so that PbrEffect's
+# factor-times-map product averages the value the material declared. Without it
+# a content-backed start-up keeps the squared factors, which is a whole city one
+# stop too glossy, so the app warns when it is missing rather than guessing.
+if(EXISTS "${STAGING}/surfaces.txt")
+    file(COPY_FILE "${STAGING}/surfaces.txt" "${OUTPUT}/surfaces.txt")
+else()
+    message(WARNING "cna-street: the bake wrote no surfaces.txt; material factors "
+                    "will not be normalised at runtime")
+endif()
+
 # --- imported glTF models ----------------------------------------------------
 # The second half of the pipeline, and the more interesting one: CNA's own
 # glTF importer, driven by cna_tool_gltf_to_cnb, which links the content

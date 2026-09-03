@@ -118,27 +118,55 @@ SurfaceMaps TextureFactory::asphalt(int size, std::uint32_t seed, float wear)
             // the largest aggregate that can be resolved at all is about 4 cm,
             // and that is what this draws.
             float second = 0.0f;
-            const float coarse = worley2(u * 140.0f, v * 140.0f, 140, seed + 11u, &second);
-            const float stone  = smoothstep(0.42f, 0.05f, coarse);
+            // 200 cells across a 6 m tile is a 3 cm chip, which is the top of
+            // the 8-16 mm grading once the binder is worn off it, and the
+            // narrow smoothstep is the point: taken over 0.42 the cells merge
+            // into rounded plateaus and the carriageway reads as loose gravel
+            // or bubble wrap. Over 0.24 only the centre of each cell shows, so
+            // what appears is chips *in* a matrix rather than stones sitting on
+            // one. Rolled asphalt is a flush surface; the aggregate is visible
+            // because the binder has worn off the top of it, not because the
+            // stones stand proud.
+            const float coarse = worley2(u * 170.0f, v * 170.0f, 170, seed + 11u, &second);
+            const float stone  = smoothstep(0.30f, 0.07f, coarse);
             const float fine   = fbm(u * lattice * 4.0f, v * lattice * 4.0f,
                                      static_cast<int>(lattice * 4.0f), 4, 2.0f, 0.55f, seed + 23u);
+            // The sand fraction between the chips, at the finest scale the map
+            // can carry. Without it the matrix is flat and the chips read as
+            // stuck-on decals.
+            const float grit = fbm(u * 420.0f, v * 420.0f, 420, 2, 2.0f, 0.5f, seed + 29u);
 
             float base[3];
             MixRgb(base, fresh, aged, 0.25f + 0.6f * wear);
-            // Exposed aggregate is lighter and greyer than the binder around it.
-            const float exposure = stone * (0.25f + 0.65f * wear);
+            // Exposed aggregate is lighter and greyer than the binder around
+            // it, and by a good deal: a bitumen film is 3-5% reflectance and a
+            // granite chip with the binder worn off it is 8-15%, so two or
+            // three to one is right. What was wrong before was never the
+            // contrast -- it was the *shape* of what carried it, and the
+            // relief on top.
+            const float exposure = stone * (0.22f + 0.55f * wear);
             for (int c = 0; c < 3; ++c)
-                base[c] = base[c] * (1.0f - exposure) + (0.14f + 0.05f * fine) * exposure;
+                base[c] = base[c] * (1.0f - exposure) + (0.115f + 0.055f * fine) * exposure;
+            for (int c = 0; c < 3; ++c) base[c] *= 0.90f + grit * 0.20f;
 
-            float height = 0.42f + stone * 0.30f + fine * 0.12f;
-            float roughness = 0.86f - stone * 0.08f + (fine - 0.5f) * 0.10f;
-            float occlusion = 1.0f - (1.0f - coarse) * 0.16f;
+            // A tenth of the relief the chips used to carry, for the same
+            // reason: they are rolled flush.
+            float height = 0.46f + stone * 0.10f + fine * 0.09f + grit * 0.05f;
+            float roughness = 0.86f - stone * 0.05f + (fine - 0.5f) * 0.08f;
+            float occlusion = 1.0f - (1.0f - coarse) * 0.10f;
 
             // --- repair patches ----------------------------------------------
             // Cut-and-fill patches over a service trench: a slightly different
             // mix, a hard edge, and a raised lip where the joint was sealed.
+            // Held down to a change of shade rather than a change of surface.
+            // A real cut-and-fill patch is *rectangular* -- a trench reinstated
+            // between saw cuts -- and a tiling texture cannot draw a rectangle
+            // without drawing the same rectangle every six metres. Thresholded
+            // noise at full strength gave organic blobs that read as oil spill
+            // or mud; the rectangles belong in the road builder as decals, the
+            // way the wheel tracks already do.
             const float patchField = fbm(u * 3.0f, v * 3.0f, 3, 3, 2.0f, 0.5f, seed + 71u);
-            const float patch = smoothstep(0.56f, 0.60f, patchField) * (0.35f + 0.65f * wear);
+            const float patch = smoothstep(0.56f, 0.62f, patchField) * (0.14f + 0.26f * wear);
             if (patch > 0.0f)
             {
                 for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 0.72f + 0.012f, patch);
@@ -157,8 +185,14 @@ SurfaceMaps TextureFactory::asphalt(int size, std::uint32_t seed, float wear)
             // --- cracking --------------------------------------------------------
             // Ridged noise thresholded near its crest gives branching lines that
             // meet at angles, which is what a fatigue crack actually does.
+            // Far sparser than it was. A ridged field thresholded at 0.72 with a
+            // quarter of the tile above it does not draw a crack, it draws a
+            // continuous web -- crazed asphalt at the end of its life, on every
+            // road in the city including the freshly surfaced ones. Threshold
+            // near the crest and keep the transition tight, and what appears is
+            // a few branching lines per tile, which is a road.
             const float crackField = ridged(u * 5.0f, v * 5.0f, 5, 4, seed + 137u);
-            const float crack = smoothstep(0.80f - 0.14f * wear, 0.97f, crackField)
+            const float crack = smoothstep(0.925f - 0.055f * wear, 0.985f, crackField)
                                 * (0.15f + 0.85f * wear);
             if (crack > 0.0f)
             {
@@ -169,25 +203,38 @@ SurfaceMaps TextureFactory::asphalt(int size, std::uint32_t seed, float wear)
             }
 
             // --- staining ---------------------------------------------------------
-            const float oil = smoothstep(0.70f, 0.86f,
-                                         fbm(u * 6.0f + 13.0f, v * 6.0f, 6, 4, 2.1f, 0.5f,
+            // Oil, and much less of it than there was. A drip is a hand's
+            // breadth and it lands where cars stand still, so a tiling texture
+            // that spreads it evenly at 1 m across and 55% strength does not
+            // draw oil: it draws a cloudy grey wash over the whole
+            // carriageway, which at a grazing angle reads as standing water.
+            // Sparser, finer, and weaker -- the visible stains at a junction
+            // belong in a decal pass over the lane that has them.
+            const float oil = smoothstep(0.80f, 0.93f,
+                                         fbm(u * 11.0f + 13.0f, v * 11.0f, 11, 4, 2.1f, 0.5f,
                                              seed + 211u));
-            for (int c = 0; c < 3; ++c) base[c] *= (1.0f - oil * 0.55f);
-            roughness -= oil * 0.30f;
+            for (int c = 0; c < 3; ++c) base[c] *= (1.0f - oil * 0.30f);
+            roughness -= oil * 0.16f;
 
+            // The pale bloom where grit and rubber dust collect, at the coarsest
+            // scale the tile has. This is the one large-scale variation worth
+            // keeping: it is what stops six metres of road repeating visibly,
+            // and unlike the oil it lightens, so it reads as dust rather than
+            // as water.
             const float dust = fbm(u * 2.0f, v * 2.0f, 2, 3, 2.0f, 0.5f, seed + 307u);
-            for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 1.35f + 0.010f,
-                                                      smoothstep(0.55f, 0.9f, dust) * 0.35f);
+            for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 1.42f + 0.012f,
+                                                      smoothstep(0.48f, 0.9f, dust) * 0.45f);
 
             s.albedo.setRgb(x, y, base[0], base[1], base[2]);
             s.height.setRgb(x, y, saturate(height), 0.0f, 0.0f);
             s.orm.set(x, y, saturate(occlusion), saturate(roughness), 0.0f, 1.0f);
         }
 
-    // A gentler normal than the rest of the catalogue. Tarmac has almost no
-    // relief at the scale a person walking past resolves, and the strong map
-    // this used to carry read as gravel from two metres away.
-    return s.finish(0.75f);
+    // A gentler normal than the rest of the catalogue, and gentler again than
+    // it was. Tarmac has almost no relief at the scale a person walking past
+    // resolves: at 0.75 with the old chip height the "Road surface" viewpoint
+    // came out as a riverbed.
+    return s.finish(0.42f);
 }
 
 SurfaceMaps TextureFactory::wheelTrack(int size, std::uint32_t seed)
@@ -787,9 +834,18 @@ SurfaceMaps TextureFactory::paintedMetal(int size, std::uint32_t seed, const flo
 
             s.albedo.setRgb(x, y, base[0], base[1], base[2]);
             s.height.setRgb(x, y, saturate(0.55f + peel * 0.10f - chip * 0.25f), 0.0f, 0.0f);
+            // Unit metalness in the blue channel, and the *material* decides
+            // how much of it to take. This one surface drives every painted and
+            // plated thing in the city -- a white window frame, a green bollard,
+            // a galvanised post, an alloy wheel -- and they differ in metalness
+            // as much as in colour. A map that wrote its own metalness would
+            // multiply every one of those declarations by the same number; a
+            // map that writes 1.0 lets a factor of 0.0 mean paint and 0.85 mean
+            // machined alloy, which is what the tint table is trying to say.
+            // The rust chips dip below it because iron oxide is a dielectric.
             s.orm.set(x, y, 1.0f,
                       saturate(roughness + (peel - 0.5f) * 0.06f + chalk * 0.08f + chip * 0.35f),
-                      chip * 0.6f, 1.0f);
+                      1.0f - chip * 0.85f, 1.0f);
         }
     return s.finish(1.1f);
 }
@@ -1177,14 +1233,25 @@ SurfaceMaps TextureFactory::shopStock(int size, std::uint32_t seed)
             // hues quantised from that pick only ever produced two of them,
             // which is why a shelf of assorted packaging came out uniformly
             // teal.
-            const float pick   = Noise::random2(cx, cy, seed + 3u);
-            const float bright = 0.28f + 0.52f * Noise::random2(cx, cy, seed + 11u);
+            // Facings, not individual packets. A shelf is stocked in runs of
+            // the same product -- three or four facings of one line, then the
+            // next -- so the hue is picked per *group* of cells and only the
+            // brightness varies within one. Picking it per cell gave every
+            // packet a different colour off a six-hue wheel, and a wall of
+            // that reads as confetti rather than as a shop.
+            const int  group   = cx / 3;
+            const float pick   = Noise::random2(group, cy, seed + 3u);
+            const float bright = 0.30f + 0.46f * Noise::random2(cx, cy, seed + 11u);
             // Six hues around the wheel, which is what a shelf of packaging is.
             const float hue = std::floor(pick * 6.0f) / 6.0f;
             const float r = std::fabs(hue * 6.0f - 3.0f) - 1.0f;
             const float g = 2.0f - std::fabs(hue * 6.0f - 2.0f);
             const float b = 2.0f - std::fabs(hue * 6.0f - 4.0f);
-            const float sat = 0.35f + 0.45f * pick;
+            // Well under half saturation. Packaging is printed on white card
+            // and most of a shelf is white card: full-chroma cells read as a
+            // paint chart, and through glass at three metres the loudest thing
+            // in the street was a bakery's shelving.
+            const float sat = 0.13f + 0.27f * pick;
             float base[3] = {
                 Mix(bright, bright * saturate(r), sat),
                 Mix(bright, bright * saturate(g), sat),
@@ -1245,9 +1312,14 @@ SurfaceMaps TextureFactory::paintedWood(int size, std::uint32_t seed, const floa
 SurfaceMaps TextureFactory::hardwood(int size, std::uint32_t seed)
 {
     Surface s(size);
+    // A narrower band between the growth rings than this used to have. 154/96
+    // in sRGB is a 3:1 ratio once it is linear, and a 3:1 stripe with a
+    // cathedral figure warping it is not oak -- it is animal fur, which is
+    // exactly what four metres of shop worktop looked like through the glass.
+    // Real timber's figure is a change of shade, not of material.
     float light[3], dark[3];
-    Srgb8(light, 154, 106, 62);
-    Srgb8(dark, 96, 60, 34);
+    Srgb8(light, 148, 108, 70);
+    Srgb8(dark, 118, 82, 52);
 
     for (int y = 0; y < size; ++y)
         for (int x = 0; x < size; ++x)
@@ -1258,7 +1330,9 @@ SurfaceMaps TextureFactory::hardwood(int size, std::uint32_t seed)
             // Growth rings: a fast-varying coordinate warped by a slow one, which
             // is what gives timber its cathedral figure rather than stripes.
             const float warp = fbm(u * 3.0f, v * 3.0f, 3, 3, 2.0f, 0.5f, seed + 7u);
-            const float rings = 0.5f + 0.5f * std::sin((v * 26.0f + warp * 6.0f) * kPi);
+            // And a smaller warp: at six the rings fold back on themselves and
+            // read as contour lines rather than as grain running along a board.
+            const float rings = 0.5f + 0.5f * std::sin((v * 26.0f + warp * 2.6f) * kPi);
             const float pore = fbm(u * 240.0f, v * 30.0f, 240, 2, 2.0f, 0.5f, seed + 19u);
 
             float base[3];
