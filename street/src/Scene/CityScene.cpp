@@ -1420,7 +1420,9 @@ void CityScene::buildSignage(Rng& rng, const RenderSettings& settings)
         const float aspect = anchor.height > 1e-3f ? anchor.width / anchor.height : 4.0f;
         const int bandHeight = fascia ? 128 : 160;
         const int boardWidth = std::clamp(
-            static_cast<int>(std::lround(static_cast<double>(bandHeight) * aspect)), 96, 1024);
+            static_cast<int>(std::lround(static_cast<double>(bandHeight)
+                                         * static_cast<double>(aspect))),
+            96, 1024);
 
         const std::string name = (fascia ? "fascia-" : "number-") + text + "."
                                  + std::to_string(boardWidth) + "x" + std::to_string(bandHeight);

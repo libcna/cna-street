@@ -488,12 +488,12 @@ void StreetApplication::recordFrame()
     if (frameBudget_ <= 0 || framesDrawn_ <= kProfileWarmup) return;
     const SceneRenderer::Stats& stats = renderer_->stats();
     profile_.frameMs.push_back(stats.frameMs);
-    profile_.cullMs    += stats.cullMs;
-    profile_.shadowMs  += stats.shadowMs;
-    profile_.prepassMs += stats.prepassMs;
-    profile_.skyMs     += stats.skyMs;
-    profile_.opaqueMs  += stats.opaqueMs;
-    profile_.postMs    += stats.postMs;
+    profile_.cullMs    += static_cast<double>(stats.cullMs);
+    profile_.shadowMs  += static_cast<double>(stats.shadowMs);
+    profile_.prepassMs += static_cast<double>(stats.prepassMs);
+    profile_.skyMs     += static_cast<double>(stats.skyMs);
+    profile_.opaqueMs  += static_cast<double>(stats.opaqueMs);
+    profile_.postMs    += static_cast<double>(stats.postMs);
     profile_.draws       += stats.drawCalls;
     profile_.shadowDraws += stats.shadowDrawCalls;
     profile_.triangles   += static_cast<long long>(stats.triangles);

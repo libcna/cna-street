@@ -294,11 +294,18 @@ void RoadBuilder::buildCarriageway(GeometryCollector& collector, Rng& rng)
             }
         };
 
-        for (const float side : {-1.0f, 1.0f})
+        // `lane` rather than `side`, and the rename matters: the enclosing
+        // scope already binds `side` to the side street's *material*, so the
+        // loop variable was shadowing a pointer with a float and both lines in
+        // the body were reading the float. It compiled and it was right; it was
+        // right by accident, and the next person to move either declaration
+        // would have found out the hard way.
+        for (const float lane : {-1.0f, 1.0f})
             for (const float offset : {-kTrackGap, kTrackGap})
             {
-                band(side * mainLane + offset, -kMainEnd, side * mainLane + offset, kMainEnd, true);
-                band(-kSideEnd, side * sideLane + offset, kSideEnd, side * sideLane + offset, false);
+                band(lane * mainLane + offset, -kMainEnd, lane * mainLane + offset, kMainEnd, true);
+                band(-kSideEnd, lane * sideLane + offset, kSideEnd, lane * sideLane + offset,
+                     false);
             }
     }
 

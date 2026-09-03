@@ -1083,7 +1083,10 @@ std::vector<SceneRenderer::BatchCost> SceneRenderer::visibleReport(std::size_t l
             static_cast<long long>(mesh->triangleCount()) * copies, groups_[g].castsShadow,
             groups_[g].cullDistance);
     }
-    for (const std::size_t i : visibleSkinned_)
+    // One entry per visible skinned draw. The index is not needed -- a skinned
+    // item's triangles are already counted in the stats and its name is the
+    // same for all of them -- so this counts rather than iterates.
+    for (std::size_t n = visibleSkinned_.size(); n > 0; --n)
         add("character  [skinned]", 1, 0, false, 0.0f);
 
     std::vector<BatchCost> report;
