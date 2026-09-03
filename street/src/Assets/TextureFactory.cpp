@@ -1102,7 +1102,11 @@ SurfaceMaps TextureFactory::foliageCard(int size, std::uint32_t seed)
     // Scatter individual leaves as oriented ellipses with a midrib. Drawing the
     // leaves rather than thresholding noise is what makes the silhouette read as
     // foliage at the edge of the card instead of as a torn cloud.
-    const int leaves = std::max(48, size * size / 900);
+    // A card covers about 2.4 m of crown, so a leaf that is 10% of it is 24 cm
+    // across -- a rhubarb, not a lime. The card wants a few hundred small leaves,
+    // not seventy big ones, and this is the difference between a street tree and
+    // a house plant hanging over the footway.
+    const int leaves = std::max(220, size * size / 190);
     for (int i = 0; i < leaves; ++i)
     {
         const std::uint32_t h = hash2(i, 0, seed);
@@ -1110,8 +1114,8 @@ SurfaceMaps TextureFactory::foliageCard(int size, std::uint32_t seed)
         const float cy = static_cast<float>((h >> 16) & 0xFFFFu) / 65536.0f;
         const std::uint32_t h2 = hashInt(h);
         const float angle = static_cast<float>(h2 & 0xFFFFu) / 65536.0f * kPi;
-        const float lengthPx = static_cast<float>(size) * (0.055f + (static_cast<float>((h2 >> 16)
-                                                                     & 0xFFFFu) / 65536.0f) * 0.055f);
+        const float lengthPx = static_cast<float>(size) * (0.021f + (static_cast<float>((h2 >> 16)
+                                                                     & 0xFFFFu) / 65536.0f) * 0.024f);
         const float widthPx = lengthPx * 0.46f;
         const float shade = static_cast<float>(hashInt(h2) & 0xFFFFu) / 65536.0f;
 
