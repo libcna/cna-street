@@ -33,6 +33,7 @@
 #include "System/Diagnostics/Stopwatch.hpp"
 
 #include <algorithm>
+#include <unordered_map>
 #include <cmath>
 #include <vector>
 
@@ -375,8 +376,13 @@ void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
     for (std::size_t i = 0; i < skinned_.size(); ++i)
     {
         const SkinnedItem& item = skinned_[i];
+        // Skinned items are people, and people have a cull distance of their
+        // own: each one costs three draw calls with a bone palette apiece and
+        // cannot be instanced, so the far end of the street is the most
+        // expensive place in the scene to populate. CityScene applies the same
+        // limit when it submits; this is the backstop.
         if (Vector3::Distance(eye, item.worldSphere.Center) - item.worldSphere.Radius
-            > settings.propCullDistance)
+            > settings.pedestrianCullDistance)
             continue;
         if (frustum.Contains(item.worldSphere) == ContainmentType::Disjoint) continue;
         visibleSkinned_.push_back(i);
@@ -977,6 +983,117 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     stats_.opaqueMs  = afterOpaque - afterSky;
     stats_.postMs    = Milliseconds(watch) - afterOpaque;
     stats_.frameMs   = Milliseconds(watch);
+}
+
+
+std::vector<SceneRenderer::BatchCost> SceneRenderer::costReport(std::size_t limit) const
+{
+    // Keyed on the batch's registered name, because that is the name a person
+    // reading the report thinks in: "shop-interior", "tree-2", "display-plant".
+    // Static items carry their mesh's name; instance groups carry the group's,
+    // which is the same thing said once for the whole set.
+    std::unordered_map<std::string, BatchCost> byName;
+    const auto add = [&byName](const std::string& fullName, int copies, long long triangles,
+                               bool castsShadow, float cullDistance) {
+        // Up to the '#' only. A merged static batch is named for its material
+        // and the plot it came from -- "shop-stock#61046.38" -- and forty of
+        // those listed separately says nothing at all, where "shop-stock,
+        // 39 batches, 190k triangles" says the whole thing.
+        const std::size_t hash = fullName.find('#');
+        const std::string name = hash == std::string::npos ? fullName : fullName.substr(0, hash);
+        BatchCost& cost = byName[name];
+        if (cost.name.empty())
+        {
+            cost.name         = name;
+            cost.castsShadow  = castsShadow;
+            cost.cullDistance = cullDistance;
+        }
+        // The longest leash in the family is the one that matters.
+        cost.cullDistance = cullDistance <= 0.0f || cost.cullDistance <= 0.0f
+                                ? 0.0f
+                                : std::max(cost.cullDistance, cullDistance);
+        cost.castsShadow = cost.castsShadow || castsShadow;
+        ++cost.batches;
+        cost.copies    += copies;
+        cost.triangles += triangles;
+    };
+
+    for (const SceneItem& item : items_)
+    {
+        if (item.mesh == nullptr) continue;
+        add(item.mesh->name(), 1, item.mesh->triangleCount(),
+            item.material != nullptr && item.material->castsShadow, item.cullDistance);
+    }
+    for (const InstanceGroup& group : groups_)
+    {
+        if (group.mesh == nullptr) continue;
+        const auto copies = static_cast<int>(group.transforms.size());
+        add(group.name, copies,
+            static_cast<long long>(group.mesh->triangleCount()) * copies,
+            group.castsShadow, group.cullDistance);
+    }
+
+    std::vector<BatchCost> report;
+    report.reserve(byName.size());
+    for (auto& entry : byName) report.push_back(std::move(entry.second));
+    std::sort(report.begin(), report.end(), [](const BatchCost& a, const BatchCost& b) {
+        return a.triangles > b.triangles;
+    });
+    if (limit > 0 && report.size() > limit) report.resize(limit);
+    return report;
+}
+
+
+std::vector<SceneRenderer::BatchCost> SceneRenderer::visibleReport(std::size_t limit) const
+{
+    std::unordered_map<std::string, BatchCost> byName;
+    const auto add = [&byName](const std::string& fullName, int copies, long long triangles,
+                               bool castsShadow, float cullDistance) {
+        const std::size_t hash = fullName.find('#');
+        const std::string name = hash == std::string::npos ? fullName : fullName.substr(0, hash);
+        BatchCost& cost = byName[name];
+        if (cost.name.empty())
+        {
+            cost.name         = name;
+            cost.cullDistance = cullDistance;
+        }
+        ++cost.batches;
+        cost.copies    += copies;
+        cost.triangles += triangles;
+        cost.castsShadow = cost.castsShadow || castsShadow;
+    };
+
+    for (const std::size_t i : visibleOpaque_)
+        add(items_[i].mesh->name(), 1, items_[i].mesh->triangleCount(),
+            items_[i].material->castsShadow, items_[i].cullDistance);
+    for (const std::size_t i : visibleTransparent_)
+        add(items_[i].mesh->name(), 1, items_[i].mesh->triangleCount(),
+            items_[i].material->castsShadow, items_[i].cullDistance);
+    for (const std::size_t i : visibleDynamic_)
+        add(dynamic_[i].mesh->name() + "  [mover]", 1, dynamic_[i].mesh->triangleCount(),
+            dynamic_[i].material->castsShadow, dynamic_[i].cullDistance);
+    for (std::size_t g = 0; g < visibleGroupTransforms_.size() && g < groups_.size(); ++g)
+    {
+        const auto copies = static_cast<int>(visibleGroupTransforms_[g].size());
+        if (copies == 0) continue;
+        const GpuMesh* mesh = g < visibleGroupMesh_.size() && visibleGroupMesh_[g] != nullptr
+                                  ? visibleGroupMesh_[g]
+                                  : groups_[g].mesh;
+        add(groups_[g].name, copies,
+            static_cast<long long>(mesh->triangleCount()) * copies, groups_[g].castsShadow,
+            groups_[g].cullDistance);
+    }
+    for (const std::size_t i : visibleSkinned_)
+        add("character  [skinned]", 1, 0, false, 0.0f);
+
+    std::vector<BatchCost> report;
+    report.reserve(byName.size());
+    for (auto& entry : byName) report.push_back(std::move(entry.second));
+    std::sort(report.begin(), report.end(), [](const BatchCost& a, const BatchCost& b) {
+        return a.batches > b.batches;
+    });
+    if (limit > 0 && report.size() > limit) report.resize(limit);
+    return report;
 }
 
 }  // namespace CnaStreet

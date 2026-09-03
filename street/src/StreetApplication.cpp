@@ -520,6 +520,35 @@ void StreetApplication::reportProfile()
                       + std::to_string(profile_.shadowDraws / profile_.samples) + " shadow draws, "
                       + std::to_string(profile_.triangles / profile_.samples)
                       + " triangles per frame");
+
+    // And where the scene's weight actually is. A frame time says it got
+    // slower; this says which batch did it.
+    const std::vector<SceneRenderer::BatchCost> all = renderer_->costReport(0);
+    long long sceneTriangles = 0;
+    long long shadowTriangles = 0;
+    for (const SceneRenderer::BatchCost& cost : all)
+    {
+        sceneTriangles += cost.triangles;
+        if (cost.castsShadow) shadowTriangles += cost.triangles;
+    }
+    CNA::Logger::Info("cna-street:   " + std::to_string(sceneTriangles) + " triangles in "
+                      + std::to_string(all.size()) + " batch families, "
+                      + std::to_string(shadowTriangles) + " of them shadow casting");
+    const auto dump = [](const char* heading, const std::vector<SceneRenderer::BatchCost>& list) {
+        CNA::Logger::Info(std::string("cna-street:   ") + heading);
+        for (const SceneRenderer::BatchCost& cost : list)
+        {
+            std::ostringstream line;
+            line << "cna-street:     " << std::setw(4) << cost.batches << " draws  "
+                 << std::setw(5) << cost.copies << " copies  " << std::setw(9) << cost.triangles
+                 << " tris  cull " << std::fixed << std::setprecision(0) << cost.cullDistance
+                 << " m" << (cost.castsShadow ? "  casts" : "       ") << "  " << cost.name;
+            CNA::Logger::Info(line.str());
+        }
+    };
+    dump("heaviest batch families as registered, by triangle:", renderer_->costReport(14));
+    dump("most expensive families in the last frame, by draw call:",
+         renderer_->visibleReport(16));
 }
 
 void StreetApplication::runCaptureScript()

@@ -61,6 +61,17 @@ struct Material
     /// Glass and painted markings are not: a pane of glass casting an opaque
     /// shadow is one of the most obvious tells there is.
     bool castsShadow = true;
+    /// A cap, in metres, on how far this surface keeps casting. 0 means "as far
+    /// as whatever registered it says".
+    ///
+    /// One number per *batch* is not enough, because a building is one batch
+    /// set and it contains both the mass -- whose shadow crosses the whole
+    /// street and must survive to the far cascade -- and sixty window frames,
+    /// whose shadows are a 20 mm line that is under a texel wide by the second
+    /// cascade. Publishing them together means either losing the building's
+    /// shadow or rasterising a hundred thousand triangles of joinery into every
+    /// cascade to draw nothing. This says which is which.
+    float shadowDistance = 0.0f;
     /// Excluded from the depth/normal prepass as well as the shadow pass.
     bool writesDepth = true;
 

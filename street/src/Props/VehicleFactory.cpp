@@ -727,12 +727,22 @@ void VehicleFactory::build(GeometryCollector& collector, VehicleType type,
     const Material& paintMaterial =
         bodyMaterial != nullptr ? *bodyMaterial : materials_.get(MaterialId::CarBody);
 
+    // At distance the material set collapses, the same way the character's
+    // does and for the same reason: every material on a car is a draw call, a
+    // car is submitted as its own object because it moves, and forty cars down
+    // a street at eight materials each is three hundred draws. Past the switch
+    // distance the trim, the underbody and the number plate are all the same
+    // dark line under the same silhouette, so they share one builder. Paint and
+    // glass stay apart at every distance -- a car's glazing is the second thing
+    // after its shape that says "car", and it is a different colour from the
+    // body at every angle.
     MeshBuilder& paint = collector.builder(&paintMaterial);
     paint.setTileSize(2.2f);
     MeshBuilder& glass = collector.builder(&materials_.get(MaterialId::CarGlass));
     glass.setTileSize(1.6f);
-    MeshBuilder& trim = collector.builder(&materials_.get(MaterialId::CarTrim));
-    trim.setTileSize(0.5f);
+    MeshBuilder& trim = collector.builder(&materials_.get(
+        full ? MaterialId::CarTrim : MaterialId::CarUnderbody));
+    trim.setTileSize(full ? 0.5f : 0.8f);
     MeshBuilder& under = collector.builder(&materials_.get(MaterialId::CarUnderbody));
     under.setTileSize(0.8f);
 
@@ -1039,6 +1049,30 @@ void VehicleFactory::build(GeometryCollector& collector, VehicleType type,
                 Vector3(side * 0.03f, d.roof.at(wz) + 0.012f, wz),
                 Vector3(side * d.topHalf.at(wz) * 0.72f, d.roof.at(wz + 0.10f) + 0.030f, wz + 0.16f),
                 0.011f, 5);
+    }
+
+    // The number plate is 52 cm of lettering: legible at ten metres, four
+    // pixels wide at forty, and a draw call of its own at both. The distant
+    // body does without it and puts the recess it sits in on the dark
+    // builder instead.
+    if (!full)
+    {
+        const float recessHalf = 0.255f;
+        const float rearY = d.rocker.at(tailZ + 0.25f) + 0.30f;
+        trim.addQuadFacing(Vector3(-recessHalf, rearY, tailZ - 0.008f),
+                           Vector3(recessHalf, rearY, tailZ - 0.008f),
+                           Vector3(recessHalf, rearY + 0.115f, tailZ - 0.008f),
+                           Vector3(-recessHalf, rearY + 0.115f, tailZ - 0.008f),
+                           Vector3(0.0f, 0.0f, -1.0f));
+        const float frontY = d.rocker.at(noseZ - 0.25f) + 0.26f;
+        trim.addQuadFacing(Vector3(-recessHalf, frontY, noseZ + 0.008f),
+                           Vector3(recessHalf, frontY, noseZ + 0.008f),
+                           Vector3(recessHalf, frontY + 0.115f, noseZ + 0.008f),
+                           Vector3(-recessHalf, frontY + 0.115f, noseZ + 0.008f),
+                           Vector3(0.0f, 0.0f, 1.0f));
+        (void)rng;
+        (void)halfW;
+        return;
     }
 
     MeshBuilder& plate = collector.builder(&materials_.get(MaterialId::LicencePlate));

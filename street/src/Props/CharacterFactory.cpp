@@ -238,14 +238,33 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
                                                  : &materials_.get(MaterialId::PaintedSteelBlack);
     const Material* shoeM = look.shoes != nullptr ? look.shoes
                                                   : &materials_.get(MaterialId::PaintedSteelBlack);
+    // At distance the material set collapses.
+    //
+    // Each distinct material on a skinned figure is a draw call of its own --
+    // bone palettes cannot be instanced -- so a six-material person costs six
+    // draws whether they are three metres away or eighty. Fifty-eight of them
+    // was three hundred and fifty draw calls, the largest single item in the
+    // frame.
+    // What survives at twenty metres is head, coat and legs: a figure is fifty
+    // pixels tall there and the shoes are three of them. So the far figure puts
+    // its shoes and its bag on the trouser material, its eyes on the hair, and
+    // its hair on the trousers -- hair is brown or black and trousers are navy,
+    // grey or brown, so dark stays dark. Three draws rather than six for a
+    // difference nobody can resolve. The near figure keeps all of them, because
+    // at three metres the shoes are the thing that says these are clothes
+    // rather than a paint job.
+    const Material* farShoes = fullDetail ? shoeM : legs;
+    const Material* farBag   = fullDetail ? &materials_.get(MaterialId::Timber) : legs;
+    const Material* farHair  = fullDetail ? hairM : legs;
+    const Material* eyeM     = fullDetail ? &materials_.get(MaterialId::PaintedSteelBlack) : legs;
 
     GeometryCollector collector;
     collector.setRegionKey(0);
     MeshBuilder& body   = collector.builder(coat);
     MeshBuilder& flesh  = collector.builder(skin);
     MeshBuilder& lower  = collector.builder(legs);
-    MeshBuilder& hair   = collector.builder(hairM);
-    MeshBuilder& shoes  = collector.builder(shoeM);
+    MeshBuilder& hair   = collector.builder(farHair);
+    MeshBuilder& shoes  = collector.builder(farShoes);
     body.setTileSize(0.55f);
     flesh.setTileSize(0.30f);
     lower.setTileSize(0.55f);
@@ -311,7 +330,7 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
     // the right place reads as a face, and a head without them reads as an egg
     // however well it is modelled.
     {
-        MeshBuilder& eyes = collector.builder(&materials_.get(MaterialId::PaintedSteelBlack));
+        MeshBuilder& eyes = collector.builder(eyeM);
         eyes.setTileSize(0.05f);
         for (const float side : {-1.0f, 1.0f})
         {
@@ -437,7 +456,7 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
         // A shoulder bag on the right, hanging at the hip. Anything a person is
         // carrying breaks the symmetry that makes a crowd read as clones.
         const float bx = f.shoulderHalf * 0.92f;
-        MeshBuilder& bag = collector.builder(&materials_.get(MaterialId::Timber));
+        MeshBuilder& bag = collector.builder(farBag);
         bag.setTileSize(0.4f);
         std::vector<Ring> body2 = {
             {Vector3(bx * 0.94f, f.hip + h * 0.042f, h * 0.014f), h * 0.022f, h * 0.052f},

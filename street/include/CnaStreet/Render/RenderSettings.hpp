@@ -123,6 +123,21 @@ struct RenderSettings
     float propCullDistance = 210.0f;
     /// Distance past which a prop stops being written into the shadow map.
     float propShadowDistance = 74.0f;
+    /// Distance past which a person is not drawn.
+    ///
+    /// Its own number rather than @ref propCullDistance, because a person is
+    /// the most expensive small object in the scene and the cheapest one to
+    /// lose. A skinned figure cannot be instanced -- each one carries its own
+    /// bone palette -- so it costs three draw calls wherever it stands, and at
+    /// 210 m it is under four pixels tall. 130 m is the whole modelled length
+    /// of the street and then some: everybody a viewer can make out as a person
+    /// is still there, and the fifty who were four pixels at the vanishing
+    /// point are not.
+    float pedestrianCullDistance = 130.0f;
+    /// Distance past which a person is drawn with the collapsed material set:
+    /// head, coat and legs in three draws rather than six. About the width of
+    /// this street, so everybody on the near footway is fully detailed.
+    float pedestrianDetailDistance = 20.0f;
 
     // --- determinism ---
     std::uint32_t seed = 20260903u;

@@ -176,6 +176,29 @@ public:
     /// map from a correct one that is being sampled wrongly, and worth keeping.
     void dumpShadowAtlas(const std::string& path) const;
 
+    /// What the scene costs, broken down by the name each batch was registered
+    /// under, heaviest first. A frame time says the scene got slower; this says
+    /// which part of it did, which is the difference between tuning and
+    /// guessing. Counted over the registered scene rather than one frame's
+    /// visible set, so it does not depend on where the camera happens to be.
+    struct BatchCost
+    {
+        std::string name;
+        int         batches   = 0;
+        int         copies    = 0;   ///< instances, for an instanced group
+        long long   triangles = 0;   ///< as drawn, copies included
+        bool        castsShadow = true;
+        float       cullDistance = 0.0f;
+    };
+    /// @p limit 0 means every family.
+    [[nodiscard]] std::vector<BatchCost> costReport(std::size_t limit) const;
+
+    /// The same breakdown over the set that survived the *last* frame's cull,
+    /// which is the one that actually cost anything. `batches` is draw calls
+    /// and `copies` is instances; the registered report says how heavy the
+    /// scene is, this one says how heavy the view is.
+    [[nodiscard]] std::vector<BatchCost> visibleReport(std::size_t limit) const;
+
 private:
     void drawOpaque(const Camera& camera, const RenderSettings& settings);
     void drawSkinned(const Camera& camera, const RenderSettings& settings);

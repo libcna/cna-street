@@ -368,6 +368,31 @@ void MaterialLibrary::build(std::uint32_t seed)
             m.baseColour = tint.colour;
             materials_[static_cast<std::size_t>(tint.id)] = m;
         }
+
+        // Joinery stops casting at 55 m.
+        //
+        // The window frames are the heaviest single family in the scene -- a
+        // hundred thousand triangles of mitred sections and glazing bars across
+        // nineteen elevations -- and a frame's shadow is a 20 mm line, worth
+        // having on the reveal beside it and under a shadow texel by the second
+        // cascade. The wall it sits in still casts to the full distance, so the
+        // street stays in the shade of its buildings.
+        //
+        // Worth being honest about how much this buys, which is: very little
+        // here, six draw calls. One plot's frames are *one batch* spanning a
+        // whole elevation, and a distance test against a batch takes the
+        // nearest corner of it -- so an elevation running from twenty metres to
+        // sixty is kept whole, at sixty metres' worth of triangles, because
+        // twenty metres of it is close. Per-batch distance culling can only be
+        // as fine as the batches, and these are coarse on purpose: the
+        // alternative is a draw call per window. The cap earns its place on the
+        // plots at the far end of the street rather than on the near ones, and
+        // it is the right *mechanism* -- but the frame joinery is not where the
+        // shadow pass's time goes, and pretending otherwise would be the kind
+        // of claim this file is meant not to make.
+        for (const MaterialId id : {MaterialId::FrameWhite, MaterialId::FrameDark,
+                                    MaterialId::FrameBronze, MaterialId::CarTrim})
+            materials_[static_cast<std::size_t>(id)].shadowDistance = 55.0f;
     }
 
     install(MaterialId::Ashlar, "ashlar", [&] { return TextureFactory::ashlar(kLarge, s + 14u, 0.55f); },

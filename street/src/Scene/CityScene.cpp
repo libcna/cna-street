@@ -63,7 +63,14 @@ void CityScene::publish(GeometryCollector& collector, float cullDistance, float 
         item.mesh           = mesh;
         item.material       = batch.material;
         item.cullDistance   = cullDistance;
-        item.shadowDistance = shadowDistance;
+        // The material's own cap wins where it has one: a window frame stops
+        // casting long before the wall it is set into does.
+        item.shadowDistance = batch.material->shadowDistance > 0.0f
+                                  ? (shadowDistance > 0.0f
+                                         ? std::min(shadowDistance,
+                                                    batch.material->shadowDistance)
+                                         : batch.material->shadowDistance)
+                                  : shadowDistance;
         renderer_.addItem(item);
         ++buildStats_.staticBatches;
     }
@@ -103,8 +110,11 @@ void CityScene::build(const RenderSettings& settings)
         publish(collector, 0.0f, settings.shadowDistance);
         // The rooms behind the glass, on a short leash and casting nothing: a
         // shop interior is invisible from the far pavement and its shadow is
-        // invisible from anywhere.
-        publish(interiors, 54.0f, 0.0f);
+        // invisible from anywhere. 34 m rather than the 54 it started at,
+        // because a room seen obliquely through its own mullions past the width
+        // of the street contributes a smear, and it contributes it in seven
+        // draw calls per shop.
+        publish(interiors, 34.0f, 0.0f);
     }
 
     CNA::Logger::Info("cna-street: dressing the windows");
@@ -508,7 +518,10 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
             if (vehicle.braking && brakeLit_ != nullptr && distance < 90.0f)
                 submitProp(mesh.brakeLamps, world, brakeLit_);
 
-            const PropMesh& wheel = near ? mesh.wheel : mesh.distantWheel;
+            // Only the near mesh has wheels of its own; the far one carries
+            // them welded into the body.
+            if (!near) continue;
+            const PropMesh& wheel = mesh.wheel;
             if (wheel.empty()) continue;
             for (const WheelPlacement& place : mesh.wheels)
             {
@@ -558,7 +571,7 @@ void CityScene::submitPeople(const RenderSettings& settings)
         const Vector2 at = person.position(pedestrians_.nodes(), pedestrians_.edges());
         const float distance = std::sqrt((at.X - eye.X) * (at.X - eye.X)
                                          + (at.Y - eye.Z) * (at.Y - eye.Z));
-        if (distance > settings.propCullDistance) continue;
+        if (distance > settings.pedestrianCullDistance) continue;
 
         // Scale *before* the placement: XNA composes row-vector-first, so the
         // other order scales the person's position in the world rather than the
@@ -593,7 +606,16 @@ void CityScene::submitPeople(const RenderSettings& settings)
                           false, true);
         }
 
-        for (const CharacterMesh::Part& part : character.parts)
+        // A figure is the thing a viewer looks at hardest, and the near mesh
+        // is where the shoes, the eyes and the bag are. The switch is about the
+        // width of this street, so everybody on the near footway and everybody
+        // crossing in front of the camera is fully detailed and everybody down
+        // the road is three draws instead of six.
+        const std::vector<CharacterMesh::Part>& parts =
+            distance < settings.pedestrianDetailDistance || character.farParts.empty()
+                ? character.parts
+                : character.farParts;
+        for (const CharacterMesh::Part& part : parts)
         {
             SkinnedItem item;
             item.mesh     = part.mesh.get();
@@ -1420,9 +1442,15 @@ void CityScene::buildShopDisplays(const RenderSettings& settings)
             item.mesh        = part.mesh;
             item.material    = part.material;
             item.world       = part.bone * fit * turn * display.stand;
-            // A prop inside a shop is invisible past the width of the street: it
-            // is behind glass, in shadow, and forty centimetres across.
-            item.cullDistance   = 46.0f;
+            // A prop inside a shop is invisible well before the width of the
+            // street runs out: it is behind glass, in shadow, and forty
+            // centimetres across. 46 m was a guess and it cost real frame time
+            // -- a draw call is worth about six hundred triangles on this
+            // rasteriser, so a dozen invisible props behind glass at forty
+            // metres is the most expensive nothing in the scene. 22 m is a
+            // little further than the far footway, which is as far as anybody
+            // can make out what is on a plinth.
+            item.cullDistance   = 22.0f;
             item.shadowDistance = 0.001f;   // never a shadow caster
             renderer_.addItem(item);
             ++buildStats_.staticBatches;
@@ -1469,18 +1497,13 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
     // same object on a silver car and a red one, and building twelve copies of
     // it would cost twelve draw calls' worth of instance groups for nothing.
     std::vector<PropMesh> wheelByType(static_cast<std::size_t>(VehicleType::Count));
-    std::vector<PropMesh> distantWheelByType(static_cast<std::size_t>(VehicleType::Count));
     for (int t = 0; t < static_cast<int>(VehicleType::Count); ++t)
     {
         const VehicleType type = static_cast<VehicleType>(t);
-        const std::string tag  = VehicleFactory::name(type);
         wheelByType[static_cast<std::size_t>(t)] =
-            makeProp("wheel-" + tag, [&](GeometryCollector& c) {
+            makeProp(std::string("wheel-") + VehicleFactory::name(type),
+                     [&](GeometryCollector& c) {
                 vehicles.buildWheel(c, type, VehicleFactory::Detail::Full);
-            });
-        distantWheelByType[static_cast<std::size_t>(t)] =
-            makeProp("wheel-far-" + tag, [&](GeometryCollector& c) {
-                vehicles.buildWheel(c, type, VehicleFactory::Detail::Distant);
             });
     }
 
@@ -1504,9 +1527,33 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         entry.distantBody = makeProp("vehicle-far-" + suffix, [&](GeometryCollector& c) {
             Rng far = Rng::derive(settings.seed, "vehicle-far-" + suffix);
             vehicles.build(c, type, paint, far, VehicleFactory::Detail::Distant);
+            // And its wheels, welded on.
+            //
+            // A wheel is three materials -- tyre, brake well, rim -- at four
+            // corners, so a car submitted with separate wheels costs twelve
+            // draw calls for the wheels alone. Forty cars down a street was
+            // five hundred draws, which on this rasteriser is fifteen
+            // milliseconds spent on the fact that wheels are round.
+            //
+            // Past the switch distance a wheel is eight pixels across and its
+            // rotation is invisible, so the far body carries them baked in at
+            // the straight-ahead position. Twelve draws become none, the
+            // silhouette is identical, and the only thing lost is a rotation
+            // nobody at that distance was ever going to see. Steering and
+            // rolling stay on the near mesh, where they read.
+            GeometryCollector scratch;
+            vehicles.buildWheel(scratch, type, VehicleFactory::Detail::Distant);
+            const std::vector<GeometryCollector::Batch> wheel = scratch.take();
+            for (const WheelPlacement& place : VehicleFactory::wheelsFor(type))
+            {
+                Matrix local = Matrix::CreateTranslation(place.centre);
+                if (place.side < 0.0f)
+                    local = Matrix::CreateScale(-1.0f, 1.0f, 1.0f) * local;
+                for (const GeometryCollector::Batch& batch : wheel)
+                    c.builder(batch.material).append(batch.mesh, local);
+            }
         });
         entry.wheel        = wheelByType[static_cast<std::size_t>(type)];
-        entry.distantWheel = distantWheelByType[static_cast<std::size_t>(type)];
         entry.wheels       = VehicleFactory::wheelsFor(type);
         entry.brakeLamps   = makeProp("brake-" + suffix, [&](GeometryCollector& c) {
             vehicles.buildBrakeLamps(c, type);
@@ -1576,6 +1623,18 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
             buildStats_.triangles += static_cast<std::size_t>(mesh->triangleCount());
             entry->parts.push_back(
                 CharacterMesh::Part{full.parts[part].material, std::move(mesh)});
+        }
+
+        const CharacterFactory::Character far = characters.build(look, false);
+        for (std::size_t part = 0; part < far.parts.size(); ++part)
+        {
+            auto mesh = std::make_unique<SkinnedGpuMesh>(
+                device_, far.parts[part].mesh,
+                "person-far-" + suffix + "." + std::to_string(part));
+            buildStats_.meshBytes += mesh->gpuBytes();
+            buildStats_.triangles += static_cast<std::size_t>(mesh->triangleCount());
+            entry->farParts.push_back(
+                CharacterMesh::Part{far.parts[part].material, std::move(mesh)});
         }
 
         // The skeleton, in the form AnimationPlayer wants. Held by unique_ptr

@@ -177,8 +177,10 @@ private:
     {
         PropMesh body;
         PropMesh distantBody;
+        /// Only the near body has separate wheels; the distant one carries
+        /// them baked in at the straight-ahead position, because twelve draw
+        /// calls per car buys a rotation nobody can see at that range.
         PropMesh wheel;
-        PropMesh distantWheel;
         PropMesh brakeLamps;
         std::vector<WheelPlacement> wheels;
     };
@@ -193,6 +195,12 @@ private:
             std::unique_ptr<SkinnedGpuMesh> mesh;
         };
         std::vector<Part> parts;
+        /// The same figure at half the ring count with its small materials
+        /// folded into its large ones: four draws instead of six, for a person
+        /// who is thirty pixels tall. Same skeleton, same clips, so a figure
+        /// crossing the switch distance changes its triangle count and nothing
+        /// else.
+        std::vector<Part> farParts;
         Microsoft::Xna::Framework::Graphics::SkinningData skinning;
         PropMesh shadowProxy;
         float height = 1.75f;

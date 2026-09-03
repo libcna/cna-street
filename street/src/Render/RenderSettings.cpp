@@ -48,6 +48,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             heightFog = true;  lightShafts = false;  ssr = false;  depthOfField = false;
             clouds = true;
             propCullDistance = 105.0f;
+            pedestrianCullDistance = 70.0f;  pedestrianDetailDistance = 12.0f;
             break;
         case QualityPreset::Medium:
             multiSample = 0;   renderScale = 1.0f;
@@ -56,6 +57,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             hdr = true;   bloom = true;   ssao = false;  fxaa = true;
             heightFog = true;  lightShafts = false;  ssr = false;  depthOfField = false;
             propCullDistance = 160.0f;
+            pedestrianCullDistance = 100.0f;  pedestrianDetailDistance = 16.0f;
             break;
         case QualityPreset::High:
             multiSample = 4;   renderScale = 1.0f;
@@ -64,6 +66,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             hdr = true;   bloom = true;   ssao = true;   fxaa = true;
             heightFog = true;  lightShafts = true;  ssr = false;  depthOfField = false;
             propCullDistance = 215.0f;
+            pedestrianCullDistance = 130.0f;  pedestrianDetailDistance = 20.0f;
             break;
         case QualityPreset::Ultra:
             multiSample = 4;   renderScale = 1.0f;
@@ -73,6 +76,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             heightFog = true;  lightShafts = true;  ssr = true;   depthOfField = false;
             ssaoIntensity = 0.85f;
             propCullDistance = 320.0f;
+            pedestrianCullDistance = 185.0f;  pedestrianDetailDistance = 28.0f;
             break;
     }
 }
@@ -130,6 +134,8 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"debugOverlay", &s.debugOverlay},
         {"propCullDistance", &s.propCullDistance},
         {"propShadowDistance", &s.propShadowDistance},
+        {"pedestrianCullDistance", &s.pedestrianCullDistance},
+        {"pedestrianDetailDistance", &s.pedestrianDetailDistance},
 
         {"seed", &s.seed},
     };
