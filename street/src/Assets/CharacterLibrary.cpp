@@ -101,6 +101,7 @@ std::string ReadLevel(const JsonElement& level, const std::string& binary,
         material.roughness   = Number(part, "roughness", 0.8f);
         material.metallic    = Number(part, "metallic", 0.0f);
         material.doubleSided = Flag(part, "doubleSided");
+        material.normalScale = Number(part, "normalScale", 1.0f);
         if (Text(part, "alphaMode") == "MASK")
         {
             material.alphaMode   = AlphaModeEXT::Mask;

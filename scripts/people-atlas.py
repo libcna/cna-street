@@ -51,6 +51,16 @@ UV_OFFSET = 10 * 4
 # a street is seen from; a sleeve is thirty of them.
 CELL = 512
 KEEP_APART_ABOVE = 1024
+# What a part is made of, where the figure's author left it at one flat
+# number. A cornea is the glossiest thing on a person and the reason a
+# rendered face reads as alive at conversational distance: a specular glint
+# in the eye. MakeHuman gives the eyes the same 0.85 as a shoe.
+ROUGHNESS = {"eyes": 0.12}
+# How strongly the skin normal derived below is applied. Found by looking at
+# a face at a metre: a third of this is invisible, twice it embosses the
+# painting, and here a nostril has depth, a lip has an edge and an eyebrow
+# has hair in it.
+SKIN_NORMAL_SCALE = 1.6
 
 
 def log(*args):
@@ -90,6 +100,40 @@ def tint(image, colour):
     for channel in range(3):
         pixels[..., channel] *= float(colour[channel])
     return Image.fromarray(np.clip(pixels, 0, 255).astype(np.uint8), image.mode)
+
+
+def skin_normal(albedo):
+    """A normal map for a painted skin, from the albedo's own fine detail.
+
+    MakeHuman's skins are colour and nothing else -- no normal, no roughness
+    -- so a face at a metre is a matte painting, which is exactly what
+    somebody looking at one from a pavement said. The albedo does carry the
+    relief though, as luminance: a nostril is dark because it is a hole, a
+    lip edge because it turns away, an eyebrow because hair stands proud of
+    skin. High-passing it and taking the gradient recovers that and nothing
+    else -- the large-scale shading, which is *not* relief, is subtracted
+    off first, and the result is applied at a third strength.
+    """
+    grey = np.asarray(albedo.convert("L"), dtype=np.float32) / 255.0
+    # High pass: the image minus a heavy blur of itself.
+    blur = np.asarray(albedo.convert("L").filter(
+        __import__("PIL.ImageFilter", fromlist=["ImageFilter"]).GaussianBlur(
+            max(2, min(albedo.size) // 96))), dtype=np.float32) / 255.0
+    detail = np.clip(grey - blur + 0.5, 0.0, 1.0)
+    # Sobel, into a tangent-space normal.
+    dx = np.zeros_like(detail)
+    dy = np.zeros_like(detail)
+    dx[:, 1:-1] = detail[:, 2:] - detail[:, :-2]
+    dy[1:-1, :] = detail[2:, :] - detail[:-2, :]
+    strength = 6.0
+    nx = -dx * strength
+    ny = dy * strength
+    nz = np.ones_like(nx)
+    length = np.sqrt(nx * nx + ny * ny + nz * nz)
+    packed = np.stack([(nx / length * 0.5 + 0.5) * 255.0,
+                       (ny / length * 0.5 + 0.5) * 255.0,
+                       (nz / length * 0.5 + 0.5) * 255.0], axis=-1)
+    return Image.fromarray(np.clip(packed, 0, 255).astype(np.uint8), "RGB")
 
 
 def part_key(part):
@@ -149,6 +193,24 @@ def consolidate(directory, name, report=False):
         log(f"{name}: nothing to merge")
         return False
 
+    # --- a normal map for the skin ----------------------------------------
+    # Derived once per *skin*, not per person: several of them share one.
+    skin_normals = {}
+    for index, part in enumerate(reference):
+        if ("skin", index) not in groups:
+            continue
+        if part.get("normal"):
+            continue
+        name_of = part.get("albedo")
+        if not name_of:
+            continue
+        target = f"{name_of}.relief"
+        path = os.path.join(directory, target + ".png")
+        if not os.path.isfile(path):
+            skin_normal(texture(directory, name_of, "RGB")).save(path, optimize=True)
+            log(f"    derived {target} from {name_of}")
+        skin_normals[index] = target
+
     # --- one atlas per merged group, shared by both levels ----------------
     atlases = {}
     for key, members in groups.items():
@@ -169,7 +231,8 @@ def consolidate(directory, name, report=False):
             albedo = tint(texture(directory, part.get("albedo"), "RGBA"),
                           part.get("baseColour", [1.0, 1.0, 1.0]))
             normal = texture(directory, part.get("normal"), "RGB", fallback=(128, 128, 255))
-            rough = int(round(float(part.get("roughness", 1.0)) * 255.0))
+            rough = int(round(ROUGHNESS.get(part.get("kind", ""),
+                                            float(part.get("roughness", 1.0))) * 255.0))
             metal = int(round(float(part.get("metallic", 0.0)) * 255.0))
             orm = Image.new("RGB", (1, 1), (255, min(255, rough), min(255, metal)))
             x = (slot % columns) * cell
@@ -228,6 +291,9 @@ def consolidate(directory, name, report=False):
                 "indexOffset": index_offset,
                 "indexCount": int(strip.shape[0]),
             }
+            if len(members) == 1 and members[0] in skin_normals:
+                merged["normal"] = skin_normals[members[0]]
+                merged["normalScale"] = SKIN_NORMAL_SCALE
             if key in atlases:
                 tag = atlases[key][0]
                 merged.update({"albedo": f"{tag}.albedo", "normal": f"{tag}.normal",

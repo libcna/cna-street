@@ -721,6 +721,11 @@ Adduction AdductionFor(const Skeleton& skeleton, float stance)
 /// negative to come forward, the shin positive to bend the knee (the foot
 /// goes back), the foot positive to point the toes down; a positive yaw
 /// turns to the left.
+/// How far the wrist turns so the palm faces the thigh rather than forward.
+/// About fifty degrees: enough to lose the spread, not so much that the arm
+/// reads as twisted.
+constexpr float kPalmIn = 0.85f;
+
 struct WalkStyle
 {
     float stride = 1.0f;    ///< thigh swing, as a factor of the plain walk's
@@ -793,6 +798,14 @@ AnimationClip WalkClip(const Skeleton& skeleton, float height, float cycle, cons
                                     [&](float t) {
             return PitchQ(-0.20f - elbow.at(t + offset - style.lag) * (0.12f + style.arm * 0.45f));
         }));
+        // The palm turned in toward the thigh. MakeHuman's base mesh has its
+        // hands flat with the fingers spread, palms forward -- which is a
+        // reasonable pose to model in and a strange one to walk in, and at a
+        // metre it is the second thing a viewer notices about a figure after
+        // the face. Turning the wrist does not close the fingers, but it
+        // presents the edge of the hand rather than the spread.
+        walk.Tracks.push_back(Track(skeleton, bone(BoneName::kHand, suffix), cycle, kKeys,
+                                    [&](float) { return YawQ(kPalmIn * (side == 0 ? -1.0f : 1.0f)); }));
     }
 
     // The pelvis: two rises per cycle, highest at mid-stance; a sway onto the
@@ -902,6 +915,10 @@ AnimationClip IdleClip(const Skeleton& skeleton, float height, IdleKind kind, fl
                 }));
                 idle.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, suffix), kIdle, kKeys,
                                             [&](float) { return PitchQ(side == 0 ? -0.18f : -0.26f); }));
+                idle.Tracks.push_back(Track(skeleton, bone(BoneName::kHand, suffix), kIdle, kKeys,
+                                            [&](float) {
+                    return YawQ(kPalmIn * (side == 0 ? -1.0f : 1.0f));
+                }));
             }
             break;
         case IdleKind::Phone:
@@ -923,6 +940,8 @@ AnimationClip IdleClip(const Skeleton& skeleton, float height, IdleKind kind, fl
                                         [&](float t) { return RollQ(0.07f) * PitchQ(0.05f + 0.02f * slow(t, 1.4f)); }));
             idle.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, ".L"), kIdle, kKeys,
                                         [&](float) { return PitchQ(-0.20f); }));
+            idle.Tracks.push_back(Track(skeleton, bone(BoneName::kHand, ".L"), kIdle, kKeys,
+                                        [&](float) { return YawQ(kPalmIn); }));
             break;
         case IdleKind::Hands:
             // Both hands together in front, the way people wait: the upper
