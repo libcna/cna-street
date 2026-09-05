@@ -13,11 +13,19 @@
 #   CNA, SHARP_RUNTIME     always
 #   EASY_GL, META_GL       the GL renderer family (OPENGL33/OPENGLES3/OPENGLES2)
 #
+# The CNAEXT engine layer this project is built on -- RenderPipeline,
+# CascadedShadowMap, AtmosphericSky, EnvironmentProcessor -- lives on CNA's
+# `next` branch. CNA's `develop` branch does not carry it (checked 2026-09-05
+# at 1bb2145: modules/graphics-ext has nine headers there against ninety-three
+# on `next`), so a checkout on `develop` fails to compile this project with
+# "CNA/Graphics/CascadedShadowMap.hpp: No such file". Point CNA_ROOT_DIR at a
+# `next` checkout, and CNA_SHARP_RUNTIME_ROOT at a sharp-runtime `next`
+# checkout to match.
 # branch=next
-CNA=756096626cfb537e32ac8ccc6b0743a23c57ddfd
+CNA=e1d3aa5d56c5e4166e40da9dda77b42d52b647eb
 # branch=next
-SHARP_RUNTIME=bd282d101640005454639b372f67e119ffa5642b
+SHARP_RUNTIME=c3fbb95872414181d88315f9d4af6fa1707ed744
 # branch=develop
 EASY_GL=deda7a426c3c166c0e03a4790f1ede610e2e46fb
 # branch=develop
-META_GL=252017322b5e7c4711fcf13810e8b6da05fd0511
+META_GL=20c8b2dc5bb80e32706784066db9fd9e15b3f46a

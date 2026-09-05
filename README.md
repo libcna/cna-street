@@ -8,15 +8,17 @@ One crossroads of a continental-European inner-city street: five-storey
 perimeter blocks with shops at street level and flats above, a signalised
 junction that actually runs, traffic that stops for it, people who wait at the
 kerb for a green man, trees in the footway, and a sky the lighting is derived
-from. Everything in it — every texture, every mesh, every letter on every shop
-fascia — is generated from one seed by code in this repository. Nothing is
-downloaded.
+from. Every surface, every mesh and every letter on every shop fascia is
+generated from one seed by code in this repository; the only imported assets
+are sixteen glTF props standing behind the shop glass, each with its licence
+recorded.
 
 It exists to exercise CNA's modern graphics layer (`CNAEXT`) on something that
 is not a test scene: a cascaded shadow pass, a depth/normal prepass, an
-analytic sky feeding image-based lighting, an HDR pipeline with SSAO, bloom,
-height fog and tone mapping, instanced props, frustum culling, and a full glTF
-metallic-roughness material model.
+analytic sky feeding image-based lighting, local reflection probes captured
+from the street itself, an HDR pipeline with SSAO, bloom, height fog and tone
+mapping, instanced props, frustum culling, and a full glTF metallic-roughness
+material model.
 
 ---
 
@@ -71,24 +73,50 @@ priority plates, crossing signs, parking signs and warning triangles. Street
 name plates on the corner buildings and house numbers beside the doors.
 
 **Behind the glass.** Every ground-floor unit is a *room*, not a lit plane a
-metre back: shelving loaded with stock, a counter with a till, display plinths
-in the window, lit ceiling strips. What a unit sells is decided once per plot,
-so the lettering on the fascia and the fittings behind the window cannot
-disagree, and some of them are vacant with a to-let notice, because a street
-where every unit trades is a street nobody believes. The props on the plinths
-are imported glTF models compiled through CNA's own content pipeline.
+metre back: walls painted to the trade in a front shade and a darker back
+shade, shelving loaded with packaged stock, a counter with a till, display
+plinths in the window, batten tube fittings across the ceiling, posters and
+notices on the walls. What a unit sells is decided once per plot, so the
+lettering on the fascia and the fittings behind the window cannot disagree;
+some units are vacant with a to-let notice and one in six is shut with a
+roller blind three quarters down, because a street where every unit trades is
+a street nobody believes. The props on the plinths are imported glTF models
+compiled through CNA's own content pipeline.
+
+**What the street reflects.** Twenty-nine reflection probes stand along the
+carriageways: the static street captured six ways into a cube from each point
+at scene build, convolved like the sky, and read by every draw near it. A
+parked car reflects the facade it is parked outside; a shop window reflects
+the cars parked in front of it. The glass itself is a reflection layer over
+what it covers rather than a coloured filter, at its full Fresnel strength.
+
+**The walls.** Weathering is placed where the water runs: rain run-off fans
+down from under the sills, splash dirt rises from the pavement, a stain
+follows a leaking downpipe, and each of those is more likely and longer on a
+plot the generator has decided is grubby. Half the balconies carry a planter
+on the rail and a few a folding chair; the older blocks have satellite dishes
+clamped beside their upper windows.
+
+**Beyond the frontage.** The two streets continue past the modelled plots
+with their kerbs, footways and carriageways, lined by blocks that carry real
+window recesses, shopfronts under fascias, plinths and cornices, with the same
+trees on the same pitch and the same cars parked along them, and cross streets
+between every third block. The scatter of blocks on the skyline beyond is
+painted: it is 240 m away.
 
 **The moving parts.** Twelve vehicles over six classes — city car, hatchback,
 saloon, estate, crossover, van — lofted from monotone-cubic profile curves
 rather than assembled from boxes, with wheel arches cut into the body, separate
-wheels that roll and steer, tyres with shoulders, five-spoke alloys, glazing,
-mirrors, bumpers, lamps, number plates and an interior with seats and a
-steering wheel. They follow the vehicle ahead, brake for a red light with
+wheels that roll and steer, tyres with shoulders, five-spoke alloys, tinted
+glazing, mirrors, bumpers, a grille with slats and a badge, wrap-around lamp
+clusters with chromed reflectors, number plates, a roof aerial and an interior
+with seats and a steering wheel. Bicycles lean on the stands. They follow the vehicle ahead, brake for a red light with
 their brake lamps lit, and turn through the junction on a Bézier.
 
 Fifty-odd people, each one mesh on a nineteen-bone skeleton, skinned by
 distance to the limbs running out of each bone, and animated on the GPU by
-`SkinnedPbrEffect` from walk and idle clips built in code. The animation clock
+`SkinnedPbrEffect` from walk and idle clips built in code, in coats with
+collars, some with a bag, some in a cap. The animation clock
 is the distance walked rather than wall-clock time, so nobody's feet slide and
 nobody's queue breathes in unison.
 
@@ -103,8 +131,9 @@ windows, the flats above them, headlights and tail lights.
 | ![Footway looking south](docs/screenshots/01-footway-looking-south-to-the-junction.png) | ![Car at three metres](docs/screenshots/09-car-three-metres.png) |
 | ![Shop window](docs/screenshots/11-shop-window.png) | ![Pedestrian at four metres](docs/screenshots/10-pedestrian-four-metres.png) |
 | ![Road surface](docs/screenshots/12-road-surface.png) | ![Street tree](docs/screenshots/13-street-tree.png) |
+| ![Kerbside](docs/screenshots/15-kerbside.png) | ![Corner to corner](docs/screenshots/16-corner-to-corner.png) |
 
-All fourteen are in `docs/screenshots/`, and `--capture <dir>` rewrites them
+All sixteen are in `docs/screenshots/`, and `--capture <dir>` rewrites them
 from the same viewpoints.
 
 Six of those fourteen were added because the original eight were all chosen
@@ -114,9 +143,11 @@ new ones is aimed squarely at something that used to be a weakness — a car, a
 person, a shop window, the road surface, a tree, one bay of a façade — from the
 distance a person would actually see it from.
 
-`docs/visual-overhaul/` holds the before-and-after set, the night set, five
-frames at 1920 × 1080, and `performance.md`: what the overhaul cost, where, and
-how that was measured.
+`docs/visual-overhaul/` holds the first overhaul's before-and-after set, and
+`docs/visual-overhaul-2/` the second pass's: reflections, glass, shops,
+vehicles, weathering, the district beyond the frontage, and a twilight sky,
+each with the frame it started from beside the frame it ended at, the night
+set, flagship frames at 1920 × 1080, and what it cost.
 
 ## Building
 
@@ -136,6 +167,18 @@ somewhere/
 ├── sharp-runtime/    branch: next
 ├── easy-gl/          branch: develop
 └── meta-gl/          branch: develop
+```
+
+**CNA's `next` branch, not `develop`.** The `CNAEXT` engine layer this project
+is built on -- `RenderPipeline`, `CascadedShadowMap`, `AtmosphericSky`,
+`EnvironmentProcessor` -- exists only on `next`; against a `develop` checkout
+the build stops at `CNA/Graphics/CascadedShadowMap.hpp: No such file`. If the
+`next` checkouts live under other names, point the build at them:
+
+```sh
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
+      -DCNA_ROOT_DIR=/path/to/cna-next \
+      -DCNA_SHARP_RUNTIME_ROOT=/path/to/sharp-runtime-next
 ```
 
 `scripts/fetch-dependencies.sh` clones exactly that:
@@ -175,6 +218,7 @@ Useful options:
 | Option | Default | What it does |
 | --- | --- | --- |
 | `CNA_ROOT_DIR` | `../cna` | Where the CNA checkout is |
+| `CNA_SHARP_RUNTIME_ROOT` | `<CNA_ROOT_DIR>/../sharp-runtime` | CNA's own option: where its sharp-runtime checkout is |
 | `CNA_STREET_RENDERER` | `OPENGL33` | Which CNA renderer to build against |
 | `CNA_STREET_BUILD_TESTS` | `ON` | Build and register the unit tests |
 | `CNA_STREET_CONTENT_DIR` | `assets/content` | Where the content build writes |
@@ -223,6 +267,8 @@ The command line, in full, is `--help`. The ones that matter:
 | `--frames <n>` | Render *n* frames and exit |
 | `--sun <elev> <azimuth>` | Move the sun, in degrees |
 | `--no-shadows`, `--no-ssao`, `--no-bloom`, `--no-fog`, `--no-clouds`, `--no-ibl` | Turn one thing off |
+| `--no-probes` | Sky-only reflections: no local probes are captured |
+| `--dump-probes <dir>` | Write every reflection probe's cube as a strip of six faces, which is how a capture that came out mirrored gets seen to be |
 | `--no-traffic`, `--no-pedestrians`, `--no-vegetation`, `--no-overlay` | Leave one thing out |
 | `--dump-settings` | Print the effective settings as JSON and exit |
 | `--dump-shadow <file.png>` | Write the cascade atlas, which is the only way to tell an empty shadow map from a misplaced one |
@@ -272,9 +318,10 @@ a settings file written for a newer build should still start the demo.
 Every quality knob is in there — shadows and their cascade count, resolution,
 distance, split distribution and bias; SSAO radius and strength; bloom threshold
 and intensity; fog density and falloff; tone mapping operator and exposure; sky
-turbidity, cloud coverage and speed; render scale, MSAA and vsync; how far props
-are drawn and how far they cast shadows; and whether traffic, pedestrians,
-vegetation and street furniture are in the scene at all.
+turbidity, cloud coverage and speed; the reflection probes, their spacing,
+face size and whether their irradiance replaces the sky's; render scale, MSAA
+and vsync; how far props are drawn and how far they cast shadows; and whether
+traffic, pedestrians, vegetation and street furniture are in the scene at all.
 
 The four presets are sets of decisions rather than one slider. `low` is for a
 machine that has to run this at all: no SSAO, no bloom, two cascades at half
@@ -342,7 +389,9 @@ The modern layer (`CNAEXT`, gated on `CNA_CNAEXT`):
 | `DepthNormalPrepass` | The depth and normal buffers SSAO needs |
 | `AtmosphericSky` | The analytic sky model, both as a shader and evaluated on the CPU |
 | `EnvironmentProcessor` | Irradiance, prefiltered specular and the BRDF LUT, baked from that sky |
-| `PbrEffect` | The glTF metallic-roughness material model, with `TextureTransformEXT`, `AlphaModeEXT`, `IShadowReceiverEXT` and `ImageBasedLightEXT` |
+| `PbrEffect` | The glTF metallic-roughness material model, with `TextureTransformEXT`, `AlphaModeEXT`, `IShadowReceiverEXT` and `ImageBasedLightEXT` -- the last rebound per draw, so a car reads its environment from the probe nearest it |
+| `RenderTarget2D`, `TextureCube`, `EnvironmentProcessor` (again) | The reflection probes: the static street captured six ways into an 8-bit target from each probe point, read back, written into a cube at the sky's scale, and prefiltered by the same convolution the sky goes through |
+| `BlendState::AlphaBlend` | Glass composited as reflection plus attenuated background, set per draw inside the pipeline's transparent phase |
 | `InstancedRendererEXT` | Every prop that appears more than once |
 | `DirectionalLightEXT` | The sun |
 | `GpuTimer` | GPU time per frame in the overlay, where the renderer supports it |
@@ -425,7 +474,28 @@ shadows at 74 m and stop being drawn at 210 m by default.
 
 **Transparency** is avoided wherever a mask will do. Road markings, wheel
 tracks, sign faces and foliage are alpha-masked, not blended, so they need no
-sorting; only glass is blended.
+sorting; glass and the weathering decals are blended.
+
+**Reflection probes.** The sky cube lights every surface as though it stood on
+an open plain, and most of what a car door or a shop window actually reflects
+is the street. So at scene build the static street is rendered six ways from
+twenty-nine points along the carriageways -- over each parking lane at the
+height of a car door -- into a 64 px cube, decoded and re-encoded at the sky
+cube's scale, and convolved by `EnvironmentProcessor` exactly as the sky is;
+every static batch, every parked and moving vehicle then reads its
+image-based lighting from the nearest probe through the same
+`ImageBasedLightEXT` the sky arrives by. The cascades are re-fitted once per
+probe from a camera looking straight down at it, so one shadow pass serves all
+six faces. The bake costs about seven seconds at start-up and nothing per
+frame; it re-runs when the sun stops moving.
+
+**Glass is a reflection over what it covers.** `RenderPipeline`'s transparent
+phase blends `lit * alpha + behind * (1 - alpha)`, which multiplied every
+pane's Fresnel reflection by a 0.24 alpha into invisibility. Glass here asks
+for XNA's premultiplied `AlphaBlend` per draw -- `lit + behind * (1 - alpha)`
+-- with a near-black base colour as the reflection layer's tint and the alpha
+as how much the pane blocks: 0.14 for a shop window, 0.22 for a flat's, 0.55
+for tinted automotive glazing.
 
 ## The content pipeline
 
@@ -530,11 +600,11 @@ testing-use-only. "It downloaded" is not a licence.
 ctest --test-dir build --output-on-failure
 ```
 
-Nine suites over the parts of the street that can be checked without a device:
+Ten suites over the parts of the street that can be checked without a device:
 the signal controller, the traffic model, the walk graph, mesh building, the
 layout, the settings parser, the camera frustum, the mip-chain generation the
-content pipeline depends on, and the shapes and surfaces the visual overhaul
-got wrong.
+content pipeline depends on, the shapes and surfaces the first visual overhaul
+got wrong, and the invariants behind the second pass.
 
 The checks are chosen for what a screenshot cannot see. Both arms of the
 junction green at once, or a green man across a street whose traffic is running,
@@ -544,7 +614,20 @@ flank wall on all four corners of the junction. A quad wound the wrong way is
 visible but lit from behind, which is exactly the kind of wrong that survives
 review.
 
-Two of them found live bugs on their first run.
+Three of them found live bugs on their first run: `realism_tests` asked where
+a car's brake lenses were and found the tail lamps wrapping 26 cm out behind
+the bumper.
+
+`realism_tests` pins the things the second pass's screenshots showed to be
+wrong and a pixel test would never see: that a probe face's camera agrees
+with the cube layout the environment is read in (a face captured mirrored is
+a reflection of the wrong side of the street, and nothing reports it); that
+the probes stand on the carriageways at the pitch asked for and out of the
+junction box; that a brake lens is a hand tall and lies on the tail; that a
+bicycle is bicycle-sized and stands on its wheels; that run-off hangs from a
+sill and splash rises from the pavement; that a shelf of stock is mostly pale
+card; that a poster is opaque paper with print on it; and that render is
+cracked a little and not crazed.
 
 `appearance_tests` is the newest and the most opinionated: nine cases, each one
 a defect that was shipped, found by looking at a rendering, and fixed. Not one
@@ -591,35 +674,48 @@ them again. The overlay's headline is an *exponential* average and its
 breakdown is one frame's stage times: right for flying a camera around, wrong
 for tuning — it once read 214 ms on a frame that took 778.
 
-| | |
-| --- | --- |
-| Scene build | 18 s, of which the material stage is about 6 s generating or 1 s from compiled content |
-| Static batches | 1 187 |
-| Triangles in the scene | 1 042 354 |
-| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own |
-| Plots, vehicles, people | 42, 74, 78 |
-| Draw calls per frame | 1 356, of which 160 are skinned |
-| Shadow draw calls | 2 819 |
-| Triangles drawn | 559 349 |
-| Frame | 467–506 ms median at 1024×576, 1 031 ms at 1920×1080 |
+| | Before the second pass (`27f92a8`) | Now |
+| --- | --- | --- |
+| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes |
+| Static batches | 1 187 | 1 586 |
+| Triangles in the scene | 1 042 354 | 1 072 898 |
+| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas |
+| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 |
+| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 |
+| Shadow draw calls | 2 840 | 3 115 |
+| Triangles drawn | 560 k | 603 k |
+| Frame, 1024×576 | 34–45 ms median | 41–51 ms median |
+| Frame, 1920×1080 | 46 ms | 47 ms |
+| Frame, `--night` | 34 ms | 47 ms |
 
-Where the frame goes at 1024×576: post 203 ms, shadow 136 ms, opaque 121 ms,
-prepass 31 ms, culling 0.2 ms, sky free. At 1920×1080 the post chain alone is
-694 ms of a 1 031 ms frame — six full-screen passes at 2.07 megapixels on four
-CPU cores — while the shadow pass barely moves, because the cascades are 2048 px
-whatever the window is.
+Those are from a 16-core machine that was busy with other work while it
+measured, hence the ranges; the first overhaul's table, from four cores, is in
+`docs/visual-overhaul/performance.md`. Where the frame goes at 1024×576 now:
+opaque 21 ms, shadow 16 ms, prepass 3 ms, transparent and post 2 ms, culling
+0.3 ms, sky free. At 1920×1080 the frame is the same as at 1024×576 within
+noise: on this driver at these sizes the cost is submission, not pixels, and
+submission is what the second pass added.
 
 The overlay shows the same breakdown live, and its parts sum to the frame by
 construction — they did not always, and a breakdown that does not add up is
 worse than none.
 
-Against the last commit before the visual overhaul, on the same machine with
-the two builds interleaved in one session: **+15%**, for skinned animated
+Against the last commit before the first visual overhaul, on the same machine
+with the two builds interleaved in one session: **+15%**, for skinned animated
 pedestrians in place of rigid ones baked at eight phases, twelve lofted vehicle
 bodies with interiors and working lamps, thirty-nine dressed shop interiors, six
 tree variants with volumetric canopies, a distant city, and a road map at four
 times the resolution. `docs/visual-overhaul/performance.md` has the full table,
 where the cost turned out to be, and how it was found.
+
+Against `27f92a8`, the commit before the second pass, measured the same way:
+**about +22%** (median of eight interleaved pairs; +24% between the quietest
+runs), for reflections of the street on every car and pane, a district that
+stays a street to the horizon with real window recesses, the shop interiors
+rebuilt as rooms, the vehicle lamps rebuilt, causal weathering, and the night
+sky. The reflection probes themselves cost nothing measurable per frame; the
+cost is four hundred more static batches, almost all of them the far blocks.
+`docs/visual-overhaul-2/performance.md` has every raw run.
 
 What keeps it from being worse: batching by material and cell, instancing every
 repeated prop, frustum and distance culling with a shorter leash for shadows
@@ -645,19 +741,21 @@ materials, and alpha masking instead of blending everywhere except glass.
 * **No audio.** CNA's audio module is there and works; the demo has nothing to
   play through it, and a synthesised city ambience would be a worse thing than
   silence.
-* **The far context is blocks with printed façades, not buildings.** Past the
-  modelled frontage the district continues as massing carrying a tiling image of
-  a storey rather than modelled reveals. It is 200 m away and behind everything.
+* **The far skyline is blocks with printed façades.** The blocks that line the
+  two streets past the modelled frontage now carry real window recesses,
+  shopfronts and cornices; the scatter of taller blocks beyond them, 240 m out,
+  is still massing with a tiling image of a storey on it.
 * **`--preset low` is untested on a machine that needs it.** It is built and it
   runs, but the decisions in it are reasoned rather than measured.
-* **Reflections are image-based only.** Screen-space reflections are wired to a
-  setting and off by default, and they were tried: on the shop window they wash
-  the interior out and cannot reach the glass at all — it is alpha-blended and
-  drawn after the pass — and on the road and the cars they change nothing
-  visible, because the asphalt is far rougher than any SSR cutoff and a black
-  car reflecting dark asphalt has nothing to show. The pass works; this scene
-  has no surface for it. So a shop window reflects the sky and the neighbouring
-  massing, not the car parked in front of it.
+* **Reflections are probe-based, static, and uncorrected for parallax.** A
+  surface reads the cube captured at the nearest probe as though it stood at
+  the probe, so a reflection is right in direction and approximate in
+  position; with probes every 24 m over the parking lanes the error is
+  smallest exactly where the glossy surfaces are, and largest on the upper
+  floors. The probes hold the static street: a moving car is reflected in a
+  shop window only through the sky cube's contribution, and a person is not
+  reflected at all. Screen-space reflections remain wired to a setting and
+  off, for the reasons recorded in `docs/visual-overhaul/report.md`.
 * **The night street is lit, not illuminated.** `PbrEffect` carries one punctual
   light per draw and this street has forty lamps, so the luminaires, the shop
   windows and the flats above them are emissive materials and the pools of light
@@ -689,6 +787,8 @@ docs/cna-followup-after-framework-work.md
 docs/design-notes.md        the decisions behind the code
 docs/patches/               changes contributed back to CNA, with a README
 docs/screenshots/           the named viewpoints
+docs/visual-overhaul/       the first visual overhaul: audit, comparisons, report
+docs/visual-overhaul-2/     the second pass: before and after, night, report
 plan.md                     what is done, what is next
 ```
 
