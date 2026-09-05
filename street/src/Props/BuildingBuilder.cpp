@@ -207,6 +207,8 @@ void BuildingBuilder::build(const Plot& plot, int plotIndex, GeometryCollector& 
     interiors.setRegion(centre.X, centre.Y);
 
     const Palette palette = paletteFor(plot, rng);
+    weathering_ = plot.weathering;
+    plotSeed_   = plot.seed;
 
     buildMass(plot, palette, collector, rng);
 
@@ -376,6 +378,18 @@ void BuildingBuilder::buildWindow(const FacadeFrame& frame, float u, float v, fl
     // A lintel or a moulded architrave over the head, on the older styles.
     if (arched)
         FacadeBox(trim, frame, u - 0.075f, v1, -reveal, u1 + 0.075f, v1 + 0.14f, 0.075f);
+
+    // The rain that runs off the sill and down the wall under it. Where the
+    // water goes is the one thing a tiling wall material cannot know, and it is
+    // what makes a facade read as weathered rather than as noisy: the streaks
+    // hang *from* something. More of them on a grubby building, none on a
+    // freshly painted one.
+    if (rng.chance(0.15f + weathering_ * 0.55f))
+    {
+        const float drop = rng.range(0.35f, 0.75f) * (0.6f + weathering_);
+        grimeDecal(frame, u - 0.12f, v - 0.085f - drop, u1 + 0.12f, v - 0.085f, 0, collector,
+                   rng.chance(0.5f));
+    }
 }
 
 ShopKind BuildingBuilder::shopKindFor(const Plot& plot, int plotIndex)
@@ -1210,6 +1224,21 @@ void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeF
     // --- the wall, at last --------------------------------------------------
     buildWallPanels(frame, wallFrom, frame.height, std::move(openings), palette, collector);
 
+    // The splash zone: every wall is dirtiest in the half metre above the
+    // pavement, where the rain bounces and the feet pass. In pieces of a few
+    // metres so the atlas cell does not stretch, and only where the wall is
+    // exposed rather than behind a shopfront.
+    if (!(plot.hasShop && primary))
+    {
+        const float top = wallFrom + rng.range(0.35f, 0.65f) * (0.5f + weathering_);
+        for (float u = 0.0f; u < frame.width - 0.5f; u += 3.0f)
+        {
+            if (!rng.chance(0.4f + weathering_ * 0.5f)) continue;
+            grimeDecal(frame, u, wallFrom - 0.02f, std::min(u + 3.0f, frame.width), top, 1,
+                       collector, rng.chance(0.5f));
+        }
+    }
+
     // --- cornice ------------------------------------------------------------
     MeshBuilder& trim = collector.builder(palette.trim);
     trim.setTileSize(1.0f);
@@ -1340,6 +1369,23 @@ void BuildingBuilder::buildWallPanels(const FacadeFrame& frame, float from, floa
     }
 }
 
+void BuildingBuilder::grimeDecal(const FacadeFrame& frame, float u0, float v0, float u1, float v1,
+                                 int cell, GeometryCollector& collector, bool flipU)
+{
+    // Eight millimetres off the wall: clear of the depth fight, under the sill
+    // that casts it. Explicit UVs into one quarter of the atlas.
+    MeshBuilder& grime = collector.builder(&materials_.get(MaterialId::FacadeGrime));
+    grime.setUvMode(UvMode::Explicit);
+    const float cu = static_cast<float>(cell % 2) * 0.5f;
+    const float cv = static_cast<float>(cell / 2) * 0.5f;
+    const Vector2 uvA(flipU ? cu + 0.5f : cu, cv + 0.5f);
+    const Vector2 uvB(flipU ? cu : cu + 0.5f, cv + 0.5f);
+    const Vector2 uvC(flipU ? cu : cu + 0.5f, cv);
+    const Vector2 uvD(flipU ? cu + 0.5f : cu, cv);
+    grime.addQuadUv(frame.at(u0, v0, 0.008f), frame.at(u1, v0, 0.008f), frame.at(u1, v1, 0.008f),
+                    frame.at(u0, v1, 0.008f), uvA, uvB, uvC, uvD);
+}
+
 void BuildingBuilder::buildRainwaterGoods(const Plot& plot, const FacadeFrame& frame,
                                           const Palette& palette, GeometryCollector& collector)
 {
@@ -1350,6 +1396,16 @@ void BuildingBuilder::buildRainwaterGoods(const Plot& plot, const FacadeFrame& f
     metal.setTileSize(0.4f);
     for (const float u : {0.16f, frame.width - 0.16f})
     {
+        // A leaking joint stains the wall behind the pipe, on about one
+        // building in three, more often the more weathered it is.
+        const std::uint32_t pick = Noise::hash2(static_cast<int>(u * 100.0f), 7, plotSeed_);
+        if (static_cast<float>(pick & 0xFFFFu) / 65536.0f < 0.15f + weathering_ * 0.4f)
+        {
+            const float top = M::kCurbHeight + 1.2f
+                              + static_cast<float>((pick >> 16) & 0xFFu) / 255.0f
+                                    * (frame.height - 3.0f);
+            grimeDecal(frame, u - 0.28f, M::kCurbHeight + 0.6f, u + 0.28f, top, 2, collector);
+        }
         const Vector3 base = frame.at(u, M::kCurbHeight, M::kDownpipeRadius + 0.02f);
         metal.addCylinder(base, M::kDownpipeRadius, M::kDownpipeRadius,
                           frame.height - M::kCurbHeight - 0.25f, 8, false, false);

@@ -547,6 +547,19 @@ void MaterialLibrary::build(std::uint32_t seed)
             materials_[static_cast<std::size_t>(id)].shadowDistance = 55.0f;
     }
 
+    {
+        // Weathering decals: soft-edged, so blended rather than masked, and
+        // never a shadow caster or a depth writer -- they are a film on the
+        // wall, not a thing in front of it.
+        Material grime = pbr(0.96f, 0.0f);
+        grime.alphaMode   = AlphaModeEXT::Blend;
+        grime.alpha       = 0.62f;
+        grime.castsShadow = false;
+        grime.writesDepth = false;
+        install(MaterialId::FacadeGrime, "facade-grime",
+                [&] { return TextureFactory::grimeDecals(kMedium, s + 68u); }, grime);
+    }
+
     install(MaterialId::Ashlar, "ashlar", [&] { return TextureFactory::ashlar(kLarge, s + 14u, 0.55f); },
             pbr(0.82f, 0.0f));
     {

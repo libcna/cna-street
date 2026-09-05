@@ -649,14 +649,22 @@ SurfaceMaps TextureFactory::plaster(int size, std::uint32_t seed, const float co
 
             // Hairline cracks, and the odd blown patch where the render has come
             // away and shows darker backing.
-            const float crack = smoothstep(0.90f, 0.99f, ridged(u * 7.0f, v * 7.0f, 7, 3,
-                                                                seed + 53u));
-            for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 0.42f, crack);
-            height -= crack * 0.25f;
-            occlusion -= crack * 0.3f;
+            //
+            // Rare, and faint. Thresholded at 0.90 the ridged field drew a dark
+            // dash every few centimetres over every rendered wall in the city,
+            // and from the footway that read as flies on the paintwork rather
+            // than as cracks: a real crack in render is one line every few
+            // metres, and it is a shadow, not a stroke of paint.
+            const float crackField = ridged(u * 3.0f, v * 3.0f, 3, 3, seed + 53u);
+            const float crack = smoothstep(0.972f, 0.995f, crackField)
+                                * (0.35f + 0.65f * std::clamp(grime, 0.0f, 1.0f));
+            for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 0.60f, crack);
+            height -= crack * 0.18f;
+            occlusion -= crack * 0.2f;
 
-            const float blown = smoothstep(0.88f, 0.97f,
-                                           fbm(u * 3.5f, v * 3.5f, 4, 3, 2.0f, 0.5f, seed + 97u));
+            const float blown = smoothstep(0.93f, 0.985f,
+                                           fbm(u * 3.5f, v * 3.5f, 4, 3, 2.0f, 0.5f, seed + 97u))
+                                * std::clamp(grime, 0.0f, 1.0f);
             for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], base[c] * 0.55f + 0.02f, blown);
             height -= blown * 0.18f;
 
