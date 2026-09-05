@@ -8,10 +8,14 @@ One crossroads of a continental-European inner-city street: five-storey
 perimeter blocks with shops at street level and flats above, a signalised
 junction that actually runs, traffic that stops for it, people who wait at the
 kerb for a green man, trees in the footway, and a sky the lighting is derived
-from. Every surface, every mesh and every letter on every shop fascia is
-generated from one seed by code in this repository; the only imported assets
-are sixteen glTF props standing behind the shop glass, each with its licence
-recorded.
+from. Every mesh of the street, every marking and every letter on every shop
+fascia is generated from one seed by code in this repository. The surfaces the
+camera gets closest to -- the asphalt, the paving, the bricks, the render, the
+bark -- are photogrammetry scans, and so are the hydrants, the cabinets, the
+benches, the cafe tables, the covered car and the trees nearest the showcase
+viewpoints: thirty-six models and fourteen texture sets, every one CC0 or
+CC-BY, every one with its licence and its digest recorded, every one fetched
+rather than committed and standing in for a generated fallback.
 
 It exists to exercise CNA's modern graphics layer (`CNAEXT`) on something that
 is not a test scene: a cascaded shadow pass, a depth/normal prepass, an
@@ -90,12 +94,31 @@ parked car reflects the facade it is parked outside; a shop window reflects
 the cars parked in front of it. The glass itself is a reflection layer over
 what it covers rather than a coloured filter, at its full Fresnel strength.
 
+**The surfaces.** The road is a scanned asphalt, the footway scanned 50 cm
+concrete slabs, the kerb scanned granite, the older blocks scanned brick and
+sandstone ashlar, the rendered blocks a scanned lime render with its colour
+divided out so seven tints still cost one texture, the plane trees a scanned
+platanus bark. Each scan replaces a generated surface of the same name in the
+content build and the generated one stands wherever the scan is not fetched.
+Roughness comes from the scan's own map, and the UV scale that maps each
+scan's physical size onto the geometry's tile is written by the content build,
+so a brick is the size of a brick.
+
 **The walls.** Weathering is placed where the water runs: rain run-off fans
 down from under the sills, splash dirt rises from the pavement, a stain
 follows a leaking downpipe, and each of those is more likely and longer on a
 plot the generator has decided is grubby. Half the balconies carry a planter
 on the rail and a few a folding chair; the older blocks have satellite dishes
 clamped beside their upper windows.
+
+**In the street.** The hydrants, the cable cabinets, the benches, the planters
+and the shrubs in them, the manhole covers, the cafe tables and A-boards out on
+the footway by the bakeries, the crates and cartons by the shop doors, the
+refuse sacks by the bins, and a car under a cover in one bay are
+photogrammetry scans from Poly Haven, imported through CNA's own glTF pipeline
+and instanced like everything else. The trees nearest the showcase viewpoints
+are a scanned small tree cut in Blender to a near and a far level of detail;
+the rest of the street's trees are the generated ones.
 
 **Beyond the frontage.** The two streets continue past the modelled plots
 with their kerbs, footways and carriageways, lined by blocks that carry real
@@ -128,26 +151,27 @@ windows, the flats above them, headlights and tail lights.
 
 | | |
 | --- | --- |
-| ![Footway looking south](docs/screenshots/01-footway-looking-south-to-the-junction.png) | ![Car at three metres](docs/screenshots/09-car-three-metres.png) |
-| ![Shop window](docs/screenshots/11-shop-window.png) | ![Pedestrian at four metres](docs/screenshots/10-pedestrian-four-metres.png) |
-| ![Road surface](docs/screenshots/12-road-surface.png) | ![Street tree](docs/screenshots/13-street-tree.png) |
-| ![Kerbside](docs/screenshots/15-kerbside.png) | ![Corner to corner](docs/screenshots/16-corner-to-corner.png) |
+| ![Footway looking south](docs/screenshots/01-footway-looking-south-to-the-junction.png) | ![Pavement cafe](docs/screenshots/17-pavement-cafe.png) |
+| ![Covered car](docs/screenshots/18-covered-car.png) | ![Car at three metres](docs/screenshots/09-car-three-metres.png) |
+| ![Street tree](docs/screenshots/13-street-tree.png) | ![Kerbside](docs/screenshots/15-kerbside.png) |
+| ![Shop window](docs/screenshots/11-shop-window.png) | ![Corner to corner](docs/screenshots/16-corner-to-corner.png) |
 
-All sixteen are in `docs/screenshots/`, and `--capture <dir>` rewrites them
+All eighteen are in `docs/screenshots/`, and `--capture <dir>` rewrites them
 from the same viewpoints.
 
-Six of those fourteen were added because the original eight were all chosen
-from a comfortable distance, and a street that survives being looked at from
-ten metres does not necessarily survive being looked at from three. Each of the
-new ones is aimed squarely at something that used to be a weakness — a car, a
-person, a shop window, the road surface, a tree, one bay of a façade — from the
-distance a person would actually see it from.
+The first eight were chosen from a comfortable distance; the next six were
+added because a street that survives being looked at from ten metres does not
+necessarily survive being looked at from three, and each is aimed at something
+that used to be a weakness. The last four are photographs: compositions a
+person with a camera would take, at the heights and fields of view a camera
+has, two of them on the stretch of footway where the scanned content is
+densest.
 
-`docs/visual-overhaul/` holds the first overhaul's before-and-after set, and
-`docs/visual-overhaul-2/` the second pass's: reflections, glass, shops,
-vehicles, weathering, the district beyond the frontage, and a twilight sky,
-each with the frame it started from beside the frame it ended at, the night
-set, flagship frames at 1920 × 1080, and what it cost.
+`docs/visual-overhaul/` holds the first overhaul's before-and-after set,
+`docs/visual-overhaul-2/` the second pass's, and `docs/visual-overhaul-3/` the
+third's: scanned surfaces, scanned props, the hero trees and the recalibrated
+light, each viewpoint before beside after, the night set, flagship frames at
+1920 × 1080, and what it cost.
 
 ## Building
 
@@ -542,6 +566,20 @@ implement (`KHR_materials_sheen`, `KHR_materials_specular`, glTF material
 variants). That is correct behaviour for a required extension it cannot honour,
 so the build warns and skips rather than failing.
 
+Between the bake and the compile there is a step the first two passes did not
+have. `scripts/prepare-surfaces.py` reads the scanned PBR sets the manifest
+declares under `surfaces`, resamples each to its declared size, repacks it into
+the catalogue's albedo / normal / ORM form -- inverting the normal map's green
+channel, because this project's meshes and generator use the DirectX
+convention and the scans arrive in OpenGL's -- and writes the three maps over
+the generated ones *under the generated surface's name*. It also writes
+`authored.txt`, which tells the runtime which surfaces are scans: for those the
+roughness and metalness maps are taken at face value, the UV scale that maps
+the geometry's tile onto the scan's physical size is applied through
+`KHR_texture_transform`, and the base colour is reset to white unless the scan
+was neutralised for tinting, as the lime render is. A tree without Pillow, or
+without the fetched scans, gets the generated surfaces and a message.
+
 The bake also writes `surfaces.txt` beside the images: the mean roughness and
 metalness each generator actually wrote into its ORM map. `MaterialLibrary`
 divides every declared factor by those, because `PbrEffect` multiplies the
@@ -565,34 +603,52 @@ on a machine with no GPU.
 
 ## Assets
 
-Every *surface* in this street is generated — there is no texture library here,
-and `assets/ATTRIBUTION.md` says what that means.
+The street is generated. Thirty-six models and fourteen surfaces are not, and
+`assets/ATTRIBUTION.md` says exactly which and under what terms.
 
-The *props behind the shop glass* are not. Sixteen glTF models are fetched from
-the Khronos sample set, compiled through CNA's own importer, and stood on the
-display plinths. They are fetched rather than committed, because 110 MB of
-somebody else's work in a repository's history is a different decision from
-using it:
+Two sources. Sixteen glTF models from the Khronos sample set stand behind the
+shop glass. Twenty photogrammetry scans from [Poly Haven](https://polyhaven.com)
+stand in the street -- hydrants, cabinets, a bench, cafe furniture, planters
+and shrubs, crates, cartons, refuse sacks, manhole covers, a covered car and a
+small tree -- and fourteen Poly Haven texture sets replace the generated
+asphalt, paving, kerb, bricks, render, ashlar, concrete, roof tiles, bark and
+shop floor. Every Poly Haven item is CC0-1.0; the Khronos models are CC0-1.0
+or CC-BY-4.0, per model, as that repository's own `Models.md` states them.
+
+They are fetched rather than committed, because 300 MB of somebody else's work
+in a repository's history is a different decision from using it:
 
 ```sh
 ./scripts/fetch-assets.sh
 cmake --build build --target content
 ```
 
-The script reads `assets/external/manifest.json`, fetches each file and verifies
-its SHA-256 before it is used. A tree that has not run it simply has no imported
-props, exactly as a tree with no compiled content simply generates its textures.
+The script reads `assets/external/manifest.json`, fetches every declared file
+and verifies its SHA-256 before it is used. A tree that has not run it has
+generated surfaces and generated props everywhere: every scanned thing has the
+generated stand-in it replaced.
 
 The manifest is the part worth keeping. It records, per asset: the local name,
 the original title, the author, the copyright line, the source URL and
 repository, the exact licence and its URL, whether attribution is required,
-whether redistribution is allowed, the retrieval date, the original format, the
-digest and byte count, what was done to it, and what it is for in the scene.
-Every entry is CC0-1.0 or CC-BY-4.0, and none of them is used on the strength of
-the repository it came from — the same repository carries models under other
-terms, and the manifest names the ones that were rejected and why: the Duck is
-SCEA-licensed, Sponza is a CRYENGINE agreement, and the 3DRT Virtual City is
-testing-use-only. "It downloaded" is not a licence.
+whether redistribution is allowed, the retrieval date, the original format,
+every file with its digest and byte count, what was done to it, and what it
+is for in the scene; per surface, also the scan's physical size and the tile
+size the geometry lays it at. `scripts/validate-assets.py` checks all of it,
+CTest runs it, and `scripts/attribution-table.py` generates the attribution
+tables from it. None of it is used on the strength of the repository it came
+from -- the Khronos set carries models under other terms, and the manifest
+names the ones that were rejected and why. "It downloaded" is not a licence.
+
+The hero tree is the one asset with a build step of its own.
+`scripts/blender-tree-lod.py` runs inside Blender, takes Poly Haven's
+half-million-triangle LOD1, decimates the wood, keeps a fraction of the leaf
+clusters and scales the survivors up, and writes a near and a far `.glb` with
+the leaves alpha-masked (`scripts/glb-mask-leaves.py`, because Blender 4.2+
+exports every alpha as BLEND). The two files are declared as derived files of
+the tree in the manifest and compiled by the content build like any other
+model. Without Blender the derived files are not made and the generated trees
+stand at every pit.
 
 ## Tests
 
@@ -600,7 +656,7 @@ testing-use-only. "It downloaded" is not a licence.
 ctest --test-dir build --output-on-failure
 ```
 
-Ten suites over the parts of the street that can be checked without a device:
+Eleven suites over the parts of the street that can be checked without a device:
 the signal controller, the traffic model, the walk graph, mesh building, the
 layout, the settings parser, the camera frustum, the mip-chain generation the
 content pipeline depends on, the shapes and surfaces the first visual overhaul
@@ -618,7 +674,11 @@ Three of them found live bugs on their first run: `realism_tests` asked where
 a car's brake lenses were and found the tail lamps wrapping 26 cm out behind
 the bumper.
 
-`realism_tests` pins the things the second pass's screenshots showed to be
+The eleventh is `validate_assets`: the licence gate, run by CTest, so a
+manifest that drifts from the fetched files fails the suite. `realism_tests`
+gained a case for the manhole covers the road builder now hands to the scene,
+which have to lie on the crown of the main carriageway and out of the junction
+box. It pins the things the second pass's screenshots showed to be
 wrong and a pixel test would never see: that a probe face's camera agrees
 with the cube layout the environment is read in (a face captured mirrored is
 a reflection of the wrong side of the street, and nothing reports it); that
@@ -674,19 +734,18 @@ them again. The overlay's headline is an *exponential* average and its
 breakdown is one frame's stage times: right for flying a camera around, wrong
 for tuning — it once read 214 ms on a frame that took 778.
 
-| | Before the second pass (`27f92a8`) | Now |
-| --- | --- | --- |
-| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes |
-| Static batches | 1 187 | 1 586 |
-| Triangles in the scene | 1 042 354 | 1 072 898 |
-| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas |
-| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 |
-| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 |
-| Shadow draw calls | 2 840 | 3 115 |
-| Triangles drawn | 560 k | 603 k |
-| Frame, 1024×576 | 34–45 ms median | 41–51 ms median |
-| Frame, 1920×1080 | 46 ms | 47 ms |
-| Frame, `--night` | 34 ms | 47 ms |
+| | Before the second pass (`27f92a8`) | Before the third (`83dc8e1`) | Now |
+| --- | --- | --- | --- |
+| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes | 12 s, then 7 s of probes |
+| Static batches | 1 187 | 1 586 | 1 634 |
+| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas | the same, fourteen of them scans at 1024 px, plus twenty scanned models' own |
+| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 | 42, 74 + one covered car, 78 |
+| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 | 1 564 |
+| Shadow draw calls | 2 840 | 3 115 | 3 303 |
+| Triangles drawn | 560 k | 603 k | 1 695 k, of which the hero trees are most |
+| Frame, 1024×576 | 34–45 ms median | 41–51 ms median | 47–59 ms median, interleaved with 52–64 for `83dc8e1` on a busy machine |
+| Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 |
+| Frame, `--night` | 34 ms | 47 ms | unchanged by this pass |
 
 Those are from a 16-core machine that was busy with other work while it
 measured, hence the ranges; the first overhaul's table, from four cores, is in
@@ -717,6 +776,16 @@ sky. The reflection probes themselves cost nothing measurable per frame; the
 cost is four hundred more static batches, almost all of them the far blocks.
 `docs/visual-overhaul-2/performance.md` has every raw run.
 
+Against `83dc8e1`, the commit before the third pass, three interleaved pairs
+at 1024 × 576 came out 52.0 / 63.8 / 55.4 ms before against 47.2 / 52.1 /
+58.6 ms after, and one pair at 1920 × 1080 59.5 against 63.8: within noise,
+for fourteen scanned surfaces at 1024 px, twenty scanned props, and hero trees
+that triple the triangles drawn per frame. Draw calls moved by three per cent
+and on this rasteriser the frame is submission-bound, which is why three times
+the triangles cost so little; on a GPU the trees would be the first thing to
+give a leaf-card impostor level of detail. `docs/visual-overhaul-3/performance.md`
+has the runs and the caveats.
+
 What keeps it from being worse: batching by material and cell, instancing every
 repeated prop, frustum and distance culling with a shorter leash for shadows
 than for drawing, one mip chain on every texture, shared textures behind tinted
@@ -741,6 +810,20 @@ materials, and alpha masking instead of blending everywhere except glass.
 * **No audio.** CNA's audio module is there and works; the demo has nothing to
   play through it, and a synthesised city ambience would be a worse thing than
   silence.
+* **The vehicles are lofts, not scans.** The one scanned vehicle is the car
+  under a cover; every other car is generated, and from three metres the
+  generated ones still read as generated. No realistic car was found under a
+  licence this repository can carry; a better loft is the next procedural
+  step, a licensed hero car the step after.
+* **The people are mannequins at four metres**, and the photographs keep them
+  out of the foreground for that reason. A face and a garment are texture
+  work, and a rigged figure under a clean licence would be better still.
+* **The hero tree needs Blender.** Its two levels of detail are cut from Poly
+  Haven's `.blend` by a script; without Blender the generated trees stand at
+  every pit, which is the fallback and not a failure.
+* **Scanned props carry one mip level** (GLTF-206), which is why they are
+  fetched at 1k rather than 2k or 4k: a hydrant's texture would otherwise
+  shimmer from a few metres.
 * **The far skyline is blocks with printed façades.** The blocks that line the
   two streets past the modelled frontage now carry real window recesses,
   shopfronts and cornices; the scatter of taller blocks beyond them, 240 m out,
@@ -777,6 +860,14 @@ street/                     the application and its static library
 tools/bake/                 the offline surface baker
 tools/compare/              the screenshot comparator
 scripts/check-screenshots.sh
+scripts/fetch-assets.sh     fetches and verifies every declared external file
+scripts/validate-assets.py  the licence gate, also a CTest test
+scripts/manifest-tool.py    reads the manifest for the build and the fetch
+scripts/prepare-surfaces.py turns scanned PBR sets into catalogue surfaces
+scripts/blender-tree-lod.py cuts the hero tree's levels of detail, in Blender
+scripts/glb-mask-leaves.py  makes an exported tree's leaves alpha-masked
+scripts/attribution-table.py
+                            generates the tables in assets/ATTRIBUTION.md
 tests/                      the unit tests
 assets/config/render.json   a settings document
 assets/ATTRIBUTION.md       where the assets come from
@@ -789,6 +880,7 @@ docs/patches/               changes contributed back to CNA, with a README
 docs/screenshots/           the named viewpoints
 docs/visual-overhaul/       the first visual overhaul: audit, comparisons, report
 docs/visual-overhaul-2/     the second pass: before and after, night, report
+docs/visual-overhaul-3/     the third pass: scans, props, trees, light
 plan.md                     what is done, what is next
 ```
 
