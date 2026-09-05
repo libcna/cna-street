@@ -179,6 +179,7 @@ CharacterLook CharacterFactory::look(Rng& rng, int variant) const
     out.hairLength = rng.range(0.0f, 1.0f) < 0.42f ? rng.range(0.45f, 1.0f) : rng.range(0.0f, 0.18f);
     out.carriesBag = rng.range(0.0f, 1.0f) < 0.34f;
     out.wearsCoat  = rng.range(0.0f, 1.0f) < 0.72f;
+    out.wearsHat   = rng.range(0.0f, 1.0f) < 0.15f;
     (void)variant;
     return out;
 }
@@ -509,6 +510,40 @@ CharacterFactory::Character CharacterFactory::build(const CharacterLook& look,
             {Vector3(legX, h * 0.013f, shoeLength * 0.60f), calfR * 0.60f, calfR * 0.40f},
         };
         Sweep(shoes, shoe, sides, true, true, 1.30f);
+    }
+
+    if (look.wearsCoat)
+    {
+        // A collar: a short ring standing off the neck, turned back. It is
+        // what separates a coat from a painted torso at the neckline, which is
+        // where the eye lands after the face.
+        std::vector<Ring> collar = {
+            {Vector3(0.0f, f.neck - h * 0.006f, -h * 0.004f), f.shoulderHalf * 0.36f,
+             f.torsoHalfDepth * 0.58f},
+            {Vector3(0.0f, f.neck + h * 0.026f, -h * 0.010f), f.shoulderHalf * 0.40f,
+             f.torsoHalfDepth * 0.66f},
+            {Vector3(0.0f, f.neck + h * 0.034f, -h * 0.012f), f.shoulderHalf * 0.34f,
+             f.torsoHalfDepth * 0.56f},
+        };
+        Sweep(body, collar, sides, false, false, 1.4f);
+    }
+
+    if (look.wearsHat)
+    {
+        // A flat cap: a crown a little wider than the head, sitting low, and a
+        // peak forward. A hat is a silhouette change from any distance, which
+        // is exactly what a crowd of otherwise similar heads needs.
+        // In the trouser cloth, not the hair colour: a cap the colour of the
+        // hair under it is a bigger head.
+        MeshBuilder& hat = collector.builder(legs);
+        std::vector<Ring> crown = {
+            {Vector3(0.0f, f.headCentre + h * 0.030f, -h * 0.004f), headHalf * 1.18f, h * 0.0560f},
+            {Vector3(0.0f, f.headCentre + h * 0.052f, -h * 0.006f), headHalf * 1.20f, h * 0.0570f},
+            {Vector3(0.0f, f.crown + h * 0.006f, -h * 0.010f), headHalf * 0.80f, h * 0.0400f},
+        };
+        Sweep(hat, crown, sides, false, true, 1.35f);
+        hat.addBox(Vector3(-h * 0.040f, f.headCentre + h * 0.028f, h * 0.045f),
+                   Vector3(h * 0.040f, f.headCentre + h * 0.034f, h * 0.085f));
     }
 
     if (look.carriesBag)

@@ -49,6 +49,8 @@ struct CharacterLook
     float hairLength = 0.0f;
     bool  carriesBag = false;
     bool  wearsCoat  = true;
+    /// A cap or a hat, on about one person in seven.
+    bool  wearsHat   = false;
 };
 
 /**
