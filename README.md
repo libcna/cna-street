@@ -13,9 +13,12 @@ fascia is generated from one seed by code in this repository. The surfaces the
 camera gets closest to -- the asphalt, the paving, the bricks, the render, the
 bark -- are photogrammetry scans, and so are the hydrants, the cabinets, the
 benches, the cafe tables, the covered car and the trees nearest the showcase
-viewpoints: thirty-six models and fourteen texture sets, every one CC0 or
+viewpoints: sixty-nine models and fourteen texture sets, every one CC0 or
 CC-BY, every one with its licence and its digest recorded, every one fetched
-rather than committed and standing in for a generated fallback.
+rather than committed and standing in for a generated fallback. The cars in
+the bays the cameras look at are authored models under CC-BY, and the people
+on the footway are built from MakeHuman's CC0 base mesh and wardrobe in
+Blender and driven by this project's own skeleton and clips.
 
 It exists to exercise CNA's modern graphics layer (`CNAEXT`) on something that
 is not a test scene: a cascaded shadow pass, a depth/normal prepass, an
@@ -116,9 +119,31 @@ and the shrubs in them, the manhole covers, the cafe tables and A-boards out on
 the footway by the bakeries, the crates and cartons by the shop doors, the
 refuse sacks by the bins, and a car under a cover in one bay are
 photogrammetry scans from Poly Haven, imported through CNA's own glTF pipeline
-and instanced like everything else. The trees nearest the showcase viewpoints
-are a scanned small tree cut in Blender to a near and a far level of detail;
+and instanced like everything else. The trees within eighty metres of the
+junction are three scanned species -- a small tree, a broad island tree and a
+mature jacaranda -- each cut in Blender to a near and a far level of detail;
 the rest of the street's trees are the generated ones.
+
+**The hero cafe.** One shop -- the one the shop-window and pavement-cafe
+viewpoints look into -- is built as a composed room rather than a dressed
+box: a deeper plan with a darker store beyond a back door standing ajar, a
+serving counter under a glass case with the cakes and croissants inside it
+and the till on top, bread shelving and baskets behind, a coffee station
+against the end wall, pendant lamps over the counter, a clock and prints on
+the walls, a dressed window and two cafe tables inside, the awning out,
+opening hours on the door and a lamp on the pilaster. Thirty-eight scanned
+props, each anchored by the interior generator where a person would have put
+it.
+
+**The facades, closer.** Every sill, lintel, string course, cornice,
+pilaster, balcony nosing and door threshold is a chamfered box rather than a
+sharp one, because an arris that catches a highlight is most of what
+separates built stone from an extrusion. The flat post-war elevations carry a
+projecting surround round each window, the balconies stand on brackets, every
+shop door is set a third of a metre back into a reveal with a stone threshold
+and a pull handle, and the walls carry what walls carry: meter cabinets,
+vents, conduit runs with their saddles, scanned security cameras over the
+shop doors and scanned condenser units beside the upper windows.
 
 **Beyond the frontage.** The two streets continue past the modelled plots
 with their kerbs, footways and carriageways, lined by blocks that carry real
@@ -126,6 +151,16 @@ window recesses, shopfronts under fascias, plinths and cornices, with the same
 trees on the same pitch and the same cars parked along them, and cross streets
 between every third block. The scatter of blocks on the skyline beyond is
 painted: it is 240 m away.
+
+**The parked cars.** Eight authored car models -- an Opel Astra GTC, a Fiat
+Punto GT, a Renault Logan, a VAZ-2104 estate, a Honda Civic, a Mini Cooper S,
+a 1980s saloon and a Mercedes Sprinter -- all CC-BY from Sketchfab authors
+publishing their own work, normalised in Blender by
+`scripts/blender-vehicles.py` and dealt into the parking bays of the main
+street within seventy metres of the junction by `CityScene::buildHeroVehicles`,
+never the same model in two neighbouring bays. They are static, so the
+reflection probes hold them and the shop windows reflect them. The loft each
+one replaces stays in the simulation and is not drawn.
 
 **The moving parts.** Twelve vehicles over six classes — city car, hatchback,
 saloon, estate, crossover, van — lofted from monotone-cubic profile curves
@@ -136,10 +171,15 @@ clusters with chromed reflectors, number plates, a roof aerial and an interior
 with seats and a steering wheel. Bicycles lean on the stands. They follow the vehicle ahead, brake for a red light with
 their brake lamps lit, and turn through the junction on a Bézier.
 
-Fifty-odd people, each one mesh on a nineteen-bone skeleton, skinned by
-distance to the limbs running out of each bone, and animated on the GPU by
-`SkinnedPbrEffect` from walk and idle clips built in code, in coats with
-collars, some with a bag, some in a cap. The animation clock
+Fifty-odd people over eight variants, each one mesh per material on a
+nineteen-bone skeleton and animated on the GPU by `SkinnedPbrEffect` from walk
+and idle clips built in code. The eight are built from MakeHuman's CC0 base
+mesh and system wardrobe -- skins, clothes, shoes, hair, eyes -- by
+`scripts/blender-people.py` with MPFB in Blender, posed with the arms down,
+their authored weights folded from MakeHuman's 137 bones onto this project's
+nineteen, and written in this project's own character format for
+`CharacterLibrary` to read; the generated figures of the earlier passes stand
+in for any variant that has not been generated. The animation clock
 is the distance walked rather than wall-clock time, so nobody's feet slide and
 nobody's queue breathes in unison.
 
@@ -168,10 +208,11 @@ has, two of them on the stretch of footway where the scanned content is
 densest.
 
 `docs/visual-overhaul/` holds the first overhaul's before-and-after set,
-`docs/visual-overhaul-2/` the second pass's, and `docs/visual-overhaul-3/` the
-third's: scanned surfaces, scanned props, the hero trees and the recalibrated
-light, each viewpoint before beside after, the night set, flagship frames at
-1920 × 1080, and what it cost.
+`docs/visual-overhaul-2/` the second pass's, `docs/visual-overhaul-3/` the
+third's, and `docs/visual-overhaul-4/` the fourth's: authored cars, authored
+people, three tree species, architectural depth and the hero cafe, each
+viewpoint before beside after, the night set, flagship frames at 1920 × 1080,
+and what it cost.
 
 ## Building
 
@@ -603,19 +644,31 @@ on a machine with no GPU.
 
 ## Assets
 
-The street is generated. Thirty-six models and fourteen surfaces are not, and
-`assets/ATTRIBUTION.md` says exactly which and under what terms.
+The street is generated. Sixty-nine models, fourteen surfaces and eight
+people are not, and `assets/ATTRIBUTION.md` says exactly which and under what
+terms.
 
-Two sources. Sixteen glTF models from the Khronos sample set stand behind the
-shop glass. Twenty photogrammetry scans from [Poly Haven](https://polyhaven.com)
-stand in the street -- hydrants, cabinets, a bench, cafe furniture, planters
-and shrubs, crates, cartons, refuse sacks, manhole covers, a covered car and a
-small tree -- and fourteen Poly Haven texture sets replace the generated
-asphalt, paving, kerb, bricks, render, ashlar, concrete, roof tiles, bark and
-shop floor. Every Poly Haven item is CC0-1.0; the Khronos models are CC0-1.0
-or CC-BY-4.0, per model, as that repository's own `Models.md` states them.
+Four sources. Sixteen glTF models from the Khronos sample set stand behind the
+shop glass. Forty-four photogrammetry scans from
+[Poly Haven](https://polyhaven.com) stand in the street and in the hero cafe
+-- hydrants, cabinets, a bench, cafe furniture, planters and shrubs, crates,
+cartons, refuse sacks, manhole covers, a covered car, three trees, the cafe's
+shelving, counter fittings, lamps and food, and the cameras and condenser
+units on the walls -- and fourteen Poly Haven texture sets replace the
+generated asphalt, paving, kerb, bricks, render, ashlar, concrete, roof
+tiles, bark and shop floor. Eight cars come from [Sketchfab](https://sketchfab.com)
+authors, CC-BY-4.0 each, fetched from the
+[Objaverse](https://huggingface.co/datasets/allenai/objaverse) mirror with
+the licence and page Sketchfab embeds in the file, and normalised in Blender
+by `scripts/blender-vehicles.py`. The eight people are built from
+[MakeHuman](https://static.makehumancommunity.org)'s CC0 base mesh and system
+wardrobe by `scripts/blender-people.py`, which drives the MPFB extension in
+Blender -- a tool the manifest also declares, fetches and verifies, so the
+people can be rebuilt from nothing. Every Poly Haven and MakeHuman item is
+CC0-1.0; the Khronos models are CC0-1.0 or CC-BY-4.0 per model, and the CC-BY
+credits the licence asks for are in the attribution file.
 
-They are fetched rather than committed, because 300 MB of somebody else's work
+They are fetched rather than committed, because 700 MB of somebody else's work
 in a repository's history is a different decision from using it:
 
 ```sh
@@ -640,15 +693,23 @@ tables from it. None of it is used on the strength of the repository it came
 from -- the Khronos set carries models under other terms, and the manifest
 names the ones that were rejected and why. "It downloaded" is not a licence.
 
-The hero tree is the one asset with a build step of its own.
-`scripts/blender-tree-lod.py` runs inside Blender, takes Poly Haven's
-half-million-triangle LOD1, decimates the wood, keeps a fraction of the leaf
-clusters and scales the survivors up, and writes a near and a far `.glb` with
-the leaves alpha-masked (`scripts/glb-mask-leaves.py`, because Blender 4.2+
-exports every alpha as BLEND). The two files are declared as derived files of
-the tree in the manifest and compiled by the content build like any other
-model. Without Blender the derived files are not made and the generated trees
-stand at every pit.
+Three kinds of asset have a build step of their own, all in Blender and all
+recorded as derived files in the manifest so the licence gate knows them.
+`scripts/blender-tree-lod.py` takes a Poly Haven tree -- a `.blend` or, since
+this pass, a glTF -- decimates the wood, keeps a fraction of the leaf clusters
+and scales the survivors up, and writes a near and a far `.glb` with the
+leaves alpha-masked (`scripts/glb-mask-leaves.py`, because Blender 4.2+
+exports every alpha as BLEND) and no colour attribute (GLTF-209).
+`scripts/blender-vehicles.py` normalises a downloaded car: backdrop dropped,
+faced +Z at the real car's length, one mesh per material, a far level of
+detail, textures capped at 1k, glass blended and everything else opaque, and
+the triangles reversed for CNA's cull (CNA-F15). `scripts/blender-people.py`
+builds a person with MPFB, poses the arms down, bakes the targets, applies the
+masks and the armature, folds the rig's weights onto this project's nineteen
+bones and writes the mesh in this project's character format beside its
+textures, which the content build compiles with a mip chain like the
+catalogue's own. Without Blender none of the derived files are made, and the
+generated trees, the lofted cars and the generated figures stand in.
 
 ## Tests
 
@@ -656,7 +717,7 @@ stand at every pit.
 ctest --test-dir build --output-on-failure
 ```
 
-Eleven suites over the parts of the street that can be checked without a device:
+Twelve suites over the parts of the street that can be checked without a device:
 the signal controller, the traffic model, the walk graph, mesh building, the
 layout, the settings parser, the camera frustum, the mip-chain generation the
 content pipeline depends on, the shapes and surfaces the first visual overhaul
@@ -674,8 +735,17 @@ Three of them found live bugs on their first run: `realism_tests` asked where
 a car's brake lenses were and found the tail lamps wrapping 26 cm out behind
 the bumper.
 
-The eleventh is `validate_assets`: the licence gate, run by CTest, so a
-manifest that drifts from the fetched files fails the suite. `realism_tests`
+One is `validate_assets`: the licence gate, run by CTest, so a
+manifest that drifts from the fetched files fails the suite; it now knows the
+manifest's tools list and derived folders. The newest is
+`character_format_tests`, the contract between `scripts/blender-people.py`
+and `CharacterLibrary`: nineteen bones in an order a parent always precedes
+its child, joints where a standing figure's are with the arms down, every
+part inside its binary, every vertex a unit normal, a unit tangent, weights
+summing to one, bone indices under nineteen and UVs inside the texture. The
+first export failed the last check on every garment -- a stale layer
+reference in Blender had read another array as the UVs -- and drew perfectly
+plausible garbage. `realism_tests`
 gained a case for the manhole covers the road builder now hands to the scene,
 which have to lie on the crown of the main carriageway and out of the junction
 box. It pins the things the second pass's screenshots showed to be
@@ -734,18 +804,18 @@ them again. The overlay's headline is an *exponential* average and its
 breakdown is one frame's stage times: right for flying a camera around, wrong
 for tuning — it once read 214 ms on a frame that took 778.
 
-| | Before the second pass (`27f92a8`) | Before the third (`83dc8e1`) | Now |
-| --- | --- | --- | --- |
-| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes | 12 s, then 7 s of probes |
-| Static batches | 1 187 | 1 586 | 1 634 |
-| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas | the same, fourteen of them scans at 1024 px, plus twenty scanned models' own |
-| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 | 42, 74 + one covered car, 78 |
-| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 | 1 564 |
-| Shadow draw calls | 2 840 | 3 115 | 3 303 |
-| Triangles drawn | 560 k | 603 k | 1 695 k, of which the hero trees are most |
-| Frame, 1024×576 | 34–45 ms median | 41–51 ms median | 47–59 ms median, interleaved with 52–64 for `83dc8e1` on a busy machine |
-| Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 |
-| Frame, `--night` | 34 ms | 47 ms | unchanged by this pass |
+| | Before the second pass (`27f92a8`) | Before the third (`83dc8e1`) | Before the fourth (`c31ae23`) | Now |
+| --- | --- | --- | --- | --- |
+| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes | 12 s, then 7 s of probes | 17 s, then 8 s of probes |
+| Static batches | 1 187 | 1 586 | 1 634 | 1 655 |
+| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas | the same, fourteen of them scans at 1024 px, plus twenty scanned models' own | the same, plus forty-four scanned models', eight cars' at 1k and eight people's with mip chains |
+| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 | 42, 74 + one covered car, 78 | 42, 74 of which 8 are authored, 78 over 8 authored people |
+| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 | 1 564 | 1 700 |
+| Shadow draw calls | 2 840 | 3 115 | 3 303 | 3 563 |
+| Triangles drawn | 560 k | 603 k | 1 695 k, of which the hero trees are most | 5 150 k, of which the trees are most |
+| Frame, 1024×576 | 34–45 ms median | 41–51 ms median | 47–59 ms median, interleaved with 52–64 for `83dc8e1` on a busy machine | 59–62 ms median against 47 for `c31ae23` |
+| Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 | 76 ms |
+| Frame, `--night` | 34 ms | 47 ms | unchanged by this pass | 56 ms |
 
 Those are from a 16-core machine that was busy with other work while it
 measured, hence the ranges; the first overhaul's table, from four cores, is in
@@ -775,6 +845,17 @@ rebuilt as rooms, the vehicle lamps rebuilt, causal weathering, and the night
 sky. The reflection probes themselves cost nothing measurable per frame; the
 cost is four hundred more static batches, almost all of them the far blocks.
 `docs/visual-overhaul-2/performance.md` has every raw run.
+
+Against `c31ae23`, the commit before the fourth pass, measured at the start
+of the session from the same build directory: **about +30%** at 1024 × 576
+(three runs at 59.9, 63.6 and 61.5 ms against 46.5) and +19% at 1080p, for
+eight authored cars, eight authored people, nineteen scanned trees over three
+species, chamfers and fittings on every facade and a composed hero cafe. The
+draw calls moved by nine per cent; the triangles tripled, and at five million
+a frame this rasteriser does charge for them -- eight of the extra
+milliseconds are the opaque pass and four the shadow pass.
+`docs/visual-overhaul-4/performance.md` has the runs and where the triangles
+went.
 
 Against `83dc8e1`, the commit before the third pass, three interleaved pairs
 at 1024 × 576 came out 52.0 / 63.8 / 55.4 ms before against 47.2 / 52.1 /
@@ -810,20 +891,25 @@ materials, and alpha masking instead of blending everywhere except glass.
 * **No audio.** CNA's audio module is there and works; the demo has nothing to
   play through it, and a synthesised city ambience would be a worse thing than
   silence.
-* **The vehicles are lofts, not scans.** The one scanned vehicle is the car
-  under a cover; every other car is generated, and from three metres the
-  generated ones still read as generated. No realistic car was found under a
-  licence this repository can carry; a better loft is the next procedural
-  step, a licensed hero car the step after.
-* **The people are mannequins at four metres**, and the photographs keep them
-  out of the foreground for that reason. A face and a garment are texture
-  work, and a rigged figure under a clean licence would be better still.
-* **The hero tree needs Blender.** Its two levels of detail are cut from Poly
-  Haven's `.blend` by a script; without Blender the generated trees stand at
-  every pit, which is the fallback and not a failure.
-* **Scanned props carry one mip level** (GLTF-206), which is why they are
-  fetched at 1k rather than 2k or 4k: a hydrant's texture would otherwise
-  shimmer from a few metres.
+* **The moving traffic is still lofts.** The eight authored cars are parked;
+  a car driving past the camera is the generated one, because a moving car
+  needs wheels that turn and the authored models do not separate theirs.
+* **The people's faces are painted.** MakeHuman's skins hold at four metres,
+  which is where a street is seen from, and at two metres a painted face is a
+  painted face.
+* **The hero trees, cars and people need Blender.** Their derived files are
+  cut, normalised and generated by scripts that run inside Blender 4.3 with
+  numpy on its Python path (`--python-use-system-env`), and the people need
+  the MPFB extension the manifest fetches; without Blender the generated
+  trees, the lofted cars and the generated figures stand in, which is the
+  fallback and not a failure.
+* **Scanned props and the cars carry one mip level** (GLTF-206), which is
+  why they are fetched or capped at 1k rather than 2k or 4k: a texture would
+  otherwise shimmer from a few metres. The people's textures do not, because
+  they go through the catalogue's compiler.
+* **An imported single-sided part draws inside out** under CNA's default cull
+  (CNA-F15). The derived cars and people carry reversed winding for it, and
+  any other single-sided import will need the same.
 * **The far skyline is blocks with printed façades.** The blocks that line the
   two streets past the modelled frontage now carry real window recesses,
   shopfronts and cornices; the scatter of taller blocks beyond them, 240 m out,
@@ -864,7 +950,12 @@ scripts/fetch-assets.sh     fetches and verifies every declared external file
 scripts/validate-assets.py  the licence gate, also a CTest test
 scripts/manifest-tool.py    reads the manifest for the build and the fetch
 scripts/prepare-surfaces.py turns scanned PBR sets into catalogue surfaces
-scripts/blender-tree-lod.py cuts the hero tree's levels of detail, in Blender
+scripts/blender-tree-lod.py cuts a tree's levels of detail, in Blender
+scripts/blender-vehicles.py normalises a downloaded car into two levels of detail, in Blender
+scripts/blender-people.py   builds the people from MakeHuman with MPFB, in Blender
+scripts/blender-vehicle-preview.py
+                            renders a model's orientation views, for checking a download
+scripts/polyhaven-fetch.py  fetches a Poly Haven model and prints its manifest entry
 scripts/glb-mask-leaves.py  makes an exported tree's leaves alpha-masked
 scripts/attribution-table.py
                             generates the tables in assets/ATTRIBUTION.md
@@ -881,6 +972,7 @@ docs/screenshots/           the named viewpoints
 docs/visual-overhaul/       the first visual overhaul: audit, comparisons, report
 docs/visual-overhaul-2/     the second pass: before and after, night, report
 docs/visual-overhaul-3/     the third pass: scans, props, trees, light
+docs/visual-overhaul-4/     the fourth pass: authored cars, people, trees, depth, the hero cafe
 plan.md                     what is done, what is next
 ```
 
