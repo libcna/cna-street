@@ -20,14 +20,15 @@
 
     "sunElevationDegrees": 48.0,
     "sunAzimuthDegrees": 250.0,
-    "sunIntensity": 3.0,
+    "sunIntensity": 4.2,
+    "skyIntensity": 0.85,
     "imageBasedLighting": true,
     "skyTurbidity": 2.9,
     "clouds": true,
     "cloudCoverage": 0.45,
 
     "hdr": true,
-    "exposure": 0.42,
+    "exposure": 0.9,
     "tonemap": 2,
     "bloom": true,
     "ssao": true,
@@ -36,6 +37,7 @@
 
     "reflectionProbes": true,
     "probeIrradiance": true,
+    "probeBounceGain": 1.6,
     "probeSpacing": 24.0,
     "probeFaceSize": 64,
 

@@ -74,6 +74,10 @@ struct ReflectionProbe
 {
     Microsoft::Xna::Framework::Vector3 position;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> environment;
+    /// The same capture multiplied by `RenderSettings::probeBounceGain`, which
+    /// the irradiance is convolved from: a capture holds one bounce of light
+    /// and a street canyon's ambient is several.
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> bounced;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> prefiltered;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> irradiance;
     int prefilteredMips = 5;

@@ -1172,9 +1172,24 @@ void SceneRenderer::captureProbe(ReflectionProbe& probe, RenderTarget2D& target,
     }
 
     probe.environment = std::make_unique<TextureCube>(device_, size, false, SurfaceFormat::Color);
+    // The capture again, brighter, for the irradiance alone. What the probe
+    // saw is one bounce: the sunlit facade opposite, the sky between the
+    // eaves, the shaded wall beside it lit by that sky. What that shaded wall
+    // also receives -- the light the sunlit facade throws onto it, and the
+    // light it throws back -- is not in any single capture, and in a canyon of
+    // light render it is most of the ambient. The gain stands in for the
+    // bounces that were not rendered; the specular keeps the plain capture,
+    // because a reflection is a picture and a picture is not brightened by
+    // the light behind the camera.
+    const float bounceGain = std::clamp(settings.probeBounceGain, 1.0f, 3.0f);
+    const bool  bounced    = bounceGain > 1.001f && settings.probeIrradiance;
+    probe.bounced = bounced ? std::make_unique<TextureCube>(device_, size, false,
+                                                             SurfaceFormat::Color)
+                            : nullptr;
     const std::size_t count = static_cast<std::size_t>(size) * static_cast<std::size_t>(size);
     std::vector<Color> captured(count, Color::Black);
     std::vector<Color> face(count, Color::Black);
+    std::vector<Color> bright(bounced ? count : 0, Color::Black);
     const float cubeScale = sky_.environmentScale();
 
     for (int f = 0; f < 6; ++f)
@@ -1205,8 +1220,14 @@ void SceneRenderer::captureProbe(ReflectionProbe& probe, RenderTarget2D& target,
                 face[at] = Color(static_cast<int>(EncodeCube(r, cubeScale)),
                                  static_cast<int>(EncodeCube(g, cubeScale)),
                                  static_cast<int>(EncodeCube(b, cubeScale)), 255);
+                if (bounced)
+                    bright[at] = Color(static_cast<int>(EncodeCube(r * bounceGain, cubeScale)),
+                                       static_cast<int>(EncodeCube(g * bounceGain, cubeScale)),
+                                       static_cast<int>(EncodeCube(b * bounceGain, cubeScale)),
+                                       255);
             }
         probe.environment->SetData(which, face.data(), static_cast<int>(count));
+        if (bounced) probe.bounced->SetData(which, bright.data(), static_cast<int>(count));
     }
 
     lightScale_     = 1.0f;
@@ -1273,7 +1294,9 @@ void SceneRenderer::bakeReflectionProbes(std::vector<Vector3> positions,
             probe->prefiltered = processor.generatePrefilteredSpecular(
                 probe->environment.get(), size, probe->prefilteredMips, prefilterSamples);
             if (settings.probeIrradiance)
-                probe->irradiance = processor.generateIrradiance(probe->environment.get(), 16, 24);
+                probe->irradiance = processor.generateIrradiance(
+                    probe->bounced != nullptr ? probe->bounced.get() : probe->environment.get(),
+                    16, 24);
         }
         catch (const std::exception& failure)
         {

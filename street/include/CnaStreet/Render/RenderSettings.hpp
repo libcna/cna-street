@@ -83,7 +83,7 @@ struct RenderSettings
     /// with a bug in it. Three degrees is about when a street stops being lit
     /// by the sky.
     [[nodiscard]] bool nightLighting() const { return sunElevationDegrees < 3.0f; }
-    float sunIntensity        = 3.0f;
+    float sunIntensity        = 4.2f;
     /// Image based lighting from the baked sky cubemap. Off falls back to a
     /// hemisphere ambient term, which is also what a renderer without IBL gets.
     bool  imageBasedLighting  = true;
@@ -94,14 +94,14 @@ struct RenderSettings
     /// the stand-in would count the same occlusion twice.
     float iblIntensity        = 1.0f;
     float skyTurbidity        = 2.9f;
-    float skyIntensity        = 1.0f;
+    float skyIntensity         = 0.85f;
     bool  clouds = true;
     float cloudCoverage = 0.45f;
     float cloudSpeed = 0.006f;
 
     // --- post processing ---
     bool  hdr = true;
-    float exposure = 0.42f;
+    float exposure = 0.90f;
     /// 0 none / 1 Reinhard / 2 ACES / 3 filmic, mapped onto TonemappingMode.
     int   tonemap = 2;
     bool  bloom = true;
@@ -132,6 +132,13 @@ struct RenderSettings
     /// open hemisphere does and is lit the rest of the way by the sunlit
     /// facade opposite; the probe has both, the sky cube has neither.
     bool  probeIrradiance = true;
+    /// Multiplies what a probe captured before its irradiance is convolved.
+    /// A capture is one bounce: the sunlit facade opposite is in it, the light
+    /// that facade throws onto the one beside it is not, and a street canyon
+    /// in light render is a place where most of the ambient light has bounced
+    /// more than once. 1.6 is about the geometric series for walls of 0.45
+    /// albedo seeing half a hemisphere of each other.
+    float probeBounceGain = 1.6f;
     /// Distance between probes along a carriageway, in metres.
     float probeSpacing = 24.0f;
     /// Edge length of one captured cube face, in pixels. 64 resolves a car

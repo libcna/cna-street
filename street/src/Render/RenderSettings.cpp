@@ -133,6 +133,7 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"fogFalloff", &s.fogFalloff},
         {"lightShafts", &s.lightShafts}, {"ssr", &s.ssr}, {"depthOfField", &s.depthOfField},
         {"reflectionProbes", &s.reflectionProbes}, {"probeIrradiance", &s.probeIrradiance},
+        {"probeBounceGain", &s.probeBounceGain},
         {"probeSpacing", &s.probeSpacing}, {"probeFaceSize", &s.probeFaceSize},
 
         {"traffic", &s.traffic}, {"pedestrians", &s.pedestrians},

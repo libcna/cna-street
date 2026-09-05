@@ -495,6 +495,12 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
                                        * skyIntensity_;
                     const float fade = std::clamp(-direction.Y * 2.2f, 0.0f, 1.0f);
                     radiance = up * (0.17f + 0.05f * (1.0f - fade));
+                    // And the sun on that ground. Asphalt and paving under a
+                    // high sun throw back a tenth of it, and that tenth is what
+                    // lights the underside of a car and the soffit of a shop
+                    // front: without it both were lit by a sky they cannot see.
+                    const float sunOnGround = std::clamp(sunDirection_.Y, 0.0f, 1.0f);
+                    radiance = radiance + sunColour_ * (0.12f / MathHelper::Pi) * sunOnGround;
                 }
 
                 // Urban inter-reflection. Half a street's ambient light is the
