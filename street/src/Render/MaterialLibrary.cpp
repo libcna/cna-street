@@ -945,20 +945,26 @@ void MaterialLibrary::build(std::uint32_t seed)
         install(MaterialId::CarTyre, "car-tyre", [&] { return TextureFactory::flat(8, tyreRgb, 0.92f, 0.0f); },
                 pbr(0.92f, 0.0f));
 
-        Material rear = pbr(0.22f, 0.0f);
+        // A glossy red lens with a little glow in it even by day, so the
+        // cluster reads as a lamp and not as red paint.
+        Material rear = pbr(0.12f, 0.0f);
         rear.baseColour     = Srgb(150, 22, 20);
-        rear.emissiveFactor = Vector3(0.35f, 0.02f, 0.01f);
+        rear.emissiveFactor = Vector3(0.22f, 0.012f, 0.008f);
         float rearRgb[3];
         Rgb(rearRgb, rear.baseColour);
         install(MaterialId::CarLightRear, "car-light-rear",
-                [&] { return TextureFactory::flat(8, rearRgb, 0.22f, 0.0f); }, rear);
+                [&] { return TextureFactory::flat(8, rearRgb, 0.12f, 0.0f); }, rear);
 
-        Material front = pbr(0.10f, 0.0f);
-        front.baseColour = Vector3(0.82f, 0.84f, 0.86f);
+        // A headlamp is a clear lens over a chromed reflector bowl: from
+        // outside it is dark silver with a bright highlight in it, not a white
+        // panel. Half metal at a low roughness, so what it shows is a
+        // reflection of the street, and pale (0.82) it was a white sticker.
+        Material front = pbr(0.16f, 0.5f);
+        front.baseColour = Vector3(0.44f, 0.46f, 0.49f);
         float frontRgb[3];
         Rgb(frontRgb, front.baseColour);
         install(MaterialId::CarLightFront, "car-light-front",
-                [&] { return TextureFactory::flat(8, frontRgb, 0.10f, 0.0f); }, front);
+                [&] { return TextureFactory::flat(8, frontRgb, 0.16f, 0.5f); }, front);
 
         // Everything you see *through* the glass. A car's cabin is a dark
         // grey-brown, and its exact colour matters far less than the fact that

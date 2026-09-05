@@ -355,6 +355,65 @@ Panel PanelFor(const VehicleDimensions& d, int band, float z)
     return Panel::Paint;
 }
 
+/// A lamp that wraps around the corner of the wing. The difference between a
+/// car and a box with stickers on it, and nearly free: the lamp follows the
+/// same plan-view curve the body does, so it is a short strip of the section
+/// rather than a rectangle bolted to the nose. @p surround, when given, takes a
+/// dark bezel a centimetre outside the lens on every side; @p push is how far
+/// the lens stands off the body, so a brake lens can sit two millimetres over
+/// the tail lens it lights.
+void LampStrip(const VehicleDimensions& d, MeshBuilder& lens, MeshBuilder* surround, float endZ,
+               float depth, float centreY, float halfHeight, float outerFrac, float innerFrac,
+               float side, float push)
+{
+    constexpr int kSteps = 5;
+    Vector3 outerLo[kSteps + 1], outerHi[kSteps + 1];
+    for (int i = 0; i <= kSteps; ++i)
+    {
+        const float f  = static_cast<float>(i) / kSteps;
+        const float t  = Lerp(innerFrac, outerFrac, f);
+        // Along the end face, then wrapping back down the flank as the plan
+        // view closes in.
+        const float z  = endZ - depth * f * f;
+        const float hw = d.halfWidth.at(z);
+        const float x  = side * hw * t;
+        const float dy = halfHeight * (1.0f - 0.35f * f * f);
+        outerLo[i] = Vector3(x, centreY - dy, z);
+        outerHi[i] = Vector3(x, centreY + dy, z);
+    }
+    const Vector3 facing(side * 0.4f, 0.0f, endZ > 0.0f ? 1.0f : -1.0f);
+    for (int i = 0; i < kSteps; ++i)
+    {
+        const Vector3 out(0.0f, 0.0f, endZ > 0.0f ? push : -push);
+        lens.addQuadFacing(outerLo[i] + out, outerLo[i + 1] + out, outerHi[i + 1] + out,
+                           outerHi[i] + out, facing);
+        if (surround == nullptr) continue;
+        // A dark surround a centimetre outside the lens on every side.
+        const Vector3 grow(0.0f, 0.022f, 0.0f);
+        surround->addQuadFacing(outerLo[i] - grow, outerLo[i + 1] - grow, outerHi[i + 1] + grow,
+                                outerHi[i] + grow, facing);
+    }
+}
+
+/// Where the lamps sit on a class, so the body, the tail lenses and the brake
+/// lenses that light over them are placed by one function and cannot drift.
+struct LampLayout
+{
+    float headY, tailY, headHW, tailHW;
+};
+
+LampLayout LampsFor(const VehicleDimensions& d)
+{
+    const float noseZ = d.frontZ();
+    const float tailZ = d.rearZ();
+    LampLayout out;
+    out.headY  = d.belt.at(noseZ - 0.30f) - (d.panelSides ? 0.30f : 0.20f);
+    out.tailY  = d.belt.at(tailZ + 0.30f) - (d.panelSides ? 0.34f : 0.14f);
+    out.headHW = d.halfWidth.at(noseZ - 0.12f);
+    out.tailHW = d.halfWidth.at(tailZ + 0.12f);
+    return out;
+}
+
 /// A ring of section points as a 3-D polygon at one station, for the end caps.
 std::vector<Vector3> Ring(const Vector2* section, float z)
 {
@@ -700,19 +759,17 @@ void VehicleFactory::buildWheel(GeometryCollector& collector, VehicleType type,
 
 void VehicleFactory::buildBrakeLamps(GeometryCollector& collector, VehicleType type) const
 {
+    // The same two strips the body carries, three millimetres over them, drawn
+    // with the lit material while the car brakes. They used to be a pair of
+    // boxes 34 cm wide and 14 cm proud of the bumper, which lit up as two red
+    // slabs bolted to the back of every braking car on the street.
     const VehicleDimensions d = dimensionsFor(type);
-    const float tailZ  = d.rearZ();
-    const float tailY  = d.belt.at(tailZ + 0.30f) - (d.panelSides ? 0.34f : 0.14f);
-    const float tailHW = d.halfWidth.at(tailZ + 0.12f);
-
+    const LampLayout lamps = LampsFor(d);
     MeshBuilder& lamp = collector.builder(&materials_.get(MaterialId::CarLightRear));
     lamp.setTileSize(0.32f);
     for (const float side : {-1.0f, 1.0f})
-    {
-        const float tx = side * (tailHW - 0.17f);
-        lamp.addBox(Vector3(tx - 0.168f, tailY - 0.098f, tailZ + 0.001f),
-                    Vector3(tx + 0.168f, tailY + 0.118f, tailZ + 0.142f));
-    }
+        LampStrip(d, lamp, nullptr, d.rearZ(), 0.26f, lamps.tailY, 0.072f, 0.955f, 0.60f, side,
+                  0.013f);
 }
 
 // ---------------------------------------------------------------------------
@@ -885,50 +942,28 @@ void VehicleFactory::build(GeometryCollector& collector, VehicleType type,
 
     const float noseZ  = d.frontZ();
     const float tailZ  = d.rearZ();
-    const float headY  = d.belt.at(noseZ - 0.30f) - (d.panelSides ? 0.30f : 0.20f);
-    const float tailY  = d.belt.at(tailZ + 0.30f) - (d.panelSides ? 0.34f : 0.14f);
-    const float headHW = d.halfWidth.at(noseZ - 0.12f);
-    const float tailHW = d.halfWidth.at(tailZ + 0.12f);
-
-    // A lamp that wraps around the corner of the wing is the difference between
-    // a car and a box with stickers on it, and it is nearly free: the lamp
-    // follows the same plan-view curve the body does, so it is a short strip of
-    // the section rather than a rectangle bolted to the nose.
-    const auto lampStrip = [&](MeshBuilder& lens, MeshBuilder& surround, float endZ, float depth,
-                               float centreY, float halfHeight, float outerFrac, float innerFrac,
-                               float side) {
-        constexpr int kSteps = 5;
-        Vector3 outerLo[kSteps + 1], outerHi[kSteps + 1];
-        for (int i = 0; i <= kSteps; ++i)
-        {
-            const float f  = static_cast<float>(i) / kSteps;
-            const float t  = Lerp(innerFrac, outerFrac, f);
-            // Along the end face, then wrapping back down the flank as the plan
-            // view closes in.
-            const float z  = endZ - depth * f * f;
-            const float hw = d.halfWidth.at(z);
-            const float x  = side * hw * t;
-            const float dy = halfHeight * (1.0f - 0.35f * f * f);
-            outerLo[i] = Vector3(x, centreY - dy, z);
-            outerHi[i] = Vector3(x, centreY + dy, z);
-        }
-        for (int i = 0; i < kSteps; ++i)
-        {
-            const Vector3 push(0.0f, 0.0f, endZ > 0.0f ? 0.010f : -0.010f);
-            lens.addQuadFacing(outerLo[i] + push, outerLo[i + 1] + push, outerHi[i + 1] + push,
-                               outerHi[i] + push, Vector3(side * 0.4f, 0.0f, endZ > 0.0f ? 1.0f : -1.0f));
-            // A dark surround a centimetre outside the lens on every side.
-            const Vector3 grow(0.0f, 0.022f, 0.0f);
-            surround.addQuadFacing(outerLo[i] - grow, outerLo[i + 1] - grow, outerHi[i + 1] + grow,
-                                   outerHi[i] + grow,
-                                   Vector3(side * 0.4f, 0.0f, endZ > 0.0f ? 1.0f : -1.0f));
-        }
-    };
+    const LampLayout lamps = LampsFor(d);
+    const float headY  = lamps.headY;
+    const float tailY  = lamps.tailY;
+    const float headHW = lamps.headHW;
+    const float tailHW = lamps.tailHW;
 
     for (const float side : {-1.0f, 1.0f})
     {
-        lampStrip(head, trim, noseZ, 0.30f, headY, 0.082f, 0.965f, 0.42f, side);
-        lampStrip(tail, trim, tailZ, 0.26f, tailY, 0.105f, 0.955f, 0.52f, side);
+        // Headlamps: a strip wrapping the wing, and inside its outline a
+        // smaller bright unit -- the reflector bowl -- set into a dark housing,
+        // so the lamp reads as a lamp with a lens over it and not as a white
+        // sticker.
+        LampStrip(d, head, &trim, noseZ, 0.30f, headY, 0.072f, 0.965f, 0.44f, side, 0.010f);
+        LampStrip(d, trim, nullptr, noseZ, 0.30f, headY, 0.052f, 0.93f, 0.50f, side, 0.014f);
+        LampStrip(d, head, nullptr, noseZ, 0.30f, headY, 0.034f, 0.90f, 0.56f, side, 0.018f);
+        // Tail lamps: shorter and shallower than they were. A rear lamp is a
+        // horizontal cluster a hand tall; at 21 cm it filled the whole back
+        // panel and the car read as a toy.
+        LampStrip(d, tail, &trim, tailZ, 0.26f, tailY, 0.072f, 0.955f, 0.60f, side, 0.010f);
+        // A pale reversing/indicator segment in the lower inboard corner.
+        LampStrip(d, head, nullptr, tailZ, 0.10f, tailY - 0.030f, 0.026f, 0.72f, 0.62f, side,
+                  0.013f);
     }
 
     // --- grille, intake, bumper --------------------------------------------
@@ -938,11 +973,39 @@ void VehicleFactory::build(GeometryCollector& collector, VehicleType type,
     const float grilleY  = headY + 0.015f;
     const float noseSill = d.rocker.at(noseZ - 0.35f);
     const float tailSill = d.rocker.at(tailZ + 0.35f);
-    trim.addBox(Vector3(-headHW * 0.40f, grilleY - 0.070f, noseZ - 0.13f),
-                Vector3(headHW * 0.40f, grilleY + 0.080f, noseZ + 0.004f));
+    // The grille: a dark recess between the headlamps with bright horizontal
+    // slats across it and a badge in the middle. A plain black rectangle read
+    // as a mouth.
+    const float grilleHalf = headHW * 0.38f;
+    trim.addBox(Vector3(-grilleHalf, grilleY - 0.062f, noseZ - 0.13f),
+                Vector3(grilleHalf, grilleY + 0.072f, noseZ - 0.010f));
+    {
+        MeshBuilder& bright = collector.builder(&materials_.get(MaterialId::Aluminium));
+        bright.setTileSize(0.3f);
+        for (int slat = 0; slat < 3; ++slat)
+        {
+            const float y = grilleY - 0.040f + static_cast<float>(slat) * 0.038f;
+            bright.addBox(Vector3(-grilleHalf + 0.012f, y, noseZ - 0.012f),
+                          Vector3(grilleHalf - 0.012f, y + 0.010f, noseZ + 0.002f));
+        }
+        // The frame around the grille and the badge.
+        bright.addBox(Vector3(-grilleHalf - 0.008f, grilleY - 0.070f, noseZ - 0.012f),
+                      Vector3(grilleHalf + 0.008f, grilleY - 0.062f, noseZ + 0.004f));
+        bright.addBox(Vector3(-grilleHalf - 0.008f, grilleY + 0.072f, noseZ - 0.012f),
+                      Vector3(grilleHalf + 0.008f, grilleY + 0.080f, noseZ + 0.004f));
+        bright.addDiscFacing(Vector3(0.0f, grilleY + 0.006f, noseZ + 0.006f),
+                             Vector3(0.0f, 0.0f, 1.0f), 0.036f, 12);
+    }
     // The lower intake, wide and shallow, set into the bumper.
     trim.addBox(Vector3(-headHW * 0.62f, noseSill + 0.10f, noseZ - 0.15f),
                 Vector3(headHW * 0.62f, noseSill + 0.27f, noseZ - 0.004f));
+    // The roof aerial, a stub at the back of the roof on cars.
+    if (!d.panelSides && full)
+    {
+        const float az = d.backlightTopZ + 0.18f;
+        trim.addCylinder(Vector3(0.0f, d.roof.at(az) - 0.002f, az), 0.012f, 0.006f, 0.075f, 6,
+                         false, true);
+    }
     // The bumper's own lower edge, front and rear: a band of slightly duller
     // paint that catches a different amount of sky than the panel above it.
     under.addBox(Vector3(-headHW * 0.94f, noseSill - 0.02f, noseZ - 0.34f),
