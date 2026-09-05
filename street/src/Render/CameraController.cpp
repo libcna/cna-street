@@ -32,6 +32,8 @@ constexpr float kGravity = 21.0f;
 constexpr float kStepHeight = 0.42f;
 /// Radius of the walking camera's collision cylinder.
 constexpr float kBodyRadius = 0.32f;
+/// How fast the camera is eased out of something that has driven into it.
+constexpr float kEscapeSpeed = 2.4f;
 
 bool Pressed(const KeyboardState& now, const KeyboardState& before, Keys key)
 {
@@ -56,6 +58,10 @@ void CameraController::setMode(CameraMode mode)
         const float surface = ground_(p.X, p.Z);
         if (surface > -1000.0f)
             camera_->setPosition(Vector3(p.X, surface + Metrics::kEyeHeight, p.Z));
+        // Tab pressed while flying through a parked car must not leave the
+        // camera standing in it. A whole second's worth in one go, which is
+        // enough to clear any vehicle on this street.
+        for (int i = 0; i < 16; ++i) escapeSolids(1.0f / 16.0f);
     }
     if (mode_ == CameraMode::Cinematic) cinematicTime_ = 0.0f;
 }
@@ -145,6 +151,26 @@ void CameraController::moveWithCollision(const Vector3& delta)
         if (!collision_(knee) && !collision_(head)) position = candidate;
     }
     camera_->setPosition(position);
+}
+
+void CameraController::escapeSolids(float deltaSeconds)
+{
+    if (camera_ == nullptr || !escape_ || mode_ != CameraMode::Walk) return;
+    const Vector3 position = camera_->position();
+    // The probe answers about the body, not the eye: a car's roof is at
+    // 1.5 m and an eye at 1.66 m would otherwise stand on the bonnet.
+    const Vector3 body(position.X, position.Y - Metrics::kEyeHeight + 0.95f, position.Z);
+    const Vector3 clear = escape_(body);
+    const float dx = clear.X - body.X, dz = clear.Z - body.Z;
+    const float move = std::sqrt(dx * dx + dz * dz);
+    if (move < 1e-4f) return;
+    // At a brisk walk, never as a jump: being shoved three metres because a
+    // van clipped a shoulder is worse than being inside the van for a
+    // moment. A car doing 8 m/s will out-run this and pass through, which is
+    // the right failure -- the camera ends up behind it, not on its roof.
+    const float allowed = std::min(move, std::max(kEscapeSpeed * deltaSeconds, 0.02f));
+    camera_->setPosition(Vector3(position.X + dx / move * allowed, position.Y,
+                                 position.Z + dz / move * allowed));
 }
 
 void CameraController::update(float deltaSeconds, const KeyboardState& keyboard,
@@ -247,6 +273,9 @@ void CameraController::update(float deltaSeconds, const KeyboardState& keyboard,
         wish = Vector3::Normalize(wish) * (speed * dt);
         moveWithCollision(wish);
     }
+
+    // --- out of anything that drove into you --------------------------------
+    escapeSolids(dt);
 
     // --- walking on the ground ----------------------------------------------
     if (mode_ == CameraMode::Walk && ground_)

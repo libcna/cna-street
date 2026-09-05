@@ -101,8 +101,18 @@ public:
 
     /// Height of the walkable surface, for the walking camera.
     [[nodiscard]] float groundHeight(float x, float z) const;
-    /// Whether a point is inside something solid.
+    /// Whether a point is inside something solid: a building, a vehicle, or
+    /// one of the things in the footway with enough mass to stop somebody.
     [[nodiscard]] bool isSolid(const Microsoft::Xna::Framework::Vector3& point) const;
+    /// The nearest point outside any vehicle @p point is inside. The walking
+    /// camera cannot walk into a car; a car can still drive into it, and this
+    /// is how it gets its space back rather than being carried down the road.
+    [[nodiscard]] Microsoft::Xna::Framework::Vector3 pushOutOfSolids(
+        const Microsoft::Xna::Framework::Vector3& point) const;
+    /// The walking camera's own radius, which is what the solids above are
+    /// grown by. Half a shoulder plus a little: 0.32 m is the figure the
+    /// camera controller has always used for a building.
+    static constexpr float kWalkerRadius = 0.32f;
 
 private:
     /// Uploads one collector's batches and registers them with the renderer.
@@ -186,6 +196,11 @@ private:
     /// fetched, which is the same contract the compiled surfaces have.
     void buildShopDisplays(const RenderSettings& settings);
     void buildTrafficAndPeople(const RenderSettings& settings);
+    /// The people in the moving cars. Rigid, one piece, and only drawn while
+    /// the cabin is close enough to see into.
+    void buildDrivers(const RenderSettings& settings);
+    /// Where a driver sits in a vehicle of this class, in the car's own frame.
+    [[nodiscard]] static Microsoft::Xna::Framework::Matrix driverSeat(const Vehicle& vehicle);
     /// Switches on everything in the catalogue that is a lamp rather than a
     /// surface. Called once, before anything is built, when the sun is down.
     void lightTheStreet(const RenderSettings& settings);
@@ -206,6 +221,25 @@ private:
     /// composed bakery-cafe, and the scanned props its interior asked for.
     int heroPlot_ = -1;
     std::vector<HeroProp> heroProps_;
+
+    /// One thing in the street a walker cannot pass through, as an upright
+    /// cylinder: a lamp column, a signal post, a bollard, a bin, a hydrant,
+    /// a cabinet, a bench, a planter, a tree. Recorded where each is placed,
+    /// because that is the only place that knows what a transform means.
+    struct Obstacle
+    {
+        Microsoft::Xna::Framework::Vector2 centre{0.0f, 0.0f};
+        float radius = 0.2f;
+        float base = 0.0f;
+        float top = 2.0f;
+    };
+    std::vector<Obstacle> obstacles_;
+    /// Records one, from a placement transform.
+    void addObstacle(const Microsoft::Xna::Framework::Matrix& at, float radius, float height,
+                     float base = 0.0f);
+    /// Records one for every copy in a placement list.
+    void addObstacles(const std::vector<Microsoft::Xna::Framework::Matrix>& at, float radius,
+                      float height, float base = 0.0f);
 
     std::vector<std::unique_ptr<GpuMesh>> meshes_;
     std::vector<Viewpoint> viewpoints_;
@@ -265,6 +299,10 @@ private:
         std::vector<Wheel> wheels;
         float wheelRadius = 0.32f;
         float length = 4.4f;
+        /// The model's own width and height, which is the solid a walker
+        /// meets: a Sprinter is not a hatchback to walk into.
+        float width  = 1.8f;
+        float height = 1.5f;
         VehicleType nearest = VehicleType::Hatchback;
         /// Only a model whose wheels came out of the file separately can be
         /// driven; one that did not stays parked.
@@ -275,6 +313,11 @@ private:
     /// vehicle is drawn as, or -1 for the loft.
     std::vector<int> heroForVehicle_;
     int movingHeroes_ = 0;
+    /// The people in the cars: a few rigid seated figures, and which one each
+    /// moving vehicle carries (-1 for a parked one, which is empty).
+    std::vector<PropMesh> driverMeshes_;
+    std::vector<int> driverForVehicle_;
+
     /// The far level of detail of each street tree, kept for the district
     /// beyond the modelled frontage, which plants the same trees at the same
     /// pitch and never gets close enough to want the near one.
