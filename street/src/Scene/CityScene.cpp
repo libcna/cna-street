@@ -676,38 +676,66 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
     // shadow is a texel.
     if (settings.vegetation && !farTrees_.empty())
     {
-        std::vector<std::vector<Matrix>> treeAt(farTrees_.size());
+        // The same species as the street itself, at their far level of
+        // detail, so the planting does not change generation at the point
+        // where the modelling stops. Where no scan was fetched these are the
+        // generated far copies, which is what they always were.
+        std::vector<const PropMesh*> kinds;
+        for (const PropMesh& scanned : farHeroTrees_)
+            if (!scanned.empty()) kinds.push_back(&scanned);
+        if (kinds.empty())
+            for (const PropMesh& generated : farTrees_) kinds.push_back(&generated);
+        std::vector<std::vector<Matrix>> treeAt(kinds.size());
         const float treeX = M::kMainCarriagewayWidth * 0.5f + 0.85f;
         for (const float sign : {-1.0f, 1.0f})
             for (float z = M::kMainStreetHalfLength + 8.0f; z < 312.0f; z += 12.0f)
             {
                 if (!rng.chance(0.80f)) continue;
                 for (const float side : {-1.0f, 1.0f})
-                    treeAt[rng.index(farTrees_.size())].push_back(
-                        Place(side * treeX, M::kCurbHeight, sign * z,
-                              rng.range(0.0f, MathHelper::TwoPi)));
-            }
-        for (std::size_t i = 0; i < farTrees_.size(); ++i)
-            placeProp(farTrees_[i], treeAt[i], "context-tree", 0.0f, 0.0f, false);
-    }
-    if (settings.traffic && !vehicleMeshes_.empty())
-    {
-        std::vector<std::vector<Matrix>> carAt(vehicleMeshes_.size());
-        const float bayX = M::kMainCarriagewayWidth * 0.5f - M::kParkingLaneWidth * 0.5f;
-        for (const float sign : {-1.0f, 1.0f})
-            for (float z = M::kMainStreetHalfLength + 4.0f; z < 316.0f; z += M::kParkingBayLength + 0.6f)
-            {
-                for (const float side : {-1.0f, 1.0f})
                 {
-                    if (!rng.chance(0.62f)) continue;
-                    // Parked with the traffic on its side of the road.
-                    const float yaw = side > 0.0f ? 0.0f : MathHelper::Pi;
-                    carAt[rng.index(vehicleMeshes_.size())].push_back(
-                        Place(side * bayX, 0.0f, sign * (z + rng.signed_(0.4f)), yaw));
+                    const std::size_t kind = rng.index(kinds.size());
+                    treeAt[kind].push_back(
+                        Matrix::CreateScale(kind < farHeroScale_.size() ? farHeroScale_[kind] : 1.0f)
+                        * Place(side * treeX, M::kCurbHeight, sign * z,
+                                rng.range(0.0f, MathHelper::TwoPi)));
                 }
             }
-        for (std::size_t i = 0; i < vehicleMeshes_.size(); ++i)
-            placeProp(vehicleMeshes_[i].distantBody, carAt[i], "context-car", 0.0f, 0.0f, false);
+        for (std::size_t i = 0; i < kinds.size(); ++i)
+            placeProp(*kinds[i], treeAt[i], "context-tree", 300.0f, 0.0f, false);
+    }
+    if (settings.traffic)
+    {
+        // The same eight authored cars at their far level of detail, not the
+        // lofts. It is a *cheaper* street as well as a better one: eight
+        // models of four primitives is thirty-two draw calls where twelve
+        // lofts of nine were a hundred and eight, and a far copy is fifteen
+        // thousand triangles that only ever draws past a hundred and thirty
+        // metres. The lofts stay for a tree that has fetched no models.
+        std::vector<const PropMesh*> kinds;
+        for (const HeroVehicleMesh& hero : heroVehicleMeshes_)
+            if (!hero.far.empty()) kinds.push_back(&hero.far);
+        if (kinds.empty())
+            for (const VehicleMesh& loft : vehicleMeshes_) kinds.push_back(&loft.distantBody);
+        if (!kinds.empty())
+        {
+            std::vector<std::vector<Matrix>> carAt(kinds.size());
+            const float bayX = M::kMainCarriagewayWidth * 0.5f - M::kParkingLaneWidth * 0.5f;
+            for (const float sign : {-1.0f, 1.0f})
+                for (float z = M::kMainStreetHalfLength + 4.0f; z < 316.0f;
+                     z += M::kParkingBayLength + 0.6f)
+                {
+                    for (const float side : {-1.0f, 1.0f})
+                    {
+                        if (!rng.chance(0.62f)) continue;
+                        // Parked with the traffic on its side of the road.
+                        const float yaw = side > 0.0f ? 0.0f : MathHelper::Pi;
+                        carAt[rng.index(kinds.size())].push_back(
+                            Place(side * bayX, 0.0f, sign * (z + rng.signed_(0.4f)), yaw));
+                    }
+                }
+            for (std::size_t i = 0; i < kinds.size(); ++i)
+                placeProp(*kinds[i], carAt[i], "context-car", 300.0f, 0.0f, false);
+        }
     }
 }
 
@@ -1644,6 +1672,8 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
         }));
     }
     farTrees_ = distantTrees;
+    farHeroTrees_.clear();
+    farHeroScale_.clear();
     const PropMesh scruff = makeProp("ground-scruff", [&](GeometryCollector& c) {
         props.groundScruff(c, rng, 0.72f, 7);
     });
@@ -1698,12 +1728,28 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
          40.0f, "tree-hero-jacaranda"},
     };
     const bool haveHero = !heroSpecies[0].near.empty();
-    // The hero corridor is the whole main street within eighty metres of the
-    // junction, both footways: everything the showcase cameras see at a
-    // distance where a leaf card reads as a leaf card.
+    for (const HeroSpecies& kind : heroSpecies)
+    {
+        farHeroTrees_.push_back(kind.far);
+        farHeroScale_.push_back((kind.scaleMin + kind.scaleMax) * 0.5f);
+    }
+    // Every pit on the main street gets a scanned tree, not just the ones in
+    // the hero corridor. The generated trees were a different green and a
+    // different silhouette -- a ball on a stick beside a scanned crown -- and
+    // a row of them starting at eighty metres was the most legible thing in
+    // the frame saying where the modelling stopped. They stay as the fallback
+    // for a tree that has fetched no scans, and nowhere else.
+    //
+    // Two rings, for the reason the parked cars have four: a level of detail
+    // is decided once per instance group, so one tree at three metres would
+    // otherwise draw every tree on the street at its full sixty-seven
+    // thousand triangles. Ring 0 is the hero corridor and carries the near
+    // mesh with its far copy behind it; ring 1 is everything beyond and is
+    // registered with the far mesh alone, since nothing gets close to it.
     auto heroPit = [](const Vector3& p) {
-        return std::fabs(p.X) < M::kMainStreetHalfWidth + 1.0f && p.Z > -70.0f && p.Z < 84.0f;
+        return std::fabs(p.X) < M::kMainStreetHalfWidth + 1.0f;
     };
+    auto pitRing = [](const Vector3& p) { return p.Z > -70.0f && p.Z < 84.0f ? 0 : 1; };
     // Which species a pit gets: the west footway north of the junction, where
     // the close viewpoints stand, keeps the small tree with an island tree
     // every third pit; the east footway alternates the two bigger species,
@@ -1722,7 +1768,7 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     std::vector<std::vector<Matrix>> treeAt(kTreeVariants);
     std::vector<std::vector<Matrix>> planterAt(planters.size());
     std::vector<Matrix> grateAt, scruffAt;
-    std::vector<Matrix> heroAt[3];
+    std::vector<Matrix> heroAt[3][2];
     int heroOrdinal[4] = {0, 0, 0, 0};
 
     for (const FootwayRun& run : layout_.footways())
@@ -1768,10 +1814,9 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
                     int species = speciesFor(p, heroOrdinal[quadrant]++);
                     if (!speciesReady(species)) species = 0;
                     const HeroSpecies& kind = heroSpecies[species];
-                    heroAt[species].push_back(
+                    heroAt[species][pitRing(p)].push_back(
                         Matrix::CreateScale(kind.scaleMin + (kind.scaleMax - kind.scaleMin) * scale)
                         * Place(p.X, p.Y, p.Z, yaw));
-
                 }
                 else
                     treeAt[static_cast<std::size_t>(variant)].push_back(Place(p.X, p.Y, p.Z, yaw));
@@ -1817,16 +1862,25 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     // The same tree at a quarter of the geometry past 55 m -- cut by the same
     // script from the same source, so the crown keeps its shape across the
     // switch rather than popping to a different tree.
+    int planted[3] = {0, 0, 0};
     for (int species = 0; species < 3; ++species)
     {
         const HeroSpecies& kind = heroSpecies[species];
-        placeProp(kind.near, heroAt[species], kind.name, cull, shade, /*castsShadow=*/true,
+        placeProp(kind.near, heroAt[species][0], kind.name, cull, shade, /*castsShadow=*/true,
                   kind.far.empty() ? nullptr : &kind.far, kind.lod);
-        buildStats_.trees += static_cast<int>(heroAt[species].size());
+        // Beyond the corridor: the far copy and nothing else. It is the mesh
+        // that would have been chosen there anyway, and registering it on its
+        // own means a camera in the corridor cannot promote it.
+        if (!kind.far.empty())
+            placeProp(kind.far, heroAt[species][1], std::string(kind.name) + "-far", cull,
+                      shade * 0.5f, /*castsShadow=*/true);
+        planted[species] = static_cast<int>(heroAt[species][0].size()
+                                            + heroAt[species][1].size());
+        buildStats_.trees += planted[species];
     }
-    CNA::Logger::Info("cna-street: hero trees -- " + std::to_string(heroAt[0].size())
-                      + " small, " + std::to_string(heroAt[1].size()) + " island, "
-                      + std::to_string(heroAt[2].size()) + " jacaranda");
+    CNA::Logger::Info("cna-street: scanned trees -- " + std::to_string(planted[0])
+                      + " small, " + std::to_string(planted[1]) + " island, "
+                      + std::to_string(planted[2]) + " jacaranda");
     placeProp(grate, grateAt, "tree-grate", cull * 0.35f, 0.0f, false);
     for (std::size_t i = 0; i < planters.size(); ++i)
         placeProp(planters[i], planterAt[i], "planter-" + std::to_string(i), cull * 0.5f,

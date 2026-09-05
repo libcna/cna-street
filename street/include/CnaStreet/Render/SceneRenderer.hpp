@@ -274,10 +274,25 @@ private:
     /// Binds @p probe's cubes -- or the sky's, for null -- as the effect's
     /// image-based light, skipping the upload when they are already bound.
     void applyEnvironment(const ReflectionProbe* probe, const RenderSettings& settings);
-    /// Everything that casts, written into the cascade currently open, seen
-    /// from @p eye. Shared by the frame's shadow pass and the probe capture.
-    void drawCasters(const Microsoft::Xna::Framework::Vector3& eye, float split,
-                     float propShadowLimit);
+    /// The ground one cascade covers: the bounding sphere of a slice of the
+    /// camera frustum, grown by how far a caster outside it can still reach
+    /// into it. What a cascade needs is this, not a disc around the camera.
+    struct CascadeVolume
+    {
+        Microsoft::Xna::Framework::Vector3 eye;
+        Microsoft::Xna::Framework::Vector3 centre;
+        float radius = 0.0f;
+        /// How far down the camera's own view this cascade reaches. The
+        /// sphere says *where*, this says *how far*, and a caster has to
+        /// satisfy both: the sphere alone lets the near cascade take in
+        /// everything beside the camera, which is where a street is densest.
+        float split = 0.0f;
+    };
+    [[nodiscard]] CascadeVolume cascadeVolume(const Camera& camera, float nearSplit,
+                                              float farSplit) const;
+    /// Everything that casts into @p volume, written into the cascade
+    /// currently open. Shared by the frame's shadow pass and the probe capture.
+    void drawCasters(const CascadeVolume& volume, float propShadowLimit);
     /// One face of a probe: the sky, then the static scene, from @p view.
     void drawProbeFace(const Microsoft::Xna::Framework::Vector3& eye,
                        const Microsoft::Xna::Framework::Matrix& view,
