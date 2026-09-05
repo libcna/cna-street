@@ -196,6 +196,9 @@ private:
     /// beyond the modelled frontage, which plants the same trees at the same
     /// pitch and never gets close enough to want the near one.
     std::vector<PropMesh> farTrees_;
+    /// Where the street trees stand, so a viewpoint can be aimed at one rather
+    /// than at where one was expected to be.
+    std::vector<Microsoft::Xna::Framework::Vector3> treePositions_;
     /// One skinned figure per appearance variant: its parts, the skeleton the
     /// clips run on, and a rigid stand-in for the shadow pass.
     struct CharacterMesh

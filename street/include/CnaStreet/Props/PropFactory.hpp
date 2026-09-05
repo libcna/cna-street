@@ -71,8 +71,14 @@ public:
     /// A street tree: a tapered trunk with a root flare, a recursive branch
     /// structure, and leaf clusters on the twigs. @p detail below 1 halves the
     /// branching depth and the card count, for the trees at the far end.
+    /// @p foliage overrides the catalogue's leaf material, so one street can
+    /// carry six trees in six slightly different greens.
     void tree(GeometryCollector& collector, Rng& rng, TreeSpecies species, float height,
-              bool fullDetail = true) const;
+              bool fullDetail = true, const Material* foliage = nullptr) const;
+    /// A bicycle, standing on its wheels along local +X with the origin under
+    /// the bottom bracket, leaning a few degrees to +Z the way one leans on a
+    /// stand. @p frameMaterial is the paint.
+    void bicycle(GeometryCollector& collector, const Material* frameMaterial) const;
     /// The pool a street lamp throws on the ground, as a horizontal quad of
     /// @p radius metres. Placed only when the lamps are burning.
     void lightPool(GeometryCollector& collector, float radius) const;

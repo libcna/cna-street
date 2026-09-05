@@ -288,7 +288,7 @@ void PropFactory::busShelter(GeometryCollector& collector) const
 // Vegetation
 // ---------------------------------------------------------------------------
 void PropFactory::tree(GeometryCollector& collector, Rng& rng, TreeSpecies species, float height,
-                       bool fullDetail) const
+                       bool fullDetail, const Material* foliage) const
 {
     MeshBuilder& bark = collector.builder(&materials_.get(MaterialId::Bark));
     bark.setTileSize(0.55f);
@@ -357,7 +357,8 @@ void PropFactory::tree(GeometryCollector& collector, Rng& rng, TreeSpecies speci
         bark.addSurfacePatch(stem);
     }
 
-    MeshBuilder& leaves = collector.builder(&materials_.get(MaterialId::Foliage));
+    MeshBuilder& leaves =
+        collector.builder(foliage != nullptr ? foliage : &materials_.get(MaterialId::Foliage));
     leaves.setUvMode(UvMode::Explicit);
 
     // Where the crown sits, and how big it is. Both are needed below: the first
@@ -527,6 +528,80 @@ void PropFactory::tree(GeometryCollector& collector, Rng& rng, TreeSpecies speci
         MeshBuilder& tie = collector.builder(&materials_.get(MaterialId::PaintedSteelBlack));
         tie.addCylinderBetween(Vector3(sx, 1.42f, 0.0f), Vector3(0.0f, 1.42f, 0.0f), 0.014f, 5);
     }
+}
+
+void PropFactory::bicycle(GeometryCollector& collector, const Material* frameMaterial) const
+{
+    // A city bicycle: two wheels, a diamond frame, a saddle, a rack and
+    // handlebars. Nothing on a street says "people live here" as cheaply as a
+    // bicycle chained to a stand, and at the distance it is seen from it is
+    // the two circles and the triangle between them that carry it.
+    const float wheelR = 0.34f, tyre = 0.020f, tube = 0.017f;
+    const float rearX = -0.53f, frontX = 0.52f;
+    const float lean = 0.10f;   // radians, to +Z, as a bike leant on a stand
+    const Matrix leanFrame = Matrix::CreateRotationX(-lean);
+
+    MeshBuilder& tyres = collector.builder(&materials_.get(MaterialId::CarTyre));
+    tyres.setTileSize(0.3f);
+    MeshBuilder& rims = collector.builder(&materials_.get(MaterialId::Aluminium));
+    rims.setTileSize(0.3f);
+    MeshBuilder& frame = collector.builder(frameMaterial != nullptr
+                                               ? frameMaterial
+                                               : &materials_.get(MaterialId::PaintedSteelDark));
+    frame.setTileSize(0.4f);
+    MeshBuilder& black = collector.builder(&materials_.get(MaterialId::PaintedSteelBlack));
+    black.setTileSize(0.3f);
+
+    const auto at = [&](float x, float y, float z = 0.0f) {
+        return Vector3::Transform(Vector3(x, y, z), leanFrame);
+    };
+    for (const float wx : {rearX, frontX})
+    {
+        const Matrix wheel = Matrix::CreateTranslation(wx, wheelR, 0.0f) * leanFrame;
+        tyres.addTubeArc(wheel, wheelR, tyre, 0.0f, MathHelper::TwoPi, 22, 6);
+        rims.addTubeArc(wheel, wheelR - tyre * 1.6f, 0.008f, 0.0f, MathHelper::TwoPi, 22, 4);
+        // Hub, and a few spokes: three pairs is what the eye needs to read a
+        // wheel as spoked rather than as a disc.
+        rims.addCylinderBetween(at(wx, wheelR, -0.05f), at(wx, wheelR, 0.05f), 0.016f, 8);
+        for (int spoke = 0; spoke < 6; ++spoke)
+        {
+            const float a = MathHelper::TwoPi * static_cast<float>(spoke) / 6.0f + 0.3f;
+            rims.addCylinderBetween(at(wx, wheelR, 0.0f),
+                                    at(wx + std::cos(a) * (wheelR - 0.03f),
+                                       wheelR + std::sin(a) * (wheelR - 0.03f), 0.0f),
+                                    0.003f, 4, false);
+        }
+    }
+    // The frame: bottom bracket, seat tube, top tube, down tube, head tube,
+    // chain stays and seat stays.
+    const Vector3 bb   = at(-0.02f, 0.29f);
+    const Vector3 seat = at(-0.16f, 0.82f);
+    const Vector3 head = at(0.34f, 0.78f);
+    const Vector3 fork = at(frontX, wheelR);
+    const Vector3 rearHub = at(rearX, wheelR);
+    frame.addCylinderBetween(bb, seat, tube, 8);
+    frame.addCylinderBetween(seat, head, tube, 8);
+    frame.addCylinderBetween(bb, head, tube, 8);
+    frame.addCylinderBetween(head, at(0.42f, 0.95f), tube, 8);
+    frame.addCylinderBetween(at(0.40f, 0.88f), fork, tube * 0.85f, 8);
+    for (const float side : {-0.045f, 0.045f})
+    {
+        frame.addCylinderBetween(at(-0.02f, 0.29f, side), at(rearX, wheelR, side), tube * 0.7f, 6);
+        frame.addCylinderBetween(at(-0.16f, 0.82f, side), at(rearX, wheelR, side), tube * 0.7f, 6);
+    }
+    // Saddle on its post, the handlebar across the head, pedals and a chain
+    // ring, and a rack over the back wheel.
+    frame.addCylinderBetween(seat, at(-0.20f, 0.96f), 0.012f, 6);
+    black.addOrientedBox(Vector3(0.14f, 0.025f, 0.06f),
+                         Matrix::CreateTranslation(-0.22f, 0.985f, 0.0f) * leanFrame);
+    black.addCylinderBetween(at(0.42f, 0.95f, -0.24f), at(0.42f, 0.95f, 0.24f), 0.012f, 6);
+    black.addCylinderBetween(at(-0.02f, 0.29f, -0.09f), at(-0.02f, 0.29f, 0.09f), 0.012f, 6);
+    rims.addDiscFacing(at(-0.02f, 0.29f, 0.06f), Vector3(0.0f, 0.0f, 1.0f), 0.085f, 14);
+    black.addOrientedBox(Vector3(0.20f, 0.008f, 0.06f),
+                         Matrix::CreateTranslation(rearX, wheelR * 2.0f + 0.06f, 0.0f) * leanFrame);
+    for (const float side : {-0.05f, 0.05f})
+        black.addCylinderBetween(at(rearX, wheelR, side), at(rearX - 0.10f, wheelR * 2.0f + 0.05f, side),
+                                 0.006f, 5);
 }
 
 void PropFactory::groundScruff(GeometryCollector& collector, Rng& rng, float radius,

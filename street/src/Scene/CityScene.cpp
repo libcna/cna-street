@@ -1080,6 +1080,19 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     const PropMesh bikeStand = makeProp("bike-stand", [&](GeometryCollector& c) {
         props.bicycleStand(c);
     });
+    // Three bicycles in three paints, chained to the stands.
+    static const Vector3 kBikePaints[] = {Vector3(0.05f, 0.06f, 0.07f), Vector3(0.36f, 0.08f, 0.07f),
+                                          Vector3(0.10f, 0.18f, 0.30f)};
+    std::vector<PropMesh> bikes;
+    for (std::size_t i = 0; i < std::size(kBikePaints); ++i)
+    {
+        const Material* paint = materials_.deriveTinted("bike-paint-" + std::to_string(i),
+                                                        MaterialId::PaintedSteelDark, kBikePaints[i]);
+        bikes.push_back(makeProp("bicycle-" + std::to_string(i), [&](GeometryCollector& c) {
+            props.bicycle(c, paint);
+        }));
+    }
+    std::vector<std::vector<Matrix>> bikeOnStand(bikes.size());
     const PropMesh shelter = makeProp("bus-shelter", [&](GeometryCollector& c) {
         props.busShelter(c);
     });
@@ -1135,6 +1148,15 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
                 {
                     const Vector3 b = at(s + 2.6f + static_cast<float>(i) * 0.95f, band + 0.1f);
                     bikeAt.push_back(Place(b.X, b.Y, b.Z, faceRoad));
+                    // About half the stands have a bicycle at them, on one side
+                    // or the other, never both: a full rack is a bike shop.
+                    if (rng.chance(0.55f))
+                    {
+                        const float flank = rng.chance(0.5f) ? 0.34f : -0.34f;
+                        const float yaw = faceRoad + (flank > 0.0f ? 0.0f : MathHelper::Pi);
+                        bikeOnStand[rng.index(bikes.size())].push_back(
+                            Matrix::CreateTranslation(0.0f, 0.0f, flank) * Place(b.X, b.Y, b.Z, yaw));
+                    }
                 }
             }
         }
@@ -1240,6 +1262,8 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     placeProp(hydrant, hydrantAt, "hydrant", cull * 0.4f, shade * 0.4f);
     placeProp(cabinet, cabinetAt, "cabinet", cull * 0.7f, shade);
     placeProp(bikeStand, bikeAt, "bike-stand", cull * 0.4f, shade * 0.5f);
+    for (std::size_t i = 0; i < bikes.size(); ++i)
+        placeProp(bikes[i], bikeOnStand[i], "bicycle", cull * 0.35f, shade * 0.4f);
     placeProp(shelter, shelterAt, "bus-shelter", cull, shade);
 }
 
@@ -1329,16 +1353,27 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
                       + (M::kTreeHeightMax - M::kTreeHeightMin) * (static_cast<float>(i) + 0.5f)
                             / static_cast<float>(kTreeVariants);
         const std::string tag = std::to_string(i);
+        // Six greens for six trees. No two trees in a row are the same colour:
+        // one is yellower, one darker, one has had a drier summer -- and a row
+        // in one exact green is what says "the same texture six times" even
+        // when the shapes differ.
+        static const Vector3 kFoliageTints[kTreeVariants] = {
+            Vector3(1.00f, 1.00f, 1.00f), Vector3(0.90f, 1.02f, 0.84f),
+            Vector3(1.06f, 0.98f, 0.76f), Vector3(0.84f, 0.94f, 0.88f),
+            Vector3(0.96f, 1.04f, 0.80f), Vector3(1.02f, 0.92f, 0.72f),
+        };
+        const Material* foliage = materials_.deriveTinted(
+            "foliage-" + tag, MaterialId::Foliage, kFoliageTints[i]);
         trees.push_back(makeProp("tree-" + tag, [&](GeometryCollector& c) {
             Rng own = Rng::derive(settings.seed, "tree-" + tag);
-            props.tree(c, own, species, height, true);
+            props.tree(c, own, species, height, true, foliage);
         }));
         distantTrees.push_back(makeProp("tree-far-" + tag, [&](GeometryCollector& c) {
             // The same tree from the same seed, so the far version is the near
             // one with fewer twigs rather than a different tree that pops when
             // the camera crosses the switch distance.
             Rng own = Rng::derive(settings.seed, "tree-" + tag);
-            props.tree(c, own, species, height, false);
+            props.tree(c, own, species, height, false, foliage);
         }));
     }
     farTrees_ = distantTrees;
@@ -1383,6 +1418,7 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
                 const int variant = rng.intRange(0, kTreeVariants - 1);
                 treeAt[static_cast<std::size_t>(variant)].push_back(
                     Place(p.X, p.Y, p.Z, rng.range(0.0f, MathHelper::TwoPi)));
+                treePositions_.push_back(p);
                 // The grate sits flush with the paving, not on top of it.
                 grateAt.push_back(Place(p.X, p.Y - 0.012f, p.Z,
                                         rng.chance(0.5f) ? 0.0f : MathHelper::PiOver2));

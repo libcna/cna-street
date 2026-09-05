@@ -921,7 +921,40 @@ void BuildingBuilder::buildBalcony(const FacadeFrame& frame, float u, float v, f
         for (float d = 0.10f; d < depth - 0.05f; d += spacing)
             FacadeBox(metal, frame, bu - 0.011f, v + 0.06f, d, bu + 0.011f, v + rail, d + 0.022f);
     }
-    (void)rng;
+
+    // What people put on a balcony: a planter hung on the rail on about half
+    // of them, a folding chair on a few. A balcony with something on it is a
+    // flat that is lived in; a row of empty ones is a drawing.
+    if (rng.chance(0.5f))
+    {
+        MeshBuilder& trough = collector.builder(&materials_.get(MaterialId::Timber));
+        trough.setTileSize(0.5f);
+        const float a = u + rng.range(0.10f, 0.30f) * width;
+        const float b = a + std::min(0.9f, width * 0.55f);
+        FacadeBox(trough, frame, a, v + rail - 0.24f, depth - 0.22f, b, v + rail + 0.02f, depth - 0.06f);
+        MeshBuilder& plants = collector.builder(&materials_.get(MaterialId::Hedge));
+        plants.setTileSize(0.5f);
+        const int clumps = std::max(2, static_cast<int>((b - a) / 0.22f));
+        for (int i = 0; i < clumps; ++i)
+        {
+            const float t = (static_cast<float>(i) + 0.5f) / static_cast<float>(clumps);
+            plants.addEllipsoid(frame.at(a + (b - a) * t, v + rail + 0.05f + rng.range(0.0f, 0.08f),
+                                         depth - 0.14f),
+                                Vector3(0.13f, rng.range(0.10f, 0.17f), 0.12f), 8, 5);
+        }
+    }
+    if (rng.chance(0.28f))
+    {
+        MeshBuilder& chair = collector.builder(palette.metal);
+        chair.setTileSize(0.3f);
+        const float cu = u + width - 0.55f;
+        const float cd = depth * 0.45f;
+        FacadeBox(chair, frame, cu, v + 0.42f, cd - 0.20f, cu + 0.42f, v + 0.46f, cd + 0.20f);
+        FacadeBox(chair, frame, cu, v + 0.46f, cd - 0.20f, cu + 0.42f, v + 0.88f, cd - 0.16f);
+        for (const float lu : {cu + 0.02f, cu + 0.38f})
+            for (const float ld : {cd - 0.18f, cd + 0.16f})
+                FacadeBox(chair, frame, lu, v, ld, lu + 0.02f, v + 0.42f, ld + 0.02f);
+    }
 }
 
 void BuildingBuilder::buildShopfront(const Plot& plot, int plotIndex, const FacadeFrame& frame,
@@ -1218,6 +1251,36 @@ void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeF
             const float v = floor + storeyHeight - 0.30f;
             WallBox(trim, frame, -0.02f, v, frame.width + 0.02f,
                     v + M::kStringCourseHeight, M::kStringCourseProjection);
+        }
+    }
+
+    // A satellite dish or two on the older blocks, clamped to the wall beside
+    // an upper window and tilted at the sky, and a cable dropping from it.
+    // Ordinary, ugly and everywhere, which is the point.
+    if (!office && plot.storeys >= 3 && rng.chance(0.55f))
+    {
+        MeshBuilder& dish = collector.builder(&materials_.get(MaterialId::PaintedSteelGrey));
+        dish.setTileSize(0.3f);
+        const int dishes = rng.intRange(1, 2);
+        for (int i = 0; i < dishes; ++i)
+        {
+            const int bay = rng.intRange(0, bays - 1);
+            const int storey = rng.intRange(std::max(1, plot.storeys - 3), plot.storeys - 1);
+            const float du = (static_cast<float>(bay) + 0.5f) * pitch + windowWidth * 0.5f + 0.42f;
+            if (du > frame.width - 0.5f) continue;
+            const float dv = floorLevel[static_cast<std::size_t>(storey)] + M::kWindowSill + 0.9f;
+            const Vector3 mount = frame.at(du, dv, 0.0f);
+            const Vector3 arm = frame.at(du, dv - 0.05f, 0.30f);
+            // Tilted up and toward the south: a dish points at the sky, not
+            // at the street.
+            const Vector3 facing =
+                Vector3::Normalize(frame.out * 0.55f + frame.up * 0.75f + frame.right * 0.25f);
+            dish.addCylinderBetween(mount, arm, 0.016f, 6);
+            dish.addDiscFacing(arm + facing * 0.12f, facing, 0.30f, 14);
+            dish.addCylinderBetween(arm + facing * 0.12f, arm + facing * 0.34f, 0.010f, 5);
+            // The cable, down the wall to the window below.
+            MeshBuilder& cable = collector.builder(&materials_.get(MaterialId::PaintedSteelBlack));
+            cable.addCylinderBetween(mount, frame.at(du, dv - 1.1f, 0.012f), 0.006f, 4, false);
         }
     }
 
