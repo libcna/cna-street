@@ -262,8 +262,30 @@ void BuildingBuilder::build(const Plot& plot, int plotIndex, GeometryCollector& 
     const Palette palette = paletteFor(plot, rng);
     weathering_ = plot.weathering;
     plotSeed_   = plot.seed;
+    style_      = plot.style;
     flatFacade_ = plot.style == BuildingStyle::PostWar || plot.style == BuildingStyle::ModernOffice
                   || plot.style == BuildingStyle::ShopUnit;
+    {
+        Rng ornament = Rng::derive(plot.seed, "ornament");
+        shutters_ = plot.style == BuildingStyle::Gruenderzeit && ornament.chance(0.45f);
+        quoins_   = (plot.style == BuildingStyle::Gruenderzeit
+                     || plot.style == BuildingStyle::CornerBlock)
+                    && ornament.chance(0.5f);
+    }
+    if (netCurtain_ == nullptr)
+    {
+        // What windows show besides the room: a net curtain is pale and
+        // matt, a blind a shade darker and greyer, and a room with the
+        // light off is the atlas cell at a third of its glow.
+        netCurtain_   = materials_.deriveTinted("net-curtain", MaterialId::ShopBlind,
+                                                Vector3(0.80f, 0.78f, 0.72f));
+        windowBlind_  = materials_.deriveTinted("window-blind", MaterialId::ShopBlind,
+                                                Vector3(0.58f, 0.56f, 0.52f));
+        const Material& interior = materials_.get(MaterialId::Interior);
+        interiorDark_ = materials_.deriveTinted("interior-dark", MaterialId::Interior,
+                                                interior.baseColour * 0.55f,
+                                                interior.emissiveFactor * 0.30f);
+    }
 
     buildMass(plot, palette, collector, rng);
 
@@ -310,6 +332,7 @@ void BuildingBuilder::buildMass(const Plot& plot, const Palette& palette,
 void BuildingBuilder::buildPlainWall(const FacadeFrame& frame, const Palette& palette,
                                      GeometryCollector& collector, Rng& rng, bool addWindows)
 {
+    dressing_ = Rng::derive(plotSeed_, "dressing-plain");
     MeshBuilder& wall = collector.builder(palette.wall);
     wall.setTileSize(2.0f);
     Panel(wall, frame, 0.0f, M::kCurbHeight + M::kPlinthHeight, frame.width, frame.height, 0.0f);
@@ -383,20 +406,71 @@ void BuildingBuilder::buildWindow(const FacadeFrame& frame, float u, float v, fl
     wall.addQuad(frame.at(u, v, -reveal), frame.at(u, v, 0.0f), frame.at(u1, v, 0.0f),
                  frame.at(u1, v, -reveal));
 
-    // --- the room behind ---------------------------------------------------
+    // --- what the window shows ---------------------------------------------
+    // A street's windows are not sixty holes into sixty lit rooms. Behind
+    // most of them is something: a net curtain across the whole pane or
+    // drawn to the sides, a roller blind part way down, a room with the
+    // light off; and on the rendered blocks that have them, a pair of
+    // shutters folded back beside the opening or, on one window in eight,
+    // closed over it. Each is decided per window from the plot's stream,
+    // and each puts a different tone and a different depth in the opening,
+    // which is what stops the upper floors reading as a pattern.
+    const float dress = dressing_.range(0.0f, 1.0f);
+    const bool net      = dress < 0.28f;
+    const bool halfNet  = dress >= 0.28f && dress < 0.42f;
+    const bool blind    = dress >= 0.42f && dress < 0.58f;
+    const bool unlit    = dress >= 0.58f && dress < 0.82f;
+    const bool shuttered = shutters_ && !flatFacade_;
+    const bool closed   = shuttered && dressing_.chance(0.12f);
+    const float centre  = u + width * 0.5f;
+
     // One cell of the interior atlas, chosen per window and sometimes mirrored,
     // so a façade of sixty windows does not show the same room sixty times.
     const int cell = rng.intRange(0, 15);
     const float cellU = static_cast<float>(cell % 4) * 0.25f;
     const float cellV = static_cast<float>(cell / 4) * 0.25f;
     const bool mirrored = rng.chance(0.5f);
-    MeshBuilder& interior = collector.builder(palette.interior);
-    interior.setUvMode(UvMode::Explicit);
-    const std::size_t firstVertex = interior.vertexCount();
-    Panel(interior, frame, u + frameWidth, v + frameWidth, u1 - frameWidth, v1 - frameWidth,
-          -reveal + 0.012f);
-    interior.offsetUv(firstVertex, Vector2(mirrored ? -0.25f : 0.25f, 0.25f),
-                      Vector2(mirrored ? cellU + 0.25f : cellU, cellV));
+    if (!closed)
+    {
+        MeshBuilder& interior = collector.builder(unlit && interiorDark_ != nullptr
+                                                      ? interiorDark_ : palette.interior);
+        interior.setUvMode(UvMode::Explicit);
+        const std::size_t firstVertex = interior.vertexCount();
+        Panel(interior, frame, u + frameWidth, v + frameWidth, u1 - frameWidth, v1 - frameWidth,
+              -reveal + 0.012f);
+        interior.offsetUv(firstVertex, Vector2(mirrored ? -0.25f : 0.25f, 0.25f),
+                          Vector2(mirrored ? cellU + 0.25f : cellU, cellV));
+    }
+    if (!closed && (net || halfNet) && netCurtain_ != nullptr)
+    {
+        MeshBuilder& curtain = collector.builder(netCurtain_);
+        curtain.setTileSize(0.45f);
+        const float cd = -reveal + 0.026f;
+        if (net)
+            Panel(curtain, frame, u + frameWidth + 0.01f, v + frameWidth + 0.02f,
+                  u1 - frameWidth - 0.01f, v1 - frameWidth - 0.01f, cd);
+        else
+        {
+            const float leaf = (width - frameWidth * 2.0f) * dressing_.range(0.24f, 0.36f);
+            Panel(curtain, frame, u + frameWidth + 0.01f, v + frameWidth + 0.02f,
+                  u + frameWidth + 0.01f + leaf, v1 - frameWidth - 0.01f, cd);
+            Panel(curtain, frame, u1 - frameWidth - 0.01f - leaf, v + frameWidth + 0.02f,
+                  u1 - frameWidth - 0.01f, v1 - frameWidth - 0.01f, cd);
+        }
+    }
+    if (!closed && blind && windowBlind_ != nullptr)
+    {
+        MeshBuilder& roller = collector.builder(windowBlind_);
+        roller.setTileSize(0.6f);
+        const float drop = (height - frameWidth * 2.0f) * dressing_.range(0.30f, 0.70f);
+        const float bd = -reveal + 0.030f;
+        Panel(roller, frame, u + frameWidth + 0.005f, v1 - frameWidth - drop, u1 - frameWidth - 0.005f,
+              v1 - frameWidth, bd);
+        MeshBuilder& bar = collector.builder(palette.frame);
+        bar.setTileSize(0.5f);
+        FacadeBox(bar, frame, u + frameWidth, v1 - frameWidth - drop - 0.025f, bd - 0.012f,
+                  u1 - frameWidth, v1 - frameWidth - drop + 0.005f, bd + 0.012f);
+    }
 
     // --- the frame ---------------------------------------------------------
     MeshBuilder& sash = collector.builder(palette.frame);
@@ -421,10 +495,44 @@ void BuildingBuilder::buildWindow(const FacadeFrame& frame, float u, float v, fl
     }
 
     // --- the glass ---------------------------------------------------------
-    MeshBuilder& glass = collector.builder(palette.glass);
-    glass.setTileSize(1.4f);
-    Panel(glass, frame, u + frameWidth * 0.5f, v + frameWidth * 0.5f, u1 - frameWidth * 0.5f,
-          v1 - frameWidth * 0.5f, glassDepth);
+    if (!closed)
+    {
+        MeshBuilder& glass = collector.builder(palette.glass);
+        glass.setTileSize(1.4f);
+        Panel(glass, frame, u + frameWidth * 0.5f, v + frameWidth * 0.5f, u1 - frameWidth * 0.5f,
+              v1 - frameWidth * 0.5f, glassDepth);
+    }
+
+    // --- the shutters ---------------------------------------------------------
+    // A leaf each side, folded back flat against the wall, in the plot's
+    // door colour: a panel with a rail top, middle and bottom, an arris on
+    // its edges. Closed, the two leaves meet in the reveal in front of the
+    // glass. They stop short of a neighbour and of the corner, so a leaf
+    // never crosses a quoin.
+    if (shuttered)
+    {
+        MeshBuilder& leafBuilder = collector.builder(palette.door);
+        leafBuilder.setTileSize(0.8f);
+        const float room = std::min(u - (quoins_ ? 0.52f : 0.10f), frame.width - u1 - (quoins_ ? 0.52f : 0.10f));
+        const float leaf = std::min({width * 0.46f, 0.52f, room - 0.05f});
+        const auto shutterLeaf = [&](float l0, float l1, float d0, float d1) {
+            BevelBox(leafBuilder, frame, l0, v + 0.02f, d0, l1, v1 - 0.02f, d1, 0.008f);
+            for (const float rv : {v + 0.06f, (v + v1) * 0.5f - 0.045f, v1 - 0.15f})
+                FacadeBox(leafBuilder, frame, l0 + 0.03f, rv, d1 - 0.004f, l1 - 0.03f, rv + 0.09f,
+                          d1 + 0.014f);
+        };
+        if (closed)
+        {
+            const float d0 = -reveal + 0.065f, d1 = -reveal + 0.105f;
+            shutterLeaf(u + 0.015f, centre - 0.008f, d0, d1);
+            shutterLeaf(centre + 0.008f, u1 - 0.015f, d0, d1);
+        }
+        else if (leaf >= 0.22f)
+        {
+            shutterLeaf(u - 0.05f - leaf, u - 0.05f, -0.01f, 0.038f);
+            shutterLeaf(u1 + 0.05f, u1 + 0.05f + leaf, -0.01f, 0.038f);
+        }
+    }
 
     // --- the sill ----------------------------------------------------------
     MeshBuilder& trim = collector.builder(palette.trim);
@@ -446,11 +554,22 @@ void BuildingBuilder::buildWindow(const FacadeFrame& frame, float u, float v, fl
     }
     else
     {
-        BevelBox(trim, frame, u - 0.055f, v - 0.085f, -reveal, u1 + 0.055f, v, 0.055f, 0.018f);
-        // A lintel or a moulded architrave over the head, on the older styles.
+        BevelBox(trim, frame, u - 0.055f, v - 0.085f, -reveal, u1 + 0.055f, v, 0.065f, 0.018f);
+        // A moulded architrave over the head on the piano nobile, a flat
+        // hood above it, and on the rendered and ashlar blocks a keystone
+        // standing proud of either: the one ornament that reads from the
+        // street, because it breaks the straight line of the head.
+        const bool masonry = style_ == BuildingStyle::Gruenderzeit
+                             || style_ == BuildingStyle::CornerBlock;
         if (arched)
             BevelBox(trim, frame, u - 0.075f, v1, -reveal, u1 + 0.075f, v1 + 0.14f, 0.075f,
                      0.022f);
+        else
+            BevelBox(trim, frame, u - 0.06f, v1 + 0.01f, -0.01f, u1 + 0.06f, v1 + 0.10f, 0.05f,
+                     0.015f);
+        if (masonry)
+            BevelBox(trim, frame, centre - 0.075f, v1 - 0.01f, -0.01f, centre + 0.075f,
+                     v1 + (arched ? 0.20f : 0.16f), arched ? 0.10f : 0.075f, 0.012f);
     }
 
     // The rain that runs off the sill and down the wall under it. Where the
@@ -656,7 +775,14 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
     // 0.62 m rather than 1.1: a shop counter is faced in boards, and a grain
     // that repeats once every metre reads as tiger stripe rather than as wood.
     timber.setTileSize(0.62f);
-    MeshBuilder& stock = collector.builder(&materials_.get(MaterialId::ShopStock));
+    // The stock a stop darker and a third less saturated than its texture
+    // draws it: through glass at three metres the full-colour grid of
+    // packets was the loudest surface on the street, a wallpaper rather
+    // than a shelf, and product is darker than the wall it stands against.
+    const Material& stockBase = materials_.get(MaterialId::ShopStock);
+    MeshBuilder& stock = collector.builder(materials_.deriveTinted(
+        "shop-stock-muted", MaterialId::ShopStock, Vector3(0.62f, 0.60f, 0.58f),
+        stockBase.emissiveFactor * 0.55f));
     stock.setTileSize(0.34f);
 
     // A run of shelving against a wall, loaded with product. The product is what
@@ -725,6 +851,68 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
     };
 
     const float span = u1 - u0;
+
+    // The scans a trade puts about its room, where the content has them:
+    // crates and cartons by a grocer's counter, plants in a florist's,
+    // baskets and a chalkboard in a bakery, a picture and a plant in an
+    // office. The scene stands them; without the scans the room is as
+    // generated. They are what stops the room next to the hero cafe reading
+    // as a box of packets beside a composed one. The potted plant is kept
+    // to the florist: the scan is 176 000 triangles, and one in every shop
+    // window was three million of them.
+    const float faceStreet = std::atan2(frame.out.X, frame.out.Z);
+    const float faceIn     = faceStreet + MathHelper::Pi;
+    const float faceRight  = std::atan2(frame.right.X, frame.right.Z);
+    const auto prop = [&](const char* asset, float u, float v, float d, float yaw,
+                          float cull = 36.0f) {
+        if (heroProps_ == nullptr) return;
+        const Vector3 p = frame.at(u, v, d);
+        heroProps_->push_back(HeroProp{asset, Geometry::Place(p.X, p.Y, p.Z, yaw), 0.0f, false, cull});
+    };
+    switch (kind)
+    {
+        case ShopKind::Bakery:
+            prop("ph-chalkboard", u0 + span * 0.30f, floor, -1.15f, faceStreet + 0.25f);
+            prop("ph-wicker-basket-01", u0 + span * 0.06f + 0.31f, floor + 0.78f, -0.65f, faceStreet + 0.4f);
+            prop("ph-hamburger-buns", u0 + span * 0.06f + 0.31f, floor + 0.83f, -0.65f, faceStreet + 0.4f);
+            prop("ph-wicker-basket-01", u0 + span * 0.45f, floor + 0.97f, depth * 0.42f + 0.30f, faceStreet - 0.6f);
+            break;
+        case ShopKind::Convenience:
+            prop("ph-crate", u1 - 0.75f, floor, depth * 0.30f - 0.9f, faceIn + 0.2f);
+            prop("ph-crate", u1 - 0.75f, floor + 0.31f, depth * 0.30f - 0.9f, faceIn - 0.15f);
+            prop("ph-cardboard-box", u1 - 1.45f, floor, depth * 0.30f - 0.85f, faceIn + 0.5f);
+            prop("ph-bananas", u0 + 1.2f, floor + 0.97f, -1.55f + 0.30f, faceStreet + 0.9f);
+            prop("ph-hand-truck", u1 - 0.55f, floor, depth + 0.75f, faceRight + 0.3f, 30.0f);
+            break;
+        case ShopKind::Clothing:
+            prop("ph-hanging-picture-frame-01", u0 + 0.03f, floor + 1.55f, depth * 0.62f, faceRight);
+            break;
+        case ShopKind::Florist:
+            prop("ph-potted-plant-01", u0 + span * 0.30f, floor + 0.30f, -0.55f, faceStreet + 0.3f);
+            prop("ph-potted-plant-01", u0 + span * 0.72f, floor + 0.56f, -0.97f, faceStreet - 0.7f);
+            prop("ph-planter-1", u0 + 0.5f, floor, depth * 0.45f + 0.9f, faceStreet + 0.1f);
+            prop("ph-wicker-basket-01", u1 - std::min(2.2f, span * 0.34f) + 0.4f, floor + 0.97f, depth * 0.45f + 0.3f, faceStreet);
+            break;
+        case ShopKind::Electrical:
+            prop("ph-cardboard-box", u1 - 0.7f, floor, depth + 0.6f, faceIn + 0.4f);
+            prop("ph-cardboard-box", u1 - 0.7f, floor + 0.42f, depth + 0.6f, faceIn - 0.3f);
+            break;
+        case ShopKind::Furniture:
+            prop("ph-hanging-picture-frame-01", u1 - 0.03f, floor + 1.50f, depth * 0.55f, faceRight + MathHelper::Pi);
+            prop("ph-modern-ceiling-lamp-01", u0 + span * 0.5f, ceiling - 0.95f, depth * 0.5f, faceStreet);
+            prop("ph-cafe-set", u0 + span * 0.55f, floor, depth * 0.55f, faceStreet + 0.4f);
+            break;
+        case ShopKind::Office:
+            prop("ph-wall-clock", u0 + span * 0.5f, floor + 2.25f, depth + 0.03f, faceStreet);
+            prop("ph-hanging-picture-frame-01", u0 + 0.03f, floor + 1.55f, depth * 0.75f, faceRight);
+            break;
+        case ShopKind::Optician:
+            prop("ph-hanging-picture-frame-01", u0 + 0.03f, floor + 1.50f, depth * 0.62f, faceRight);
+            break;
+        case ShopKind::Vacant:
+        case ShopKind::Count:
+            break;
+    }
     switch (kind)
     {
         case ShopKind::Bakery:
@@ -968,8 +1156,16 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
                        frame.at(u1, ceiling, mid), frame.at(u1, ceiling, depth), inU * -1.0f);
     lid.addQuadFacing(frame.at(u0, ceiling, depth), frame.at(u1, ceiling, depth),
                       frame.at(u1, ceiling, 0.0f), frame.at(u0, ceiling, 0.0f), inV * -1.0f);
-    MeshBuilder& floorSurface = collector.builder(&materials_.get(MaterialId::ShopFloor));
-    floorSurface.setTileSize(2.4f);
+    // An oak floor rather than the tiles the other shops have, dark enough
+    // that the pale things on it -- the tables, the counter top, the bread
+    // -- are what the eye finds first; a pale floor under a lit ceiling was
+    // the biggest flat surface in the shop-window frame.
+    const Material& timberBase = materials_.get(MaterialId::ShopTimber);
+    const Material* oak = materials_.deriveTinted("hero-bakery-floor", MaterialId::ShopTimber,
+                                                  Vector3(0.50f, 0.38f, 0.26f),
+                                                  timberBase.emissiveFactor * 0.35f);
+    MeshBuilder& floorSurface = collector.builder(oak);
+    floorSurface.setTileSize(0.62f, 2.8f);
     floorSurface.addQuadFacing(frame.at(u0, floor, storeDepth), frame.at(u1, floor, storeDepth),
                                frame.at(u1, floor, 0.0f), frame.at(u0, floor, 0.0f), inV);
     // The store room: dark, seen only through the doorway, with a door leaf
@@ -991,6 +1187,29 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
                         frame.at(doorU1, doorTop, depth - 0.24f), frame.at(doorU0, doorTop, depth - 0.24f), inV * -1.0f);
     MeshBuilder& timber = collector.builder(&materials_.get(MaterialId::ShopTimber));
     timber.setTileSize(0.62f);
+    // What gives the room a section rather than six planes: three beams
+    // across the ceiling, a dado rail and boarded panelling to hip height
+    // along both side walls, and a skirting round the floor.
+    {
+        const Material* darkTimber = materials_.deriveTinted(
+            "hero-bakery-beam", MaterialId::ShopTimber, Vector3(0.42f, 0.32f, 0.22f),
+            timberBase.emissiveFactor * 0.30f);
+        MeshBuilder& beams = collector.builder(darkTimber);
+        beams.setTileSize(0.62f);
+        for (const float bd : {-1.9f, -4.2f, -6.2f})
+            FacadeBox(beams, frame, u0, ceiling - 0.22f, bd - 0.08f, u1, ceiling, bd + 0.08f);
+        for (const float su : {u0, u1})
+        {
+            const float sgn = su == u0 ? 1.0f : -1.0f;
+            // Boards, each a little proud of the wall, a hand wide, with the
+            // rail over them and the skirting under.
+            for (float bd = -0.02f; bd > depth + 0.05f; bd -= 0.115f)
+                FacadeBox(beams, frame, su, floor + 0.08f, bd - 0.105f, su + sgn * 0.022f,
+                          floor + 1.02f, bd);
+            FacadeBox(beams, frame, su, floor + 1.02f, depth, su + sgn * 0.045f, floor + 1.07f, 0.0f);
+            FacadeBox(beams, frame, su, floor, depth, su + sgn * 0.03f, floor + 0.09f, 0.0f);
+        }
+    }
     FacadeBox(timber, frame, doorU0 - 0.07f, floor, depth - 0.02f, doorU0, doorTop + 0.07f, depth + 0.05f);
     FacadeBox(timber, frame, doorU1, floor, depth - 0.02f, doorU1 + 0.07f, doorTop + 0.07f, depth + 0.05f);
     FacadeBox(timber, frame, doorU0 - 0.07f, doorTop, depth - 0.02f, doorU1 + 0.07f, doorTop + 0.07f, depth + 0.05f);
@@ -1038,9 +1257,22 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
     const float cD0 = -3.6f;          // the front face, toward the window
     const float cD1 = cD0 - 0.70f;    // the back
     const float top = floor + 0.92f;
-    FacadeBox(timber, frame, cU0, floor, cD1, cU1, top, cD0);
-    // A kick recess along the foot, which is what a counter has.
-    FacadeBox(timber, frame, cU0 - 0.03f, top, cD1 - 0.04f, cU1 + 0.03f, top + 0.05f, cD0 + 0.06f);
+    FacadeBox(timber, frame, cU0, floor + 0.08f, cD1, cU1, top, cD0);
+    // A boarded front: vertical boards a hand wide, every other one a
+    // shade prouder, over a recessed kick, and the top a slab that
+    // overhangs them. A counter that is one box is a crate.
+    {
+        MeshBuilder& boards = collector.builder(materials_.deriveTinted(
+            "hero-bakery-counter", MaterialId::ShopTimber, Vector3(0.36f, 0.27f, 0.19f),
+            timberBase.emissiveFactor * 0.30f));
+        boards.setTileSize(0.62f);
+        int n = 0;
+        for (float bu = cU0; bu < cU1 - 0.02f; bu += 0.11f, ++n)
+            FacadeBox(boards, frame, bu, floor + 0.09f, cD0 - 0.01f, std::min(bu + 0.10f, cU1), top - 0.01f,
+                      cD0 + (n % 2 == 0 ? 0.03f : 0.018f));
+        FacadeBox(boards, frame, cU0, floor, cD1, cU1, floor + 0.08f, cD0 - 0.06f);
+    }
+    FacadeBox(timber, frame, cU0 - 0.03f, top, cD1 - 0.04f, cU1 + 0.03f, top + 0.05f, cD0 + 0.07f);
     // The glass case over the left two thirds: a front pane, a top and two
     // ends, and a shelf inside with the cakes on it.
     const float caseU1 = cU0 + (cU1 - cU0) * 0.64f;
@@ -1077,10 +1309,19 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
     // --- behind the counter ----------------------------------------------------------
     // Bread shelving on the back wall, a lower back-counter under it with
     // baskets, and the coffee station against the end wall.
-    prop("ph-shelf-01", u0 + 0.85f, floor, depth + 0.16f, faceStreet, 0.0f, false, 40.0f);
-    prop("ph-shelf-01", u0 + 1.95f, floor, depth + 0.16f, faceStreet, 0.0f, false, 40.0f);
+    // Timber shelving across the back wall, not the white steel rack: the
+    // steel one, lit by the sky the room cannot see, glowed like a fridge.
+    prop("ph-wooden-display-shelves-01", u0 + 0.85f, floor, depth + 0.22f, faceStreet, 0.0f, false, 40.0f);
+    prop("ph-painted-wooden-shelves", u0 + 2.05f, floor, depth + 0.22f, faceStreet, 0.0f, false, 40.0f);
     prop("ph-wooden-display-shelves-01", u0 + 3.25f, floor, depth + 0.22f, faceStreet, 0.0f, false, 40.0f);
     prop("ph-painted-wooden-shelves", u0 + 4.25f, floor, depth + 0.22f, faceStreet, 0.0f, false, 40.0f);
+    prop("ph-wicker-basket-01", u0 + 0.85f, floor + 1.02f, depth + 0.24f, faceStreet + 0.2f);
+    prop("ph-hamburger-buns", u0 + 0.85f, floor + 1.07f, depth + 0.24f, faceStreet + 0.2f);
+    prop("ph-wicker-basket-01", u0 + 3.25f, floor + 1.02f, depth + 0.24f, faceStreet - 0.3f);
+    prop("ph-croissant", u0 + 3.15f, floor + 1.06f, depth + 0.20f, faceStreet + 1.2f);
+    prop("ph-croissant", u0 + 3.35f, floor + 1.06f, depth + 0.28f, faceStreet - 0.4f);
+    prop("ph-jug-01", u0 + 2.05f, floor + 1.48f, depth + 0.24f, faceStreet + 0.5f);
+    prop("ph-tea-set-01", u0 + 3.25f, floor + 1.62f, depth + 0.24f, faceStreet + 0.1f, 0.0f, false, 30.0f);
     prop("ph-tea-set-01", u0 + 4.25f, floor + 1.13f, depth + 0.22f, faceStreet + 0.2f, 0.0f, false, 30.0f);
     FacadeBox(fittings, frame, u0 + 4.95f, floor, depth + 0.02f, std::min(u1 - 0.4f, u0 + 4.95f + 2.6f),
               floor + 0.90f, depth + 0.62f);
@@ -1092,6 +1333,16 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
     prop("ph-coffeecart-01", u1 - 0.62f, floor, depth + 1.85f, faceRight + MathHelper::Pi, 0.0f, false, 40.0f);
 
     // --- on the walls ------------------------------------------------------------------
+    // A shelf along the left wall at head height with the tea things on it,
+    // and a bench under the prints.
+    FacadeBox(timber, frame, u0, floor + 1.72f, -3.3f, u0 + 0.24f, floor + 1.75f, -1.4f);
+    for (const float bd : {-3.2f, -1.5f})
+        FacadeBox(timber, frame, u0, floor + 1.60f, bd - 0.02f, u0 + 0.22f, floor + 1.72f, bd + 0.02f);
+    prop("ph-tea-set-01", u0 + 0.12f, floor + 1.75f, -2.0f, faceRight + 0.3f, 0.0f, false, 30.0f);
+    prop("ph-jug-01", u0 + 0.12f, floor + 1.75f, -2.7f, faceRight - 0.6f, 0.0f, false, 30.0f);
+    FacadeBox(timber, frame, u0 + 0.02f, floor + 0.44f, -3.35f, u0 + 0.40f, floor + 0.48f, -1.45f);
+    for (const float bd : {-3.3f, -1.5f})
+        FacadeBox(timber, frame, u0 + 0.05f, floor, bd - 0.02f, u0 + 0.37f, floor + 0.44f, bd + 0.02f);
     prop("ph-wall-clock", u0 + (u1 - u0) * 0.5f, floor + 2.25f, depth + 0.03f, faceStreet, 0.0f, false, 40.0f);
     prop("ph-hanging-picture-frame-01", u0 + 0.03f, floor + 1.35f, -1.9f, faceRight, 0.0f, false, 40.0f);
     prop("ph-hanging-picture-frame-01", u0 + 0.03f, floor + 1.45f, -2.9f, faceRight, 0.0f, false, 40.0f);
@@ -1320,7 +1571,11 @@ void BuildingBuilder::buildShopfront(const Plot& plot, int plotIndex, const Faca
     const float doorWidth = 1.05f;
     const float doorU = doorLeft ? u0 + 0.12f : u1 - doorWidth - 0.12f;
 
-    MeshBuilder& sash = collector.builder(palette.frame);
+    // The cafe's joinery is dark bronze rather than the street's white: a
+    // cafe paints its shopfront, and dark frames make the glass read as
+    // glass and the room behind it read as lit.
+    MeshBuilder& sash = collector.builder(hero ? &materials_.get(MaterialId::FrameBronze)
+                                               : palette.frame);
     sash.setTileSize(0.5f);
 
     // Mullions every 1.1-1.5 m across the display window.
@@ -1406,6 +1661,26 @@ void BuildingBuilder::buildShopfront(const Plot& plot, int plotIndex, const Faca
                          true, false);
         MeshBuilder& lampGlass = collector.builder(&materials_.get(MaterialId::LampGlass));
         lampGlass.addSphere(frame.at(lu, head - 0.55f - 0.26f, 0.42f), 0.045f, 8, 6);
+        // A hanging sign on a wrought bracket at the corner of the fascia,
+        // square to the wall, so the cafe reads from along the footway and
+        // not only from across the road.
+        {
+            MeshBuilder& bracket = collector.builder(&materials_.get(MaterialId::PaintedSteelBlack));
+            bracket.setTileSize(0.3f);
+            const float bu = doorLeft ? u1 + 0.20f : u0 - 0.20f;
+            const float bv = fascia - 0.02f;
+            bracket.addCylinderBetween(frame.at(bu, bv, 0.12f), frame.at(bu, bv, 0.95f), 0.016f, 6);
+            bracket.addCylinderBetween(frame.at(bu, bv - 0.55f, 0.12f), frame.at(bu, bv - 0.04f, 0.88f),
+                                       0.012f, 6);
+            for (const float hd : {0.30f, 0.86f})
+                bracket.addCylinderBetween(frame.at(bu, bv, hd), frame.at(bu, bv - 0.16f, hd), 0.008f, 5);
+            MeshBuilder& board = collector.builder(palette.fascia);
+            board.setTileSize(0.6f);
+            const Vector3 a = frame.at(bu - 0.018f, bv - 0.16f, 0.26f);
+            const Vector3 b = frame.at(bu + 0.018f, bv - 0.62f, 0.90f);
+            board.addBox(Vector3(std::min(a.X, b.X), std::min(a.Y, b.Y), std::min(a.Z, b.Z)),
+                         Vector3(std::max(a.X, b.X), std::max(a.Y, b.Y), std::max(a.Z, b.Z)));
+        }
         // A potted plant by the door, on the footway.
         if (heroProps_ != nullptr)
         {
@@ -1560,6 +1835,7 @@ void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeF
     const bool office = plot.style == BuildingStyle::ModernOffice;
 
     const float wallFrom = M::kCurbHeight + M::kPlinthHeight;
+    dressing_ = Rng::derive(plotSeed_, primary ? "dressing-front" : "dressing-side");
     // Every opening this elevation cuts. The wall is built last, around them.
     std::vector<Opening> openings;
 
@@ -1640,7 +1916,7 @@ void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeF
                                        : plot.upperFloorHeight;
         const float sill = floor + M::kWindowSill;
         float windowHeight = office ? storeyHeight - 1.05f
-                                    : std::min(M::kWindowHeight, storeyHeight - 1.35f);
+                                    : std::min(M::kWindowHeight, storeyHeight - 1.12f);
         // The piano nobile: the first floor of a nineteenth-century block has
         // taller windows than the ones above it, and getting that wrong is what
         // makes a façade look like a spreadsheet.
@@ -1810,10 +2086,30 @@ void BuildingBuilder::buildFacade(const Plot& plot, int plotIndex, const FacadeF
         }
     }
 
+    // --- quoins ---------------------------------------------------------------
+    // Alternating long and short blocks up both corners of the masonry
+    // blocks that have them, a finger proud of the wall with an arris on
+    // each: the corner is where two elevations meet, and a corner that is a
+    // line is the thing that says the building is a box.
+    const float eaves = frame.height;
+    if (quoins_ && classical)
+    {
+        MeshBuilder& quoin = collector.builder(palette.trim);
+        quoin.setTileSize(0.6f);
+        const float course = 0.30f, joint = 0.02f;
+        int row = 0;
+        for (float qv = wallFrom + 0.06f; qv + course < eaves - 0.56f; qv += course + joint, ++row)
+        {
+            const float w = row % 2 == 0 ? 0.44f : 0.30f;
+            BevelBox(quoin, frame, -0.015f, qv, -0.01f, w, qv + course, 0.032f, 0.012f);
+            BevelBox(quoin, frame, frame.width - w, qv, -0.01f, frame.width + 0.015f, qv + course,
+                     0.032f, 0.012f);
+        }
+    }
+
     // --- cornice ------------------------------------------------------------
     MeshBuilder& trim = collector.builder(palette.trim);
     trim.setTileSize(1.0f);
-    const float eaves = frame.height;
     if (classical)
     {
         // A three-part cornice: frieze, dentil band, and the projecting corona.

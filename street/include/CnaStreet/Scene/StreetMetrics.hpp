@@ -101,11 +101,14 @@ inline constexpr float kWallThickness = 0.40f;
 /// Window reveal depth: how far the glass sits behind the façade plane. This is
 /// what stops a window reading as a sticker.
 inline constexpr float kWindowReveal = 0.16f;
-/// Typical double-casement window in a flat.
+/// Typical double-casement window in a nineteenth-century flat: taller than
+/// a modern one, because the rooms were, and the glass is most of the wall
+/// between the sill and the head. At 1.65 m the upper floors were two thirds
+/// wall and read as a pattern of holes.
 inline constexpr float kWindowWidth  = 1.15f;
-inline constexpr float kWindowHeight = 1.65f;
+inline constexpr float kWindowHeight = 1.95f;
 /// Sill height above the floor.
-inline constexpr float kWindowSill = 0.95f;
+inline constexpr float kWindowSill = 0.85f;
 /// Frame member width.
 inline constexpr float kWindowFrame = 0.06f;
 /// A French window / balcony door.

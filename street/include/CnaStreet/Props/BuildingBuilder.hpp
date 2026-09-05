@@ -242,6 +242,22 @@ private:
     /// A flat, post-war or contemporary elevation, whose windows get a
     /// projecting surround rather than a classical sill and architrave.
     bool flatFacade_ = false;
+    BuildingStyle style_ = BuildingStyle::Gruenderzeit;
+    /// Decided once per plot from its seed, so every elevation agrees:
+    /// whether the rendered block carries folding shutters beside its
+    /// windows, and whether the masonry block has quoins up its corners.
+    bool shutters_ = false;
+    bool quoins_ = false;
+    /// What a window shows of the room behind it, besides the room: a net
+    /// curtain, a roller blind, or a room with the light off. Derived once.
+    /// The stream the window dressing draws from, restarted per elevation
+    /// from the plot's seed: its own, so that curtains and shutters added
+    /// to a window do not re-deal the balconies, the brick colour and every
+    /// ornament of every plot after it.
+    Rng dressing_{1u};
+    const Material* netCurtain_   = nullptr;
+    const Material* windowBlind_  = nullptr;
+    const Material* interiorDark_ = nullptr;
     int heroPlot_ = -1;
     std::vector<HeroProp>* heroProps_ = nullptr;
 };

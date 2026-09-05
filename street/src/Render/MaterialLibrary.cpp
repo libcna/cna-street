@@ -811,7 +811,10 @@ void MaterialLibrary::build(std::uint32_t seed)
         // nothing else, and giving each shop its own palette would cost sixteen
         // textures to say something nobody can resolve.
         Material stock = pbr(0.68f, 0.0f);
-        stock.emissiveFactor = shopLight(0.32f);
+        // A third less glow than the first version: lit stock through glass
+        // in daylight read as a wall of confetti, and product is darker than
+        // the wall behind it, not brighter.
+        stock.emissiveFactor = shopLight(0.20f);
         install(MaterialId::ShopStock, "shop-stock",
                 [&] { return enclose(TextureFactory::shopStock(kMedium, s + 62u), 0.36f, 1.0f); }, stock);
 
@@ -821,7 +824,10 @@ void MaterialLibrary::build(std::uint32_t seed)
         // is the *brightness* of the soffit through the glass.
         Material ceiling = pbr(0.55f, 0.0f);
         ceiling.baseColour     = Vector3(0.92f, 0.90f, 0.86f);
-        ceiling.emissiveFactor = Vector3(1.75f, 1.58f, 1.32f);
+        // Bright enough to read as a lit tube through the glass, not so
+        // bright that the bloom turns the soffit into a white bar: at 1.75
+        // every shop on the street was a light box first and a room second.
+        ceiling.emissiveFactor = Vector3(1.20f, 1.08f, 0.90f);
         float ceilingRgb[3];
         Rgb(ceilingRgb, ceiling.baseColour);
         install(MaterialId::ShopCeilingLight, "shop-ceiling-light",
