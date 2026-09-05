@@ -9,6 +9,7 @@
 #include "CnaStreet/Sim/PedestrianSystem.hpp"
 #include "CnaStreet/Sim/TrafficSystem.hpp"
 #include "CnaStreet/Render/CameraController.hpp"
+#include "CnaStreet/Assets/CharacterLibrary.hpp"
 #include "CnaStreet/Assets/ModelLibrary.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
 #include "CnaStreet/Render/RenderSettings.hpp"
@@ -48,6 +49,11 @@ public:
 
     CityScene(const CityScene&) = delete;
     CityScene& operator=(const CityScene&) = delete;
+
+    /// Where the compiled content is, for the things that are read from it
+    /// directly rather than through `ContentManager`: the imported people.
+    /// Set before @ref build; without it every variant is generated.
+    void setContentRoot(const std::string& root) { characters_.setContentRoot(root); }
 
     /// Generates and uploads everything. Reports each stage through the log so a
     /// slow start-up can be attributed.
@@ -166,6 +172,11 @@ private:
     /// not drawn. Called from buildDressing, before the covered car takes a
     /// bay of its own.
     void buildHeroVehicles(Rng& rng, const RenderSettings& settings);
+    /// Stands the hero shop's scanned props where its interior anchored them.
+    void buildHeroShop(const RenderSettings& settings);
+    /// Which plot is the hero shop: the shop on the west frontage the shop
+    /// window and pavement cafe viewpoints look into.
+    [[nodiscard]] int chooseHeroPlot() const;
     void buildSignalsAndSigns(Rng& rng, const RenderSettings& settings);
     /// Shop fascias and house numbers, on the anchors the façade generator
     /// left behind while it was building the elevations.
@@ -185,11 +196,16 @@ private:
     SceneRenderer&  renderer_;
     MaterialLibrary& materials_;
     ModelLibrary&    models_;
+    CharacterLibrary characters_;
     CityLayout      layout_;
     std::vector<Crossing> crossings_;
     std::vector<Microsoft::Xna::Framework::Vector3> manholes_;
     std::vector<FacadeAnchor> anchors_;
     std::vector<ShopDisplay>  displays_;
+    /// The hero shop: the plot the close viewpoints look into, built as a
+    /// composed bakery-cafe, and the scanned props its interior asked for.
+    int heroPlot_ = -1;
+    std::vector<HeroProp> heroProps_;
 
     std::vector<std::unique_ptr<GpuMesh>> meshes_;
     std::vector<Viewpoint> viewpoints_;
@@ -260,6 +276,7 @@ private:
     /// variant's SkinningData for its whole life, and a vector that reallocates
     /// would leave every player pointing at freed memory.
     std::vector<std::unique_ptr<CharacterMesh>> characterMeshes_;
+    int importedPeople_ = 0;
     /// One player per person. Advanced to that person's own animation time
     /// every frame, so no two people in the crowd are in step.
     std::vector<std::unique_ptr<Microsoft::Xna::Framework::Graphics::AnimationPlayer>> walkers_;

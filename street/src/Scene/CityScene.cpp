@@ -18,6 +18,7 @@
 #include "System/Diagnostics/Stopwatch.hpp"
 
 #include <algorithm>
+#include <cstdio>
 #include <cmath>
 #include <set>
 
@@ -34,7 +35,8 @@ namespace M = Metrics;
 
 CityScene::CityScene(GraphicsDevice& device, SceneRenderer& renderer, MaterialLibrary& materials,
                      ModelLibrary& models)
-    : device_(device), renderer_(renderer), materials_(materials), models_(models)
+    : device_(device), renderer_(renderer), materials_(materials), models_(models),
+      characters_(materials)
 {
 }
 
@@ -117,6 +119,9 @@ void CityScene::build(const RenderSettings& settings)
         GeometryCollector interiors;
         Rng rng = Rng::derive(settings.seed, "buildings");
         BuildingBuilder buildings(materials_, layout_);
+        heroPlot_ = chooseHeroPlot();
+        heroProps_.clear();
+        if (heroPlot_ >= 0) buildings.setHeroShop(heroPlot_, &heroProps_);
         const std::vector<Plot>& plots = layout_.plots();
         for (std::size_t i = 0; i < plots.size(); ++i)
             buildings.build(plots[i], static_cast<int>(i), collector, interiors, rng, anchors_,
@@ -163,6 +168,7 @@ void CityScene::build(const RenderSettings& settings)
         Rng rng = Rng::derive(settings.seed, "dressing");
         buildDressing(rng, settings);
     }
+    buildHeroShop(settings);
 
     // After the trees and the vehicles, because the district beyond the
     // frontage borrows both: the same far trees at the same pitch, and the
@@ -1541,15 +1547,54 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     // from its 4.6 m to a street tree's height. The generated trees stand
     // everywhere else, so the hero corridor gets the leaf-level realism and
     // the rest of the district stays cheap.
-    const PropMesh heroTree    = importedProp("ph-tree-small");
-    const PropMesh heroTreeFar = importedProp("ph-tree-small-far");
+    // Three scanned species now, each with its far copy: the small tree from
+    // the third pass, a broad multi-stemmed island tree, and a mature
+    // jacaranda for the tallest pits. One species scaled with variation reads
+    // as a planted row; three species read as a street planted over decades,
+    // which is what the generated trees' six variants were trying to say
+    // and could not.
+    struct HeroSpecies
+    {
+        PropMesh near, far;
+        float scaleMin, scaleMax;
+        float lod;
+        const char* name;
+    };
+    HeroSpecies heroSpecies[] = {
+        {importedProp("ph-tree-small"), importedProp("ph-tree-small-far"), 1.55f, 1.85f, 55.0f,
+         "tree-hero"},
+        {importedProp("ph-island-tree-02"), importedProp("ph-island-tree-02-far"), 1.85f, 2.15f,
+         44.0f, "tree-hero-island"},
+        {importedProp("ph-jacaranda-tree"), importedProp("ph-jacaranda-tree-far"), 0.42f, 0.50f,
+         40.0f, "tree-hero-jacaranda"},
+    };
+    const bool haveHero = !heroSpecies[0].near.empty();
+    // The hero corridor is the whole main street within eighty metres of the
+    // junction, both footways: everything the showcase cameras see at a
+    // distance where a leaf card reads as a leaf card.
     auto heroPit = [](const Vector3& p) {
-        return p.X < 0.0f && p.Z > 18.0f && p.Z < 68.0f;
+        return std::fabs(p.X) < M::kMainStreetHalfWidth + 1.0f && p.Z > -70.0f && p.Z < 84.0f;
+    };
+    // Which species a pit gets: the west footway north of the junction, where
+    // the close viewpoints stand, keeps the small tree with an island tree
+    // every third pit; the east footway alternates the two bigger species,
+    // because across the carriageway a tall crown is what says "mature
+    // street"; south of the junction the two smaller species alternate.
+    auto speciesFor = [&](const Vector3& p, int ordinal) -> int {
+        const bool west = p.X < 0.0f;
+        if (p.Z > 0.0f && west) return ordinal % 3 == 2 ? 1 : 0;
+        if (p.Z > 0.0f) return ordinal % 2 == 0 ? 2 : 1;
+        return ordinal % 2 == 0 ? 1 : 0;
+    };
+    auto speciesReady = [&](int species) {
+        return species < 3 && !heroSpecies[species].near.empty();
     };
 
     std::vector<std::vector<Matrix>> treeAt(kTreeVariants);
     std::vector<std::vector<Matrix>> planterAt(planters.size());
-    std::vector<Matrix> grateAt, scruffAt, heroTreeAt;
+    std::vector<Matrix> grateAt, scruffAt;
+    std::vector<Matrix> heroAt[3];
+    int heroOrdinal[4] = {0, 0, 0, 0};
 
     for (const FootwayRun& run : layout_.footways())
     {
@@ -1574,13 +1619,31 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
             int tree = 0;
             for (float s = rhythm.treeAt(0); s < length - 5.0f; s = rhythm.treeAt(++tree))
             {
-                if (!rng.chance(0.82f)) continue;   // the gaps where one died
                 const Vector3 p = at(s, FurnitureBand(run) + 0.15f);
+                // The gaps where one died: decided from the pit's own position
+                // rather than from the draw sequence, so adding a draw to the
+                // loop cannot move every gap on the street -- which is how a
+                // run of four empty pits once landed on the hero corridor and
+                // the tree viewpoint was aimed at a facade. Nine in ten
+                // planted: a street is replanted when a tree dies, mostly.
+                const std::uint32_t pit = Noise::hash2(static_cast<int>(std::lround(p.X * 10.0f)),
+                                                       static_cast<int>(std::lround(p.Z * 10.0f)),
+                                                       settings.seed);
+                if (static_cast<float>(pit & 0xFFFFu) / 65536.0f > 0.90f) continue;
                 const int variant = rng.intRange(0, kTreeVariants - 1);
                 const float yaw = rng.range(0.0f, MathHelper::TwoPi);
-                if (!heroTree.empty() && heroPit(p))
-                    heroTreeAt.push_back(Matrix::CreateScale(rng.range(1.55f, 1.85f))
-                                         * Place(p.X, p.Y, p.Z, yaw));
+                const float scale = rng.range(0.0f, 1.0f);
+                if (haveHero && heroPit(p))
+                {
+                    const int quadrant = (p.X < 0.0f ? 0 : 1) + (p.Z > 0.0f ? 0 : 2);
+                    int species = speciesFor(p, heroOrdinal[quadrant]++);
+                    if (!speciesReady(species)) species = 0;
+                    const HeroSpecies& kind = heroSpecies[species];
+                    heroAt[species].push_back(
+                        Matrix::CreateScale(kind.scaleMin + (kind.scaleMax - kind.scaleMin) * scale)
+                        * Place(p.X, p.Y, p.Z, yaw));
+
+                }
                 else
                     treeAt[static_cast<std::size_t>(variant)].push_back(Place(p.X, p.Y, p.Z, yaw));
                 treePositions_.push_back(p);
@@ -1625,9 +1688,16 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     // The same tree at a quarter of the geometry past 55 m -- cut by the same
     // script from the same source, so the crown keeps its shape across the
     // switch rather than popping to a different tree.
-    placeProp(heroTree, heroTreeAt, "tree-hero", cull, shade, /*castsShadow=*/true,
-              heroTreeFar.empty() ? nullptr : &heroTreeFar, 55.0f);
-    buildStats_.trees += static_cast<int>(heroTreeAt.size());
+    for (int species = 0; species < 3; ++species)
+    {
+        const HeroSpecies& kind = heroSpecies[species];
+        placeProp(kind.near, heroAt[species], kind.name, cull, shade, /*castsShadow=*/true,
+                  kind.far.empty() ? nullptr : &kind.far, kind.lod);
+        buildStats_.trees += static_cast<int>(heroAt[species].size());
+    }
+    CNA::Logger::Info("cna-street: hero trees -- " + std::to_string(heroAt[0].size())
+                      + " small, " + std::to_string(heroAt[1].size()) + " island, "
+                      + std::to_string(heroAt[2].size()) + " jacaranda");
     placeProp(grate, grateAt, "tree-grate", cull * 0.35f, 0.0f, false);
     for (std::size_t i = 0; i < planters.size(); ++i)
         placeProp(planters[i], planterAt[i], "planter-" + std::to_string(i), cull * 0.5f,
@@ -1958,7 +2028,8 @@ void CityScene::buildSignage(Rng& rng, const RenderSettings& settings)
         if (fascia)
         {
             if (plot.shopName.empty()) continue;
-            text = plot.shopName;
+            text = anchor.plotIndex == heroPlot_ ? BuildingBuilder::heroShopName()
+                                                 : plot.shopName;
         }
         else
         {
@@ -2263,6 +2334,64 @@ void CityScene::buildDressing(Rng& rng, const RenderSettings& settings)
     }
     placeProp(crate, crateAt, "crate", cull * 0.3f, shade * 0.3f);
     placeProp(carton, cartonAt, "carton", cull * 0.3f, shade * 0.3f);
+    // A sack truck left against the wall by the first delivery in the hero
+    // corridor: the tool the crates arrived on.
+    const PropMesh truck = importedProp("ph-hand-truck");
+    if (!truck.empty() && !crateAt.empty())
+    {
+        std::vector<Matrix> truckAt;
+        for (const Matrix& at : crateAt)
+        {
+            const Vector3 p = at.getTranslationProperty();
+            if (p.X > 0.0f || p.Z < 18.0f || p.Z > 68.0f || p.Y > ground + 0.1f) continue;
+            truckAt.push_back(Matrix::CreateTranslation(0.0f, 0.0f, -0.9f) * at);
+            break;
+        }
+        placeProp(truck, truckAt, "hand-truck", cull * 0.3f, shade * 0.3f);
+    }
+
+    // --- on the walls --------------------------------------------------------
+    // A security camera over one shop door in two, and a condenser unit at
+    // the anchors the flat elevations left beside their upper windows. Both
+    // are scans, both are small, and both are the kind of thing a viewer
+    // never notices and always misses.
+    const PropMesh camera = importedProp("ph-security-camera-01");
+    const PropMesh aircon = importedProp("ph-exterior-aircon-unit");
+    std::vector<Matrix> cameraAt, airconAt;
+    for (const FacadeAnchor& anchor : anchors_)
+    {
+        const Vector3 out = Vector3::Normalize(Vector3(anchor.normal.X, 0.0f, anchor.normal.Z));
+        const float yaw = std::atan2(out.X, out.Z);
+        if (anchor.kind == FacadeAnchor::Kind::DoorHead && !camera.empty())
+        {
+            if (!rng.chance(0.5f)) continue;
+            // The scan stands upright on its base; hung under the door head
+            // it is turned to look down the footway, its mount against the
+            // wall.
+            const float across = camera.bounds.Max.X - camera.bounds.Min.X;
+            const float fit = 0.24f / std::max(across, 0.05f);
+            const Vector3 p = Vector3(anchor.position.X, anchor.position.Y + 0.02f,
+                                      anchor.position.Z) + out * 0.02f;
+            cameraAt.push_back(Matrix::CreateScale(fit)
+                               * Matrix::CreateRotationX(-0.35f)
+                               * Place(p.X, p.Y, p.Z, yaw + (rng.chance(0.5f) ? 0.6f : -0.6f)));
+        }
+        else if (anchor.kind == FacadeAnchor::Kind::AirCon && !aircon.empty())
+        {
+            const float across = aircon.bounds.Max.X - aircon.bounds.Min.X;
+            const float fit = 0.82f / std::max(across, 0.05f);
+            const float depth = (aircon.bounds.Max.Z - aircon.bounds.Min.Z) * fit;
+            const Vector3 p = Vector3(anchor.position.X, anchor.position.Y, anchor.position.Z)
+                              + out * (depth * 0.5f + 0.02f);
+            airconAt.push_back(Matrix::CreateScale(fit)
+                               * Matrix::CreateTranslation(-(aircon.bounds.Min.X + aircon.bounds.Max.X) * 0.5f * fit,
+                                                           -aircon.bounds.Min.Y * fit,
+                                                           -(aircon.bounds.Min.Z + aircon.bounds.Max.Z) * 0.5f * fit)
+                               * Place(p.X, p.Y, p.Z, yaw));
+        }
+    }
+    placeProp(camera, cameraAt, "security-camera", cull * 0.25f, 0.0f, false);
+    placeProp(aircon, airconAt, "aircon-unit", cull * 0.32f, shade * 0.4f);
 
     CNA::Logger::Info("cna-street: dressing -- " + std::to_string(manholes_.size())
                       + " manhole covers, " + std::to_string(cafes) + " pavement cafes, "
@@ -2376,6 +2505,70 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
     CNA::Logger::Info("cna-street: " + std::to_string(heroVehicles_) + " hero vehicles over "
                       + std::to_string(heroes.size()) + " models parked in "
                       + std::to_string(bays.size()) + " hero bays");
+}
+
+int CityScene::chooseHeroPlot() const
+{
+    // The shop the "Shop window" and "Pavement cafe" viewpoints stand in
+    // front of: on the west frontage north of the junction, its front on the
+    // building line, nearest z = 41, and wide enough for a counter and a
+    // window. Chosen from the layout alone, so it is the same plot every run.
+    int best = -1;
+    float bestScore = 1e30f;
+    const std::vector<Plot>& plots = layout_.plots();
+    for (std::size_t i = 0; i < plots.size(); ++i)
+    {
+        const Plot& plot = plots[i];
+        if (!plot.hasShop || plot.primary != Facing::PosX || plot.maxX > 0.0f) continue;
+        if (plot.depth() < 8.0f) continue;
+        const float centre = (plot.minZ + plot.maxZ) * 0.5f;
+        if (centre < 28.0f || centre > 58.0f) continue;
+        const float score = std::fabs(centre - 41.0f);
+        if (score < bestScore) { bestScore = score; best = static_cast<int>(i); }
+    }
+    return best;
+}
+
+void CityScene::buildHeroShop(const RenderSettings& settings)
+{
+    if (heroProps_.empty()) return;
+    // Group the anchors by asset, so a croissant that stands in three places
+    // is one instance group of three rather than three groups of one.
+    std::vector<std::string> assets;
+    for (const HeroProp& want : heroProps_)
+        if (std::find(assets.begin(), assets.end(), want.asset) == assets.end())
+            assets.push_back(want.asset);
+    int placed = 0;
+    for (const std::string& asset : assets)
+    {
+        const PropMesh prop = importedProp(asset);
+        if (prop.empty()) continue;
+        const Vector3 size = prop.bounds.Max - prop.bounds.Min;
+        // Stood on its base and centred on its footprint, whatever the
+        // author's origin was.
+        const Matrix stand = Matrix::CreateTranslation(
+            -(prop.bounds.Min.X + prop.bounds.Max.X) * 0.5f, -prop.bounds.Min.Y,
+            -(prop.bounds.Min.Z + prop.bounds.Max.Z) * 0.5f);
+        std::vector<Matrix> at;
+        float cull = 40.0f;
+        for (const HeroProp& want : heroProps_)
+        {
+            if (want.asset != asset) continue;
+            float scale = 1.0f;
+            if (want.fitMetres > 0.0f)
+            {
+                const float extent = want.byWidth ? std::max(size.X, 1e-3f) : std::max(size.Y, 1e-3f);
+                scale = want.fitMetres / extent;
+            }
+            at.push_back(stand * Matrix::CreateScale(scale) * want.at);
+            cull = std::max(cull, want.cullDistance);
+        }
+        placeProp(prop, at, "hero-shop-" + asset, cull, settings.propShadowDistance * 0.4f);
+        placed += static_cast<int>(at.size());
+    }
+    CNA::Logger::Info("cna-street: hero shop on plot " + std::to_string(heroPlot_) + " -- "
+                      + std::to_string(placed) + " of " + std::to_string(heroProps_.size())
+                      + " props stood");
 }
 
 void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
@@ -2527,10 +2720,69 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
     characterMeshes_.clear();
     characterMeshes_.reserve(static_cast<std::size_t>(PedestrianSystem::kVariantCount));
 
+    importedPeople_ = 0;
     for (int variant = 0; variant < PedestrianSystem::kVariantCount; ++variant)
     {
         const std::string suffix = std::to_string(variant);
         Rng pick = Rng::derive(settings.seed, "person-" + suffix);
+
+        // An authored person for this variant, where the derived files exist:
+        // a MakeHuman figure with real clothes, hair and a face, weighted onto
+        // the same nineteen-bone skeleton and driven by the same clips. See
+        // CharacterLibrary. The generated figure stands in otherwise.
+        char personName[16];
+        std::snprintf(personName, sizeof(personName), "person-%02d", variant + 1);
+        if (const CharacterLibrary::Person* person = characters_.load(personName))
+        {
+            auto entry = std::make_unique<CharacterMesh>();
+            entry->height = person->height;
+            int index = 0;
+            for (const CharacterLibrary::Part& part : person->near)
+            {
+                auto mesh = std::make_unique<SkinnedGpuMesh>(
+                    device_, part.mesh, std::string(personName) + "." + std::to_string(index++));
+                buildStats_.meshBytes += mesh->gpuBytes();
+                buildStats_.triangles += static_cast<std::size_t>(mesh->triangleCount());
+                entry->parts.push_back(CharacterMesh::Part{part.material, std::move(mesh)});
+            }
+            index = 0;
+            for (const CharacterLibrary::Part& part : person->far)
+            {
+                auto mesh = std::make_unique<SkinnedGpuMesh>(
+                    device_, part.mesh,
+                    std::string(personName) + "-far." + std::to_string(index++));
+                buildStats_.meshBytes += mesh->gpuBytes();
+                buildStats_.triangles += static_cast<std::size_t>(mesh->triangleCount());
+                entry->farParts.push_back(CharacterMesh::Part{part.material, std::move(mesh)});
+            }
+            entry->skinning.BoneCount         = person->skeleton.count();
+            entry->skinning.SkeletonHierarchy = person->skeleton.hierarchy();
+            entry->skinning.BindPose          = person->skeleton.bindPose();
+            entry->skinning.InverseBindPose   = person->skeleton.inverseBindPose();
+            const CharacterFactory::Clips clips =
+                CharacterFactory::clips(person->skeleton, person->height, 1.06f);
+            entry->skinning.AnimationClips["walk"] = clips.walk;
+            entry->skinning.AnimationClips["idle"] = clips.idle;
+            // The rigid stand-in for the shadow pass, from the far copy in its
+            // bind pose; see CNA-F14 below.
+            entry->shadowProxy = makeProp(std::string(personName) + "-shadow",
+                                          [&](GeometryCollector& c) {
+                for (const CharacterLibrary::Part& part : person->far)
+                {
+                    Geometry::MeshBuilder& builder = c.builder(part.material);
+                    Geometry::MeshData plain;
+                    plain.indices = part.mesh.indices;
+                    plain.vertices.reserve(part.mesh.vertices.size());
+                    for (const Geometry::SkinnedVertex& v : part.mesh.vertices)
+                        plain.vertices.emplace_back(v.Position, v.Normal, v.Tangent,
+                                                    v.TextureCoordinate);
+                    builder.append(plain);
+                }
+            });
+            characterMeshes_.push_back(std::move(entry));
+            ++importedPeople_;
+            continue;
+        }
 
         CharacterLook look = characters.look(pick, variant);
         look.skin = materials_.deriveTinted("skin-" + suffix, MaterialId::Skin,
@@ -2627,6 +2879,9 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         pedestrians_.build(layout_, crossings_, settings.seed, 78);
     buildStats_.vehicles = static_cast<int>(traffic_.vehicles().size());
     buildStats_.people   = static_cast<int>(pedestrians_.people().size());
+    CNA::Logger::Info("cna-street: " + std::to_string(importedPeople_) + " of "
+                      + std::to_string(PedestrianSystem::kVariantCount)
+                      + " crowd variants are imported people");
 
     // Which of them is the imported one. Chosen from the seed rather than fixed
     // at zero so it is not always the same route, and only once the crowd
@@ -2727,6 +2982,7 @@ void CityScene::buildViewpoints()
         const float yaw = std::atan2(to.X, -to.Z);
         const float pitch = std::atan2(to.Y, std::sqrt(to.X * to.X + to.Z * to.Z));
         viewpoints_.push_back(Viewpoint{"Street tree", stand, yaw, pitch, 1.15f});
+
     }
     // One bay of a façade filling the frame: reveal depth, sill, material scale.
     viewpoints_.push_back(Viewpoint{"Facade detail",

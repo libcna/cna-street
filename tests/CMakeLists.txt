@@ -17,6 +17,9 @@ cna_street_test(camera_tests CameraTests.cpp)
 cna_street_test(content_pipeline_tests ContentPipelineTests.cpp)
 cna_street_test(appearance_tests AppearanceTests.cpp)
 cna_street_test(realism_tests RealismTests.cpp)
+# The character format the people are written in: passes with a note where no
+# people have been generated.
+cna_street_test(character_format_tests CharacterFormatTests.cpp)
 
 # The licence gate as a test, where Python is available: every fetched asset
 # declared, every declared licence on the allow-list, every digest matching.

@@ -3674,7 +3674,13 @@
    ],
    "role": "The hero pedestrians: every person the crowd draws from a MakeHuman-derived figure is built from this pack. The generated figures stand in wherever the derived files are not present.",
    "compile": false,
-   "derived": []
+   "derived": [
+    {
+     "name": "people",
+     "folder": "derived/people",
+     "note": "eight people (person-01 .. person-08): a JSON header, a near and a far binary each, and the textures they share, written by scripts/blender-people.py; the textures are compiled with a mip chain and the meshes copied by the content build"
+    }
+   ]
   }
  ],
  "surfaces": [

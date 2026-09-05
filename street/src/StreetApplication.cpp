@@ -320,6 +320,7 @@ void StreetApplication::LoadContent()
     renderer_->initialise(settings_);
 
     scene_ = std::make_unique<CityScene>(device, *renderer_, *materials_, *models_);
+    if (content_ != nullptr) scene_->setContentRoot(contentRoot.string());
     scene_->build(settings_);
 
     camera_.setPerspective(MathHelper::ToRadians(settings_.verticalFovDegrees),

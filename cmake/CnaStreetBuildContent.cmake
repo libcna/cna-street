@@ -148,5 +148,41 @@ if(DEFINED GLTF_COMPILER AND NOT GLTF_COMPILER STREQUAL "" AND DEFINED GLTF_SOUR
     endforeach()
 endif()
 
-message(STATUS "cna-street: content build complete -- ${compiled} surfaces and "
-               "${models} model(s) in ${OUTPUT}")
+# --- imported people ------------------------------------------------------------
+# The MakeHuman-derived pedestrians, in this project's own character format:
+# a JSON header and two binaries per person, copied as they are, and their
+# textures compiled exactly like the catalogue's surfaces -- with a mip chain,
+# sRGB for an albedo and linear for a normal map -- which is what a texture
+# absorbed into a model does not get (GLTF-206). Absent from a tree where
+# Blender and MPFB have not run, and that is not an error.
+set(people 0)
+set(people_dir "${GLTF_SOURCE}/derived/people")
+if(IS_DIRECTORY "${people_dir}")
+    file(GLOB people_images "${people_dir}/*.png")
+    foreach(image IN LISTS people_images)
+        get_filename_component(filename "${image}" NAME)
+        string(REGEX REPLACE "\\.png$" "" logical "${filename}")
+        if(logical MATCHES "\\.albedo$")
+            set(space srgb)
+        else()
+            set(space linear)
+        endif()
+        execute_process(COMMAND "${COMPILER}" "${image}" "${OUTPUT}/${logical}.cnb"
+                                --name "${logical}" --mipmaps --mip-color-space "${space}" --quiet
+                        RESULT_VARIABLE compile_result)
+        if(NOT compile_result EQUAL 0)
+            message(WARNING "cna-street: could not compile ${filename} (${compile_result})")
+        endif()
+    endforeach()
+    file(GLOB people_files "${people_dir}/*.json" "${people_dir}/*.bin")
+    foreach(source IN LISTS people_files)
+        get_filename_component(filename "${source}" NAME)
+        file(COPY_FILE "${source}" "${OUTPUT}/${filename}")
+        if(filename MATCHES "\\.json$")
+            math(EXPR people "${people} + 1")
+        endif()
+    endforeach()
+endif()
+
+message(STATUS "cna-street: content build complete -- ${compiled} surfaces, "
+               "${models} model(s) and ${people} people in ${OUTPUT}")

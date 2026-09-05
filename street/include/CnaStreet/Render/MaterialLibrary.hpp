@@ -159,6 +159,14 @@ public:
     /// per door.
     [[nodiscard]] const Material* add(const std::string& name, const Assets::SurfaceMaps& maps,
                                       Material material);
+    /// Registers a material whose maps are compiled textures in the content
+    /// root, by logical name: what the imported people use, whose textures
+    /// go through the same compiler as the catalogue's surfaces and so, unlike
+    /// a model's own images (GLTF-206), arrive with a mip chain. Returns
+    /// nullptr when @p albedo is not there; @p normal may be empty.
+    [[nodiscard]] const Material* addFromContent(const std::string& name,
+                                                 const std::string& albedo,
+                                                 const std::string& normal, Material material);
     /// The material registered under @p name, or nullptr.
     [[nodiscard]] const Material* find(const std::string& name) const;
 

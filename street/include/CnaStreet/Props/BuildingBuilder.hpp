@@ -7,6 +7,7 @@
 
 #include "Microsoft/Xna/Framework/Vector3.hpp"
 
+#include <string>
 #include <vector>
 
 namespace CnaStreet {
@@ -51,7 +52,10 @@ struct FacadeAnchor
     Microsoft::Xna::Framework::Vector3 normal;
     float width = 1.0f;
     float height = 0.3f;
-    enum class Kind { ShopFascia, StreetPlate, HouseNumber, Awning } kind = Kind::ShopFascia;
+    /// DoorHead is the centre of a shop door's head, for a camera or a lamp;
+    /// AirCon is a spot beside an upper window where a condenser unit hangs.
+    enum class Kind { ShopFascia, StreetPlate, HouseNumber, Awning, DoorHead, AirCon }
+        kind = Kind::ShopFascia;
     int plotIndex = 0;
 };
 
@@ -86,6 +90,22 @@ struct ShopDisplay
     int plotIndex = 0;
 };
 
+/// An authored prop the hero shop wants standing somewhere: which scan, where,
+/// and how tall to make it (0 keeps the authored size). Worked out by the
+/// interior generator in the room's own frame; the scene loads and places it.
+struct HeroProp
+{
+    std::string asset;
+    Microsoft::Xna::Framework::Matrix at;
+    float fitMetres = 0.0f;
+    /// Fit the width rather than the height: a shelf unit is sized by how
+    /// much wall it takes, a cake by how tall it stands.
+    bool byWidth = false;
+    /// How far this copy is drawn; the room is invisible from across the
+    /// street and a croissant from further than the window.
+    float cullDistance = 40.0f;
+};
+
 /**
  * @brief Turns a plot into a building.
  *
@@ -116,6 +136,17 @@ public:
     void build(const Plot& plot, int plotIndex, GeometryCollector& collector,
                GeometryCollector& interiors, Rng& rng, std::vector<FacadeAnchor>& anchors,
                std::vector<ShopDisplay>& displays);
+
+    /// Makes plot @p index the hero shop: a bakery-cafe built as a composed
+    /// room rather than a dressed box, whose scanned props are written to
+    /// @p props for the scene to stand up. One shop on the street gets this;
+    /// it is the one the close viewpoints look into.
+    void setHeroShop(int index, std::vector<HeroProp>* props)
+    {
+        heroPlot_  = index;
+        heroProps_ = props;
+    }
+    [[nodiscard]] static const char* heroShopName() { return "KAFFEEHAUS"; }
 
     /// The palette a plot's `colourIndex` selects from.
     [[nodiscard]] static int renderColourCount();
@@ -175,6 +206,14 @@ private:
     void buildShopInterior(const FacadeFrame& frame, float u0, float u1, float floor, float ceiling,
                            ShopKind kind, int plotIndex, GeometryCollector& collector, Rng& rng,
                            std::vector<ShopDisplay>* displays);
+    /// The hero bakery-cafe: a deeper room with a serving counter under a
+    /// glass display case, shelving of bread, a coffee station, a back door
+    /// into a darker store, pendant lamps, and the window dressed with the
+    /// things a bakery puts in a window. The scanned props are anchored here
+    /// and placed by the scene.
+    void buildHeroBakery(const FacadeFrame& frame, float u0, float u1, float floor,
+                         float ceiling, int plotIndex, GeometryCollector& collector, Rng& rng,
+                         std::vector<ShopDisplay>* displays);
     void buildEntrance(const FacadeFrame& frame, float u, float sillHeight,
                        const Palette& palette, GeometryCollector& collector, Rng& rng,
                        std::vector<Opening>& openings);
@@ -200,6 +239,11 @@ private:
     /// its shop is open.
     float weathering_ = 0.5f;
     std::uint32_t plotSeed_ = 0;
+    /// A flat, post-war or contemporary elevation, whose windows get a
+    /// projecting surround rather than a classical sill and architrave.
+    bool flatFacade_ = false;
+    int heroPlot_ = -1;
+    std::vector<HeroProp>* heroProps_ = nullptr;
 };
 
 }  // namespace CnaStreet

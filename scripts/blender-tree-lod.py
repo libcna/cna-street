@@ -25,6 +25,9 @@ from mathutils import Vector
 argv = sys.argv[sys.argv.index("--") + 1:] if "--" in sys.argv else []
 parser = argparse.ArgumentParser()
 parser.add_argument("--object", required=True)
+# A tree published as glTF rather than .blend: imported first, and the
+# object named is the one the importer makes (the LOD0 node's name).
+parser.add_argument("--gltf", default="")
 parser.add_argument("--out", required=True)
 parser.add_argument("--far-out", default="")
 parser.add_argument("--keep-leaves", type=float, default=0.40)
@@ -53,6 +56,14 @@ def select_only(objects):
     bpy.context.view_layer.objects.active = objects[0]
 
 
+if args.gltf:
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    bpy.ops.import_scene.gltf(filepath=args.gltf)
+    for o in list(bpy.context.scene.objects):
+        if o.type == "MESH":
+            o.select_set(True)
+            bpy.context.view_layer.objects.active = o
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
 src = bpy.data.objects[args.object]
 for o in bpy.data.objects:
     o.hide_set(False)
@@ -166,13 +177,27 @@ def build(level, keep_leaves, leaf_scale, wood_ratio, out):
     bpy.ops.object.join()
     tree = bpy.context.view_layer.objects.active
     tree.name = f"street_tree_{level}"
+    # One UV set and no vertex colours: the renderer instances a tree by
+    # binding its transforms in a second vertex stream, and CNA refuses a
+    # mesh whose own stream already carries the usages that stream declares.
+    # A scan's LOD0 arrives with a colour attribute for its wind rig.
+    while len(tree.data.uv_layers) > 1:
+        tree.data.uv_layers.remove(tree.data.uv_layers[-1])
+    for attribute in list(tree.data.color_attributes):
+        try:
+            tree.data.color_attributes.remove(attribute)
+        except RuntimeError:
+            # An unnamed attribute cannot be removed this way; the exporter is
+            # told to write no colours either way.
+            pass
     log(level, "total faces", len(tree.data.polygons))
     select_only([tree])
     bpy.ops.export_scene.gltf(filepath=out, export_format='GLB', use_selection=True,
                               export_apply=True, export_yup=True, export_texcoords=True,
                               export_normals=True, export_tangents=True, export_materials='EXPORT',
                               export_image_format='AUTO', export_cameras=False, export_lights=False,
-                              export_animations=False, export_skins=False)
+                              export_animations=False, export_skins=False,
+                              export_vertex_color='NONE', export_attributes=False)
     log(level, "wrote", out)
     bpy.data.objects.remove(tree, do_unlink=True)
     # Blender 4.2+ writes every material with alpha as BLEND whatever the

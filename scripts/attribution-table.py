@@ -45,6 +45,23 @@ def main() -> int:
         print()
         for licence, titles in sorted(licence_lists(entries).items()):
             print(f"{licence}: {', '.join(sorted(titles))}.\n")
+        # The attribution a CC-BY licence asks for, per item: the title, the
+        # author, the licence and where it came from, with the page the
+        # author published it on where the file itself was fetched from a
+        # mirror.
+        credited = [e for e in entries if e.get("attributionRequired")]
+        if credited:
+            print("Credits, as CC-BY-4.0 asks:\n")
+            for entry in sorted(credited, key=lambda e: e["title"]):
+                page = entry.get("origin") or entry["source"]
+                print(f"* \"{entry['title']}\" by {entry['author']}, {entry['licence']}, {page}")
+            print()
+    if manifest.get("tools"):
+        print("### Tools\n")
+        print("| Tool | Licence | Used for |\n| --- | --- | --- |")
+        for tool in manifest["tools"]:
+            print(f"| {tool['title']} | {tool['licence']} | {tool['role']} |")
+        print()
     return 0
 
 

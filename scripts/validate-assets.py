@@ -97,6 +97,7 @@ def main() -> int:
     seen_names: dict[str, str] = {}
     seen_sources: dict[str, str] = {}
     declared_files: set[str] = set()
+    declared_folders: list[str] = []
     checked = 0
 
     def check_common(entry: dict, required: tuple[str, ...], kind: str) -> str:
@@ -174,10 +175,15 @@ def main() -> int:
         # cut in Blender -- is declared so the scan of downloads/ knows it, and
         # so the manifest says what was done to make it.
         for derived in asset.get("derived", []):
-            if not derived.get("name") or not derived.get("file"):
-                problems.append(f"{name}: a derived entry needs a 'name' and a 'file'")
+            if not derived.get("name") or not (derived.get("file") or derived.get("folder")):
+                problems.append(f"{name}: a derived entry needs a 'name' and a 'file' or 'folder'")
                 continue
-            declared_files.add(derived["file"])
+            if derived.get("folder"):
+                # Everything a tool wrote under one folder -- the people's
+                # headers, binaries and textures -- is declared by the folder.
+                declared_folders.append(derived["folder"].rstrip("/") + "/")
+            else:
+                declared_files.add(derived["file"])
             if derived["name"] in seen_names and derived["name"] != name:
                 problems.append(f"{name}: derived name '{derived['name']}' is already used")
             seen_names[derived["name"]] = "derived"
@@ -216,7 +222,7 @@ def main() -> int:
             relative = path.relative_to(downloads).as_posix()
             if path.name in IGNORED_NAMES or path.suffix in IGNORED_SUFFIXES:
                 continue
-            if relative not in declared_files:
+            if relative not in declared_files and not any(relative.startswith(f) for f in declared_folders):
                 problems.append(
                     f"{relative} is present in downloads/ but not declared in the manifest. "
                     f"Every file that reaches the content build has to have a licence."

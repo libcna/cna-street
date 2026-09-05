@@ -69,7 +69,8 @@ def main() -> int:
             # detail cut from a tree in Blender -- compiled under their own
             # names.
             for derived in asset.get("derived", []):
-                print(f"{derived['file']}={derived['name']}")
+                if derived.get("file"):
+                    print(f"{derived['file']}={derived['name']}")
         return 0
 
     if command == "fetch-list":
@@ -89,7 +90,7 @@ def main() -> int:
             for path, *_ in model_files(asset):
                 print(path)
             for derived in asset.get("derived", []):
-                print(derived["file"])
+                print(derived.get("file") or derived.get("folder"))
         for surface in manifest.get("surfaces", []):
             for path, *_ in surface_files(surface):
                 print(path)
