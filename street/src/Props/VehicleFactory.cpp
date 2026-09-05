@@ -368,13 +368,19 @@ void LampStrip(const VehicleDimensions& d, MeshBuilder& lens, MeshBuilder* surro
 {
     constexpr int kSteps = 5;
     Vector3 outerLo[kSteps + 1], outerHi[kSteps + 1];
+    // Toward the middle of the car, whichever end this is. The first version
+    // subtracted the depth at both ends, which wrapped the headlamps back
+    // along the wing correctly and the tail lamps 26 cm *out* behind the
+    // bumper into thin air -- which is why every car's rear cluster read as a
+    // red slab bolted to the back of it.
+    const float inward = endZ > 0.0f ? -1.0f : 1.0f;
     for (int i = 0; i <= kSteps; ++i)
     {
         const float f  = static_cast<float>(i) / kSteps;
         const float t  = Lerp(innerFrac, outerFrac, f);
         // Along the end face, then wrapping back down the flank as the plan
         // view closes in.
-        const float z  = endZ - depth * f * f;
+        const float z  = endZ + inward * depth * f * f;
         const float hw = d.halfWidth.at(z);
         const float x  = side * hw * t;
         const float dy = halfHeight * (1.0f - 0.35f * f * f);
