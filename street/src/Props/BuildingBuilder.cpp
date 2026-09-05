@@ -888,8 +888,9 @@ void BuildingBuilder::buildShopInterior(const FacadeFrame& frame, float u0, floa
             prop("ph-hanging-picture-frame-01", u0 + 0.03f, floor + 1.55f, depth * 0.62f, faceRight);
             break;
         case ShopKind::Florist:
-            prop("ph-potted-plant-01", u0 + span * 0.30f, floor + 0.30f, -0.55f, faceStreet + 0.3f);
-            prop("ph-potted-plant-01", u0 + span * 0.72f, floor + 0.56f, -0.97f, faceStreet - 0.7f);
+            prop("ph-potted-plant-01", u0 + span * 0.30f, floor + 0.30f, -0.55f, faceStreet + 0.3f, 28.0f);
+            if (span > 7.0f)
+                prop("ph-potted-plant-01", u0 + span * 0.72f, floor + 0.56f, -0.97f, faceStreet - 0.7f, 24.0f);
             prop("ph-planter-1", u0 + 0.5f, floor, depth * 0.45f + 0.9f, faceStreet + 0.1f);
             prop("ph-wicker-basket-01", u1 - std::min(2.2f, span * 0.34f) + 0.4f, floor + 0.97f, depth * 0.45f + 0.3f, faceStreet);
             break;
@@ -1122,15 +1123,20 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
     // --- the room ---------------------------------------------------------------
     const Material& wallBase = materials_.get(MaterialId::ShopWall);
     const Vector3 warm(0.70f, 0.60f, 0.47f);
+    // Lit a stop and a half brighter than the generic rooms. In daylight the
+    // pane in front of this room adds the sunlit street's reflection over
+    // whatever is behind it, and a room lit like the others disappeared
+    // under it: through the shop-window viewpoint the oak floor read as a
+    // pale plane, which was the pavement reflected. A cafe is lit anyway.
     const Material* wallFront = materials_.deriveTinted("hero-bakery-wall", MaterialId::ShopWall,
-                                                        warm, wallBase.emissiveFactor * 1.0f);
+                                                        warm, wallBase.emissiveFactor * 1.7f);
     const Material* wallBack = materials_.deriveTinted("hero-bakery-wall-back", MaterialId::ShopWall,
-                                                       warm * 0.58f, wallBase.emissiveFactor * 0.40f);
+                                                       warm * 0.58f, wallBase.emissiveFactor * 0.75f);
     const Material* wallStore = materials_.deriveTinted(
-        "hero-bakery-store", MaterialId::ShopWall, warm * 0.30f, wallBase.emissiveFactor * 0.10f);
+        "hero-bakery-store", MaterialId::ShopWall, warm * 0.30f, wallBase.emissiveFactor * 0.12f);
     const Material* soffit = materials_.deriveTinted(
         "hero-bakery-ceiling", MaterialId::ShopWall, warm * 0.70f + Vector3(0.10f, 0.10f, 0.10f),
-        wallBase.emissiveFactor * 0.50f);
+        wallBase.emissiveFactor * 0.85f);
     MeshBuilder& room  = collector.builder(wallFront);
     MeshBuilder& back  = collector.builder(wallBack);
     MeshBuilder& store = collector.builder(wallStore);
@@ -1163,7 +1169,7 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
     const Material& timberBase = materials_.get(MaterialId::ShopTimber);
     const Material* oak = materials_.deriveTinted("hero-bakery-floor", MaterialId::ShopTimber,
                                                   Vector3(0.50f, 0.38f, 0.26f),
-                                                  timberBase.emissiveFactor * 0.35f);
+                                                  timberBase.emissiveFactor * 0.9f);
     MeshBuilder& floorSurface = collector.builder(oak);
     floorSurface.setTileSize(0.62f, 2.8f);
     floorSurface.addQuadFacing(frame.at(u0, floor, storeDepth), frame.at(u1, floor, storeDepth),
@@ -1193,7 +1199,7 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
     {
         const Material* darkTimber = materials_.deriveTinted(
             "hero-bakery-beam", MaterialId::ShopTimber, Vector3(0.42f, 0.32f, 0.22f),
-            timberBase.emissiveFactor * 0.30f);
+            timberBase.emissiveFactor * 0.6f);
         MeshBuilder& beams = collector.builder(darkTimber);
         beams.setTileSize(0.62f);
         for (const float bd : {-1.9f, -4.2f, -6.2f})
@@ -1264,7 +1270,7 @@ void BuildingBuilder::buildHeroBakery(const FacadeFrame& frame, float u0, float 
     {
         MeshBuilder& boards = collector.builder(materials_.deriveTinted(
             "hero-bakery-counter", MaterialId::ShopTimber, Vector3(0.36f, 0.27f, 0.19f),
-            timberBase.emissiveFactor * 0.30f));
+            timberBase.emissiveFactor * 0.6f));
         boards.setTileSize(0.62f);
         int n = 0;
         for (float bu = cU0; bu < cU1 - 0.02f; bu += 0.11f, ++n)

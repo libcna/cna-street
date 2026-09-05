@@ -924,7 +924,11 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
             {
                 const HeroVehicleMesh& hero =
                     heroVehicleMeshes_[static_cast<std::size_t>(heroForVehicle_[v])];
-                if (distance >= 45.0f && !hero.far.empty())
+                // The far copy from thirty-two metres, nearer than the
+                // parked copies switch: a moving car is looked at less
+                // hard than a parked one, and its wheels are eight to
+                // twelve draws a frame the welded copy does not pay.
+                if (distance >= 32.0f && !hero.far.empty())
                 {
                     submitProp(hero.far, world);
                     continue;
@@ -1245,7 +1249,13 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     // stood on its base and cut to a street bin's height, and the generated
     // one otherwise. The generated bin was the one object in the footway
     // viewpoint that was a plain grey cylinder among scans.
-    PropMesh bin = importedProp("ph-trash-can");
+    // The scan ships two cans side by side, a clean one and a rusted one;
+    // the clean one's four parts are the nodes without a suffix past .003.
+    PropMesh bin = importedProp("ph-trash-can", Matrix::getIdentityProperty(),
+                                [](const std::string& node) {
+        return node == "Cylinder" || node == "Cylinder.001" || node == "Cylinder.002"
+               || node == "Cylinder.003";
+    });
     if (!bin.empty())
     {
         const Vector3 size = bin.bounds.Max - bin.bounds.Min;
@@ -2721,7 +2731,10 @@ void CityScene::buildHeroShop(const RenderSettings& settings)
             at.push_back(stand * Matrix::CreateScale(scale) * want.at);
             cull = std::max(cull, want.cullDistance);
         }
-        placeProp(prop, at, "hero-shop-" + asset, cull, settings.propShadowDistance * 0.4f);
+        // No shadow pass for a prop inside a room: the sun reaches it only
+        // through the window, and the shadow draws -- one per part per copy
+        // -- were a third of the pass for nothing anyone could see.
+        placeProp(prop, at, "hero-shop-" + asset, cull, 0.0f, /*castsShadow=*/false);
         placed += static_cast<int>(at.size());
     }
     CNA::Logger::Info("cna-street: shop props -- " + std::to_string(placed) + " of "
@@ -3141,8 +3154,11 @@ void CityScene::buildViewpoints()
 
     }
     // One bay of a façade filling the frame: reveal depth, sill, material scale.
+    // Four metres north of where it stood: the jacaranda planted at the
+    // pit there put its crown through the lens, and a camera inside a tree
+    // is not a place a photograph is taken from.
     viewpoints_.push_back(Viewpoint{"Facade detail",
-                                    Vector3(-6.2f, 3.10f, 52.0f), kWest + 0.18f, 0.30f, 0.80f});
+                                    Vector3(-6.2f, 3.10f, 56.0f), kWest + 0.18f, 0.30f, 0.80f});
 
     // --- the photographs ----------------------------------------------------
     // Two compositions a person with a camera would actually take, at the

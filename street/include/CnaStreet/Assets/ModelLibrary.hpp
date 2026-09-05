@@ -165,6 +165,8 @@ private:
     std::size_t loaded_ = 0;
     std::size_t triangles_ = 0;
     int singleLevelMaps_ = 0;
+    /// Per packed map, whether its occlusion channel is blank; read once.
+    std::unordered_map<const Microsoft::Xna::Framework::Graphics::Texture2D*, bool> occlusionBlank_;
 };
 
 }  // namespace CnaStreet

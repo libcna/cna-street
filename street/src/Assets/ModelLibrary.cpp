@@ -17,6 +17,9 @@
 #include "Microsoft/Xna/Framework/Graphics/AnimationPlayer.hpp"
 #include "CnaStreet/Render/SkinnedGpuMesh.hpp"
 #include "Microsoft/Xna/Framework/Graphics/PbrEffect.hpp"
+#include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
+#include "Microsoft/Xna/Framework/Rectangle.hpp"
+#include "Microsoft/Xna/Framework/Color.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -97,6 +100,7 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
     Vector3 lo(1e30f, 1e30f, 1e30f);
     Vector3 hi(-1e30f, -1e30f, -1e30f);
     int index = 0;
+    int blankOcclusion = 0;
 
     const ModelMeshCollection& meshes = model->getMeshesProperty();
     for (int m = 0; m < meshes.getCountProperty(); ++m)
@@ -164,6 +168,46 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
                 material.roughness = 0.85f;
             }
 
+            // A packed occlusion-roughness-metalness map whose red channel is
+            // empty. Several scans -- the street bench, the litter bin, the
+            // condenser unit, the ceiling lamps -- ship an `_arm` image with
+            // nothing in the occlusion channel, and PbrEffect multiplies the
+            // lighting by it: the bin drew as a black silhouette in the
+            // footway frame. Read once per image, from a patch in its
+            // middle, and ignore the channel where it is blank.
+            if (material.orm != nullptr && material.occlusionStrength > 0.0f)
+            {
+                const auto known = occlusionBlank_.find(material.orm);
+                bool blank = false;
+                if (known != occlusionBlank_.end())
+                    blank = known->second;
+                else
+                {
+                    try
+                    {
+                        const int w = material.orm->getWidthProperty();
+                        const int h = material.orm->getHeightProperty();
+                        const int side = std::min({64, w, h});
+                        const Rectangle patch((w - side) / 2, (h - side) / 2, side, side);
+                        std::vector<Color> pixels(static_cast<std::size_t>(side * side));
+                        material.orm->GetData(0, &patch, pixels.data(), 0, side * side);
+                        double red = 0.0;
+                        for (const Color& c : pixels) red += static_cast<double>(c.getRProperty());
+                        blank = red / (255.0 * static_cast<double>(pixels.size())) < 0.05;
+                    }
+                    catch (const std::exception&)
+                    {
+                        blank = false;
+                    }
+                    occlusionBlank_[material.orm] = blank;
+                }
+                if (blank)
+                {
+                    material.occlusionStrength = 0.0f;
+                    ++blankOcclusion;
+                }
+            }
+
             const Material* installed = materials_.add(material.name, {}, material);
             if (installed == nullptr) continue;
 
@@ -223,7 +267,10 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
                       + std::to_string(textured) + " textured, " + std::to_string(normalMapped)
                       + " normal-mapped"
                       + (singleLevel > 0 ? ", " + std::to_string(singleLevel) + " map(s) without a mip chain"
-                                         : std::string(", every map with a mip chain")));
+                                         : std::string(", every map with a mip chain"))
+                      + (blankOcclusion > 0 ? ", " + std::to_string(blankOcclusion)
+                                                  + " material(s) with a blank occlusion channel ignored"
+                                            : std::string()));
     return result;
 }
 
