@@ -11,7 +11,10 @@
 #include "TestSupport.hpp"
 
 #include <cmath>
+#include <map>
 #include <set>
+#include <string>
+#include <utility>
 #include <vector>
 
 using namespace CnaStreet;
@@ -249,7 +252,7 @@ int main()
             CHECK(person.walkStyle >= 0 && person.walkStyle <= 2);
             CHECK(person.idleStyle >= 0 && person.idleStyle <= 2);
             CHECK(person.stride > 1.05f && person.stride < 2.0f);
-            CHECK(person.lateral >= -0.36f && person.lateral <= 0.76f);
+            CHECK(person.lateral >= -1.06f && person.lateral <= 1.16f);
             CHECK(std::isfinite(person.facing));
         }
         // A taller person of the same gait takes a longer stride.
@@ -283,9 +286,16 @@ int main()
                 const Vector2 a = person.position(people.nodes(), people.edges());
                 const Vector2 b = leader.position(people.nodes(), people.edges());
                 const float dx = a.X - b.X, dz = a.Y - b.Y;
-                CHECK_MSG(std::sqrt(dx * dx + dz * dz) < 1.5f, "a companion has lost its leader");
-                CHECK(std::fabs(person.lateral - leader.lateral) > 0.5f);
-                CHECK(person.lateral >= -0.36f && person.lateral <= 0.76f);
+                const float apart = std::sqrt(dx * dx + dz * dz);
+                // Walking, a companion is a step behind and to the side.
+                // Waiting, the pair is somewhere in the cluster at the kerb
+                // and takes whichever two places are free -- they try to be
+                // next to each other, and on a busy kerb they are not always
+                // able to be.
+                CHECK_MSG(apart < (person.waiting ? 2.8f : 1.6f),
+                          "a companion has lost its leader: " + std::to_string(apart) + " m");
+                CHECK_MSG(apart > 0.40f, "a companion is walking inside its leader");
+                CHECK(person.lateral >= -1.06f && person.lateral <= 1.16f);
                 if (i == 0) ++companions;
             }
         }
@@ -312,11 +322,11 @@ int main()
         CHECK(turning < static_cast<int>(people.people().size()) / 4);
     }
 
-    CASE("the lineup stands eight and freezes eight mid-stride");
+    CASE("the lineup stands eight, strides eight and cycles eight");
     {
         PedestrianSystem people;
         people.buildLineup(layout, crossings, 12u);
-        CHECK(people.people().size() == 16);
+        CHECK(people.people().size() == 24);
         for (std::size_t i = 0; i < people.people().size(); ++i)
         {
             const Pedestrian& person = people.people()[i];
@@ -324,6 +334,125 @@ int main()
             CHECK(person.waiting == (i < 8));
             if (i >= 8) CHECK(person.phase >= 0.0f && person.phase < person.stride);
         }
+        // The striding row is all at heel strike, where the feet are furthest
+        // apart: the pose an implausible stance shows in.
+        for (std::size_t i = 8; i < 16; ++i) CHECK(people.people()[i].phase == 0.0f);
+    }
+
+    CASE("a queue at the kerb is a queue, not a heap");
+    {
+        // The places themselves: fifteen of them, none within a personal
+        // space of another, none more than the footway is deep behind the
+        // walking line.
+        std::vector<Vector2> places;
+        for (int slot = 0; slot < 15; ++slot)
+        {
+            float back = 0.0f, across = 0.0f;
+            Pedestrian::queuePlace(slot, back, across);
+            CHECK_MSG(back > 0.0f && back < 1.60f, "a waiting place is off the footway");
+            CHECK(std::fabs(across) < 1.90f);
+            places.emplace_back(across, back);
+        }
+        for (std::size_t i = 0; i < places.size(); ++i)
+            for (std::size_t j = i + 1; j < places.size(); ++j)
+            {
+                const float dx = places[i].X - places[j].X;
+                const float dz = places[i].Y - places[j].Y;
+                CHECK_MSG(std::sqrt(dx * dx + dz * dz) >= PedestrianSystem::kPersonalSpace,
+                          "two waiting places are inside one another");
+            }
+    }
+
+    CASE("a crowd arriving at one crossing together does not stand in one another");
+    {
+        // The stress test: a hundred and twenty people on the graph, run for
+        // four minutes of signal cycles, and at every step every pair of
+        // people is checked for sharing a body volume. Before the kerb slots
+        // existed, everybody waiting for a green man stood at distance zero
+        // on the crossing edge and a dozen of them occupied one square metre.
+        PedestrianSystem people;
+        people.build(layout, crossings, 77u, 120);
+        TrafficSignalController signals;
+        signals.reset();
+        int worstAtOneKerb = 0;
+        float closest = 1e9f;
+        float closestWaiting = 1e9f;
+        long long pairs = 0, brushes = 0, overlaps = 0;
+        for (int step = 0; step < 7200; ++step)
+        {
+            signals.update(1.0f / 30.0f);
+            people.update(1.0f / 30.0f, signals);
+            if (step % 15 != 0) continue;
+            const std::vector<Pedestrian>& crowd = people.people();
+            std::vector<Vector2> at;
+            at.reserve(crowd.size());
+            for (const Pedestrian& person : crowd)
+                at.push_back(person.position(people.nodes(), people.edges()));
+            for (std::size_t i = 0; i < crowd.size(); ++i)
+                for (std::size_t j = i + 1; j < crowd.size(); ++j)
+                {
+                    const float dx = at[i].X - at[j].X;
+                    const float dz = at[i].Y - at[j].Y;
+                    const float d = std::sqrt(dx * dx + dz * dz);
+                    closest = std::min(closest, d);
+                    // A shoulder is 0.44 m across. Two people nearer than
+                    // that centre to centre are inside one another.
+                    ++pairs;
+                    if (d < 0.30f) ++brushes;
+                    if (d < 0.20f) ++overlaps;
+                }
+            // How many are queued at the busiest kerb.
+            std::map<std::pair<int, bool>, int> perKerb;
+            for (std::size_t i = 0; i < crowd.size(); ++i)
+            {
+                if (!crowd[i].waiting) continue;
+                ++perKerb[{crowd[i].edge, crowd[i].reversed}];
+                // Two people standing at a kerb have all the time in the
+                // world to be somewhere else: they get a whole shoulder
+                // between them, not a graze.
+                for (std::size_t j = i + 1; j < crowd.size(); ++j)
+                {
+                    if (!crowd[j].waiting) continue;
+                    const float dx = at[i].X - at[j].X;
+                    const float dz = at[i].Y - at[j].Y;
+                    closestWaiting = std::min(closestWaiting, std::sqrt(dx * dx + dz * dz));
+                }
+            }
+            for (const auto& entry : perKerb)
+                worstAtOneKerb = std::max(worstAtOneKerb, entry.second);
+        }
+        NOTE("the busiest kerb held " + std::to_string(worstAtOneKerb)
+             + " people; the closest two waiting came was " + std::to_string(closestWaiting)
+             + " m, the closest two of anybody " + std::to_string(closest) + " m; "
+             + std::to_string(brushes) + " of " + std::to_string(pairs)
+             + " sampled pairs passed inside 0.30 m and " + std::to_string(overlaps)
+             + " inside 0.20 m");
+        CHECK_MSG(worstAtOneKerb >= 4, "the stress test never crowded a crossing");
+        // Standing still is where a crowd has all the time in the world to be
+        // somewhere else, and where the failure was reported: four people in
+        // one body volume at a kerb. A whole shoulder between them, always.
+        CHECK_MSG(closestWaiting > 0.55f,
+                  "two people waiting at a kerb stood " + std::to_string(closestWaiting)
+                      + " m apart");
+        // Walking is different: two people passing head on at 0.35 m brush
+        // shoulders, which is what people do, and a rule that forbade it
+        // would make the footway read as a set of tramlines. What must not
+        // happen is one walking *through* another. A body is 0.30 m deep, so
+        // 0.20 m centre to centre is an intersection.
+        // What is left is a person entering a footway at the same instant as
+        // somebody already on it, at a node where the two of them have the
+        // width of one footway between them: it lasts a few frames while the
+        // sidestep works, and it is two thousandths of one per cent of the
+        // pairs sampled. Before any of this it was a permanent state -- a
+        // whole queue in one square metre. The bar is set an order of
+        // magnitude above what the crowd does now, so it catches a return to
+        // that and not the noise.
+        CHECK_MSG(overlaps * 5000 < pairs,
+                  std::to_string(overlaps) + " of " + std::to_string(pairs)
+                      + " sampled pairs were inside one another");
+        CHECK_MSG(brushes * 2000 < pairs,
+                  "brushes are not rare: " + std::to_string(brushes) + " of "
+                      + std::to_string(pairs) + " sampled pairs passed inside 0.30 m");
     }
 
     TEST_MAIN("pedestrians");

@@ -58,6 +58,24 @@ struct Pedestrian
     /// positive toward the buildings. Nobody walks the centre line; a crowd
     /// that does is a queue.
     float lateral = 0.0f;
+    /// Where this person would rather walk: one of two lanes, decided by the
+    /// direction they are going, plus a personal offset. Two people meeting
+    /// head on pass on opposite sides of the footway because they are aiming
+    /// at different lanes -- a rule, not a mutual repulsion, so it settles
+    /// instead of oscillating. @ref lateral eases toward it.
+    float lateralBias = 0.0f;
+    /// Which place at the kerb this person has while waiting for a green man,
+    /// or -1. A crossing edge starts at the kerb, so before this every waiting
+    /// person stood at distance zero on it and four of them arriving together
+    /// stood inside one another. A slot is a column across the crossing and a
+    /// row back from the kerb.
+    int   queueSlot = -1;
+    /// The wait time at which this person actually steps off the kerb once
+    /// the man goes green, or -1 while it is still red. The back of a queue
+    /// steps off after the front of it: without that, a green released six
+    /// people from six distinct places at the kerb onto one point on the
+    /// crossing's centre line, all in the same frame.
+    float stepOff = -1.0f;
     /// Where the body is pointed, smoothed toward the edge's heading: a
     /// person turns a corner over half a second rather than snapping
     /// through a right angle at a node.
@@ -65,6 +83,10 @@ struct Pedestrian
     /// The person this one is walking with, or -1. A companion keeps to the
     /// leader's edge, speed and pace, a step behind and to the side.
     int   companion = -1;
+    /// Which side of the leader, in metres. Held rather than recomputed, so
+    /// that a companion stepped aside for somebody else walks back to its
+    /// own side of its leader instead of snapping there.
+    float companionSide = 0.0f;
     /// Development line-up only: stand here, facing this way, and do not move.
     bool  pinned = false;
     Microsoft::Xna::Framework::Vector2 pinnedAt{0.0f, 0.0f};
@@ -72,6 +94,10 @@ struct Pedestrian
 
     [[nodiscard]] Microsoft::Xna::Framework::Vector2 position(
         const std::vector<WalkNode>& nodes, const std::vector<WalkEdge>& edges) const;
+    /// Where a waiting person's slot puts them, relative to the kerb: how far
+    /// back along the crossing and how far across it. Static so the layout of
+    /// a queue can be checked without a system.
+    static void queuePlace(int slot, float& back, float& across);
     [[nodiscard]] float heading(const std::vector<WalkNode>& nodes,
                                 const std::vector<WalkEdge>& edges) const;
 };
@@ -128,12 +154,36 @@ public:
     /// The side of an edge the buildings are on: the unit direction a
     /// positive `Pedestrian::lateral` moves along.
     [[nodiscard]] Microsoft::Xna::Framework::Vector2 buildingSide(const WalkEdge& edge) const;
+    /// How close two people are allowed to stand or walk: centre to centre,
+    /// in metres. A shoulder is 0.44 m across, so two figures nearer than
+    /// this are inside one another.
+    static constexpr float kPersonalSpace = 0.62f;
+    /// The lane a person walking each way along an edge aims for, in metres
+    /// off the walking line toward the buildings. Two lanes 0.62 m apart, so
+    /// a pair meeting head on passes rather than merges.
+    static constexpr float kLaneToward = 0.50f;
+    static constexpr float kLaneAway   = -0.28f;
 
 private:
+    /// A free place at the kerb for the person at @p who: the first that
+    /// leaves them clear of everyone already standing there, preferring the
+    /// places next to @p beside when it is not -1, so a pair arriving
+    /// together waits together.
+    [[nodiscard]] int takeQueueSlot(std::size_t who, int beside = -1) const;
+    /// The pace the person at @p who may actually walk at, given who is
+    /// close ahead of them in their own lane.
+    [[nodiscard]] float paceBehind(std::size_t who, float wanted) const;
+    /// Steps anyone standing inside somebody else sideways, in one ordered
+    /// pass. Run after everybody has moved.
+    void separate(float deltaSeconds);
     int addNode(const Microsoft::Xna::Framework::Vector2& position);
     void addEdge(int from, int to, bool crossing, SignalAxis axis);
     void buildGraph(const CityLayout& layout, const std::vector<Crossing>& crossings);
 
+    /// Where everybody was at the start of this step, so the crowd rules can
+    /// ask about people rather than about edges without recomputing a
+    /// position for every pair.
+    std::vector<Microsoft::Xna::Framework::Vector2> positions_;
     std::vector<WalkNode>   nodes_;
     std::vector<WalkEdge>   edges_;
     std::vector<Pedestrian> people_;
