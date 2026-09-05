@@ -163,10 +163,14 @@ public:
     /// root, by logical name: what the imported people use, whose textures
     /// go through the same compiler as the catalogue's surfaces and so, unlike
     /// a model's own images (GLTF-206), arrive with a mip chain. Returns
-    /// nullptr when @p albedo is not there; @p normal may be empty.
+    /// nullptr when @p albedo is not there; @p normal and @p orm may be empty.
+    /// @p orm is the glTF packing -- occlusion in red, roughness in green,
+    /// metalness in blue -- which is how a merged part keeps the roughness
+    /// each of the parts it was made from had.
     [[nodiscard]] const Material* addFromContent(const std::string& name,
                                                  const std::string& albedo,
-                                                 const std::string& normal, Material material);
+                                                 const std::string& normal, Material material,
+                                                 const std::string& orm = std::string());
     /// The material registered under @p name, or nullptr.
     [[nodiscard]] const Material* find(const std::string& name) const;
 

@@ -110,12 +110,13 @@ std::string ReadLevel(const JsonElement& level, const std::string& binary,
         }
         const std::string albedo = Text(part, "albedo");
         const std::string normal = Text(part, "normal");
+        const std::string orm    = Text(part, "orm");
         const std::string kind   = Text(part, "kind");
         // The skin's own roughness map does not exist, so the factor is the
         // value; a face at four metres is a colour and a silhouette, and a
         // specular sheen on it is what says "plastic".
         const Material* installed = materials.addFromContent(
-            person + "." + kind + "." + std::to_string(index), albedo, normal, material);
+            person + "." + kind + "." + std::to_string(index), albedo, normal, material, orm);
         ++index;
         if (installed == nullptr)
             return "texture '" + albedo + "' is not in the content root";
