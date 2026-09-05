@@ -907,14 +907,27 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
         for (std::size_t v = 0; v < fleet.size(); ++v)
         {
             const Vehicle& vehicle = fleet[v];
-            // A parked loft a hero model stands in for is registered as a
-            // static prop instead, so it is in the reflection probes too.
-            if (v < vehicleReplaced_.size() && vehicleReplaced_[v]) continue;
             const Matrix world = vehicle.transform(traffic_.lanes());
             const Vector2 at   = vehicle.groundPosition(traffic_.lanes());
             const float distance = std::sqrt((at.X - eye.X) * (at.X - eye.X)
                                              + (at.Y - eye.Z) * (at.Y - eye.Z));
             if (distance > settings.propCullDistance) continue;
+
+            // Somebody at the wheel, while the cabin is close enough to see
+            // into. Past thirty metres a windscreen is a reflection and a
+            // driver is four pixels, and the car has switched to its welded
+            // far copy anyway. Before the parked-hero test below, so the
+            // line-up -- where every car is parked and every car has somebody
+            // in it -- can show a driver inside an authored cabin.
+            if (distance < 30.0f && (!vehicle.parked || lineup_) && v < driverForVehicle_.size()
+                && driverForVehicle_[v] >= 0
+                && driverForVehicle_[v] < static_cast<int>(driverMeshes_.size()))
+                submitProp(driverMeshes_[static_cast<std::size_t>(driverForVehicle_[v])],
+                           driverSeat(vehicle) * world);
+
+            // A parked loft a hero model stands in for is registered as a
+            // static prop instead, so it is in the reflection probes too.
+            if (v < vehicleReplaced_.size() && vehicleReplaced_[v]) continue;
 
             // A moving vehicle drawn as an authored car: the body, and four
             // wheels rolled from the odometer at their own radius and steered
@@ -1121,7 +1134,45 @@ float CityScene::groundHeight(float x, float z) const
 
 bool CityScene::isSolid(const Vector3& point) const
 {
-    return layout_.isSolid(point.X, point.Y, point.Z);
+    if (layout_.isSolid(point.X, point.Y, point.Z)) return true;
+    // Cars are solid. They were not, and walking through a parked Astra is
+    // the kind of thing that unmakes a street in one step. The body radius
+    // is the walking camera's own, applied here rather than in the probe so
+    // the standoff is a car's and not a wall's -- you can stand against a
+    // building and not against a wing mirror.
+    if (traffic_.blocks(point, kWalkerRadius)) return true;
+    // And so is anything standing in the footway with mass: a column, a
+    // bollard, a bin, a bench, a tree.
+    for (const Obstacle& obstacle : obstacles_)
+    {
+        if (point.Y < obstacle.base || point.Y > obstacle.top) continue;
+        const float dx = point.X - obstacle.centre.X;
+        const float dz = point.Z - obstacle.centre.Y;
+        const float reach = obstacle.radius + kWalkerRadius;
+        if (dx * dx + dz * dz < reach * reach) return true;
+    }
+    return false;
+}
+
+void CityScene::addObstacle(const Matrix& at, float radius, float height, float base)
+{
+    const Vector3 origin = at.getTranslationProperty();
+    obstacles_.push_back(Obstacle{Vector2(origin.X, origin.Z), radius, origin.Y + base,
+                                  origin.Y + height});
+}
+
+void CityScene::addObstacles(const std::vector<Matrix>& at, float radius, float height, float base)
+{
+    obstacles_.reserve(obstacles_.size() + at.size());
+    for (const Matrix& one : at) addObstacle(one, radius, height, base);
+}
+
+Vector3 CityScene::pushOutOfSolids(const Vector3& point) const
+{
+    // Only vehicles: a building does not drive into anybody, and a bollard
+    // that somebody has walked into is a bollard they walked into on their
+    // own. A car that has driven into the camera has to give it back.
+    return traffic_.pushOut(point, kWalkerRadius);
 }
 
 // ---------------------------------------------------------------------------
@@ -1465,9 +1516,22 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
         placeProp(cabinets[i], cabinetAt[i], "cabinet-" + std::to_string(i), cull * 0.7f, shade);
     placeProp(sack, sackAt, "refuse-sack", cull * 0.3f, shade * 0.3f);
     placeProp(bikeStand, bikeAt, "bike-stand", cull * 0.4f, shade * 0.5f);
+    // What a walker cannot pass through. A column is a column whether or not
+    // anything in the renderer knows it; before this the only solid on the
+    // street was a building, and you could walk through a bench.
+    addObstacles(lampMainAt, 0.10f, M::kLampMainHeight);
+    addObstacles(lampSideAt, 0.09f, M::kLampSideHeight);
+    addObstacles(benchAt, 0.62f, M::kBenchBackHeight);
+    addObstacles(bollardAt, M::kBollardRadius + 0.03f, M::kBollardHeight);
+    addObstacles(binAt, M::kBinRadius + 0.04f, M::kBinPostHeight + M::kBinHeight);
+    addObstacles(hydrantAt, M::kHydrantRadius + 0.05f, M::kHydrantHeight);
+    for (const std::vector<Matrix>& at : cabinetAt)
+        addObstacles(at, M::kCabinetWidth * 0.5f, M::kCabinetHeight);
+    addObstacles(bikeAt, 0.42f, M::kBikeRackHeight);
     for (std::size_t i = 0; i < bikes.size(); ++i)
         placeProp(bikes[i], bikeOnStand[i], "bicycle", cull * 0.35f, shade * 0.4f);
     placeProp(shelter, shelterAt, "bus-shelter", cull, shade);
+    addObstacles(shelterAt, 1.05f, 2.4f);
 }
 
 void CityScene::lightTheStreet(const RenderSettings& settings)
@@ -1767,6 +1831,12 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     for (std::size_t i = 0; i < planters.size(); ++i)
         placeProp(planters[i], planterAt[i], "planter-" + std::to_string(i), cull * 0.5f,
                   shade * 0.6f);
+    // A trunk stops a walker; a crown does not, and a solid the width of a
+    // crown would close the footway. Up to the clear stem only.
+    for (const Vector3& pit : treePositions_)
+        obstacles_.push_back(Obstacle{Vector2(pit.X, pit.Z), M::kTreeTrunkRadius + 0.10f, pit.Y,
+                                      pit.Y + M::kTreeClearStem});
+    for (const std::vector<Matrix>& at : planterAt) addObstacles(at, 0.45f, 0.75f);
     placeProp(scruff, scruffAt, "ground-scruff", 42.0f, 0.0f, false);
 }
 
@@ -1938,6 +2008,9 @@ void CityScene::buildSignalsAndSigns(Rng& rng, const RenderSettings& settings)
     placeProp(post, postAt, "signal-post", cull, shade);
     placeProp(pedPost, pedPostAt, "signal-post-ped", cull, shade);
     placeProp(mast, mastAt, "signal-mast", cull, shade);
+    addObstacles(postAt, M::kSignalPoleRadius + 0.04f, M::kSignalPoleHeight);
+    addObstacles(pedPostAt, M::kSignalPoleRadius + 0.04f, M::kPedSignalMountHeight);
+    addObstacles(mastAt, 0.11f, M::kSignalMastHeight);
     placeProp(head, headAt, "signal-head", cull, shade * 0.7f);
     placeProp(pedHead, pedHeadAt, "signal-head-ped", cull, shade * 0.7f);
     buildStats_.signals = static_cast<int>(signalHeads_.size());
@@ -2004,7 +2077,10 @@ void CityScene::buildSignalsAndSigns(Rng& rng, const RenderSettings& settings)
     sign(4, 22.0f, -sideKerb - 0.70f, Vector2(-1.0f, 0.0f));
 
     for (std::size_t i = 0; i < kinds.size(); ++i)
+    {
         placeProp(signMeshes[i], signAt[i], "sign-" + std::to_string(i), cull * 0.6f, shade * 0.6f);
+        addObstacles(signAt[i], M::kSignPostRadius + 0.04f, M::kSignMountHeight);
+    }
 
     // --- street-name plates -------------------------------------------------
     const PropMesh plateMain = makeProp("street-plate-main", [&](GeometryCollector& c) {
@@ -2496,6 +2572,8 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         if (hero.whole.empty()) continue;
         hero.far    = importedProp(std::string(source.asset) + "-far");
         hero.length = hero.whole.bounds.Max.Z - hero.whole.bounds.Min.Z;
+        hero.width  = hero.whole.bounds.Max.X - hero.whole.bounds.Min.X;
+        hero.height = hero.whole.bounds.Max.Y - hero.whole.bounds.Min.Y;
         // The body is every node that is not a wheel; a file from before the
         // wheels were split has one node and no wheels, and is parked only.
         hero.body = importedProp(source.asset, Matrix::getIdentityProperty(),
@@ -2605,6 +2683,11 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         lastOnSide[side] = pick;
         parkedAt[pick].push_back(vehicle.transform(traffic_.lanes()));
         vehicleReplaced_[index] = true;
+        // The loft is not drawn any more but it is still the solid the
+        // walking camera meets, so it takes the size of the car that stands
+        // in its bay.
+        traffic_.setVehicleLength(index, heroes[pick].length);
+        traffic_.setVehicleSize(index, heroes[pick].width, heroes[pick].height);
         ++heroVehicles_;
     }
 
@@ -2663,6 +2746,8 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         if (pick < 0) continue;
         heroForVehicle_[v] = pick;
         traffic_.setVehicleLength(v, heroes[static_cast<std::size_t>(pick)].length);
+        traffic_.setVehicleSize(v, heroes[static_cast<std::size_t>(pick)].width,
+                                heroes[static_cast<std::size_t>(pick)].height);
         ++movingHeroes_;
     }
 
@@ -2740,6 +2825,95 @@ void CityScene::buildHeroShop(const RenderSettings& settings)
     CNA::Logger::Info("cna-street: shop props -- " + std::to_string(placed) + " of "
                       + std::to_string(heroProps_.size()) + " stood, the hero cafe on plot "
                       + std::to_string(heroPlot_));
+}
+
+void CityScene::buildDrivers(const RenderSettings& settings)
+{
+    driverMeshes_.clear();
+    driverForVehicle_.assign(traffic_.vehicles().size(), -1);
+    if (!settings.traffic) return;
+
+    // A moving car with nobody in it is the thing that gives the whole street
+    // away once the cars themselves are good: through a windscreen at three
+    // metres an empty seat reads instantly, and there are thirty of them.
+    //
+    // Six people, each one rigid and in one piece. A driver is seen through
+    // glass, at a glancing angle, from three metres and further, so what has
+    // to be there is a head, two shoulders and two arms on the wheel -- the
+    // skinned figures the footway uses would cost six draws a car for detail
+    // the glass takes away, and there is no seated clip for them anyway.
+    // A stop darker than the crowd's. CNA's glass is a reflection layer over
+    // what it covers rather than a filter, so a driver behind a windscreen is
+    // lit as though there were no windscreen; the tint carries the light the
+    // glass and the roof would have taken, which is what stops a head reading
+    // as a bright egg through the screen.
+    static const Vector3 kDriverSkin[] = {
+        Vector3(0.55f, 0.43f, 0.36f), Vector3(0.44f, 0.32f, 0.25f),
+        Vector3(0.31f, 0.21f, 0.16f), Vector3(0.20f, 0.13f, 0.10f),
+    };
+    static const Vector3 kDriverClothes[] = {
+        Vector3(0.09f, 0.10f, 0.12f), Vector3(0.20f, 0.22f, 0.26f),
+        Vector3(0.08f, 0.14f, 0.22f), Vector3(0.33f, 0.30f, 0.26f),
+        Vector3(0.24f, 0.10f, 0.11f), Vector3(0.15f, 0.18f, 0.15f),
+    };
+    constexpr int kDriverVariants = 6;
+    const PropFactory props(materials_);
+    for (int i = 0; i < kDriverVariants; ++i)
+    {
+        const std::string tag = std::to_string(i);
+        const Material* skin = materials_.deriveTinted(
+            "driver-skin-" + tag, MaterialId::Skin,
+            kDriverSkin[static_cast<std::size_t>(i) % std::size(kDriverSkin)]);
+        const Material* clothes = materials_.deriveTinted(
+            "driver-coat-" + tag, MaterialId::Clothing,
+            kDriverClothes[static_cast<std::size_t>(i) % std::size(kDriverClothes)]);
+        driverMeshes_.push_back(makeProp("driver-" + tag, [&](GeometryCollector& c) {
+            Rng own = Rng::derive(settings.seed, "driver-" + tag);
+            // The shoulder height is set per cabin at submission; this is the
+            // ordinary saloon's, and the seat matrix scales nothing -- a
+            // driver is a driver whatever they are sitting in.
+            props.driver(c, own, skin, clothes, 0.52f, own.range(0.0f, 1.0f), 0.34f);
+        }));
+    }
+
+    // Every moving vehicle gets one, dealt from a stream of its own so adding
+    // drivers moved nothing else. Parked cars stay empty, which is what a
+    // parked car is.
+    Rng deal = Rng::derive(settings.seed, "drivers");
+    const std::vector<Vehicle>& fleet = traffic_.vehicles();
+    int seated = 0;
+    for (std::size_t v = 0; v < fleet.size(); ++v)
+    {
+        // The line-up is the diagnostic: it parks one of every class in a row
+        // with a front three-quarter viewpoint on each, and a driver in a
+        // parked line-up car is the only way to look one in the face without
+        // chasing traffic.
+        if (fleet[v].parked && !settings.vehicleLineup) continue;
+        driverForVehicle_[v] = deal.intRange(0, kDriverVariants - 1);
+        ++seated;
+    }
+    CNA::Logger::Info("cna-street: " + std::to_string(seated) + " drivers over "
+                      + std::to_string(driverMeshes_.size()) + " variants");
+}
+
+Matrix CityScene::driverSeat(const Vehicle& vehicle)
+{
+    // Where the driver's seat cushion is, in the car's own frame. Taken from
+    // the *class* dimensions rather than the drawn model's bounding box: the
+    // Mini's box is 1.83 m tall because of its roof aerial, and a seat placed
+    // off that would put its driver's head through the roof.
+    //
+    // Right-hand traffic means left-hand drive, and in a frame whose nose is
+    // +Z with +X east, the left of a car facing north is -X. (The lanes agree:
+    // northbound traffic runs at +x, the east side of the street.) Along the
+    // car, a saloon's H-point is about the middle and a van's cab is at the
+    // front.
+    const VehicleDimensions d = VehicleFactory::dimensionsFor(vehicle.type);
+    const bool van = vehicle.type == VehicleType::Van;
+    const float across = -d.width * 0.20f;
+    const float along  = d.length * (van ? 0.30f : 0.05f);
+    const float seatY  = d.height * (van ? 0.40f : 0.38f);
+    return Matrix::CreateTranslation(across, seatY, along);
 }
 
 void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
@@ -3051,6 +3225,9 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         pedestrians_.build(layout_, crossings_, settings.seed, 78);
     buildStats_.vehicles = static_cast<int>(traffic_.vehicles().size());
     buildStats_.people   = static_cast<int>(pedestrians_.people().size());
+    // Somebody at the wheel of every moving one. After the fleet exists,
+    // because it is dealt per vehicle.
+    buildDrivers(settings);
     CNA::Logger::Info("cna-street: " + std::to_string(importedPeople_) + " of "
                       + std::to_string(PedestrianSystem::kVariantCount)
                       + " crowd variants are imported people");
@@ -3200,6 +3377,24 @@ void CityScene::buildViewpoints()
         viewpoints_.push_back(Viewpoint{"Front " + tag,
                                         Vector3(at.X - 5.4f, 1.45f, at.Y + 5.6f),
                                         kEast + 0.72f, -0.16f, 0.62f});
+        // And in through the driver's window, from the seat this class of car
+        // actually has: the only way to look a driver in the face without
+        // chasing moving traffic. Aimed from driverSeat, so a seat that moves
+        // takes its viewpoint with it.
+        {
+            Vehicle sample;
+            sample.type = TrafficSystem::typeForVariant(variant);
+            const Vector3 seat = driverSeat(sample).getTranslationProperty();
+            const Vector3 head(at.X + seat.X, seat.Y + 0.62f, at.Y + seat.Z);
+            const Vector3 stand(head.X - 2.5f, head.Y + 0.32f, head.Z + 1.9f);
+            const Vector3 look = head - stand;
+            // The camera's forward is (sin yaw, sin pitch, -cos yaw): the
+            // minus on Z is why a yaw taken as atan2(dx, dz) points a
+            // viewpoint at the opposite side of the street.
+            viewpoints_.push_back(Viewpoint{
+                "Driver " + tag, stand, std::atan2(look.X, -look.Z),
+                std::atan2(look.Y, std::sqrt(look.X * look.X + look.Z * look.Z)), 0.46f});
+        }
     }
     // Three rows of eight: standing, frozen at heel strike, and spread over
     // the walk cycle. Every one gets a square front view, which is the view an
@@ -3222,7 +3417,7 @@ void CityScene::buildViewpoints()
         if (i / PedestrianSystem::kVariantCount == 1)
             viewpoints_.push_back(Viewpoint{tag + " three-quarter",
                                             Vector3(at.X + 2.7f, 0.95f, at.Y - 2.7f),
-                                            -kEast * 0.5f, 0.0f, 0.72f});
+                                            -kEast * 1.5f, 0.0f, 0.72f});
     }
 }
 

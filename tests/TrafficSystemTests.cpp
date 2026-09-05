@@ -6,6 +6,8 @@
 #include "CnaStreet/Scene/StreetMetrics.hpp"
 #include "CnaStreet/Sim/TrafficSystem.hpp"
 
+#include "Microsoft/Xna/Framework/Vector3.hpp"
+
 #include "TestSupport.hpp"
 
 #include <algorithm>
@@ -15,6 +17,7 @@
 using namespace CnaStreet;
 using Microsoft::Xna::Framework::Matrix;
 using Microsoft::Xna::Framework::Vector2;
+using Microsoft::Xna::Framework::Vector3;
 
 namespace M = CnaStreet::Metrics;
 
@@ -309,6 +312,74 @@ int main()
         traffic.setVehicleLength(0, 0.5f);   // nonsense is ignored
         CHECK_NEAR(traffic.vehicles()[0].length, 5.91, 1e-4);
         traffic.setVehicleLength(9999, 4.0f); // as is an index off the end
+    }
+
+    CASE("a car is a solid: the walking camera cannot get inside one");
+    {
+        // The oriented box, in isolation and then over the whole fleet. A
+        // vehicle used to be nothing at all to the walking camera -- the mode
+        // was documented as "blocked by buildings and vehicles" and was
+        // blocked by buildings.
+        TrafficSystem traffic;
+        traffic.build(31u, 8, 24);
+        const std::vector<TrafficSystem::Solid> solids = traffic.solids();
+        CHECK(solids.size() == traffic.vehicles().size());
+        for (const TrafficSystem::Solid& solid : solids)
+        {
+            CHECK(solid.halfLength > 1.5f && solid.halfLength < 3.2f);
+            CHECK(solid.halfWidth > 0.7f && solid.halfWidth < 1.3f);
+            CHECK(solid.height > 1.2f && solid.height < 2.6f);
+        }
+        // The centre of every car is inside it; a point two car-widths to the
+        // side is not; the sky over it is not; the tarmac under it is not.
+        for (const TrafficSystem::Solid& solid : solids)
+        {
+            const Vector3 middle(solid.centre.X, solid.height * 0.5f, solid.centre.Y);
+            CHECK_MSG(traffic.blocks(middle, 0.0f), "a car is not solid at its own centre");
+            CHECK(!traffic.blocks(Vector3(middle.X, solid.height + 1.0f, middle.Z), 0.0f));
+            CHECK(!traffic.blocks(Vector3(middle.X, -0.1f, middle.Z), 0.0f));
+        }
+        // Along the body and across it, so a box that is round or turned the
+        // wrong way is caught: a point 1.2 m off the flank is clear, and one
+        // 1.2 m along the nose is still inside a 4.3 m car.
+        {
+            const TrafficSystem::Solid& solid = solids.front();
+            const float s = std::sin(solid.heading), c = std::cos(solid.heading);
+            const auto at = [&](float across, float along) {
+                return Vector3(solid.centre.X + across * c + along * s, 0.8f,
+                               solid.centre.Y - across * s + along * c);
+            };
+            CHECK_MSG(traffic.blocks(at(0.0f, 1.2f), 0.0f), "a car is hollow along its length");
+            CHECK_MSG(!traffic.blocks(at(1.6f, 0.0f), 0.0f), "a car is wider than it is");
+        }
+        // And out again, the way a car that has driven into somebody gives
+        // them their space back: the pushed point is outside every car, and
+        // the push is short.
+        int pushed = 0;
+        for (const TrafficSystem::Solid& solid : solids)
+        {
+            const Vector3 inside(solid.centre.X, 0.9f, solid.centre.Y);
+            const Vector3 clear = traffic.pushOut(inside, 0.32f);
+            const float moved = std::sqrt((clear.X - inside.X) * (clear.X - inside.X)
+                                          + (clear.Z - inside.Z) * (clear.Z - inside.Z));
+            CHECK_MSG(moved > 0.1f, "a point in the middle of a car was not pushed out");
+            CHECK_MSG(moved < 3.5f, "a push out of a car threw somebody across the street");
+            CHECK_MSG(!traffic.blocks(clear, 0.30f), "a pushed point is still inside a car");
+            ++pushed;
+        }
+        CHECK(pushed == static_cast<int>(solids.size()));
+        // A point in the clear is left exactly where it is: nobody is nudged
+        // for standing on an empty pavement.
+        const Vector3 free(0.0f, 1.0f, 300.0f);
+        const Vector3 same = traffic.pushOut(free, 0.32f);
+        CHECK(same.X == free.X && same.Z == free.Z);
+        // An authored model's size reaches the solid.
+        traffic.setVehicleSize(0, 2.00f, 2.36f);
+        CHECK_NEAR(traffic.solids()[0].halfWidth, 1.0, 1e-4);
+        CHECK_NEAR(traffic.solids()[0].height, 2.36, 1e-4);
+        traffic.setVehicleSize(0, 0.1f, 0.1f);    // nonsense is ignored
+        CHECK_NEAR(traffic.solids()[0].halfWidth, 1.0, 1e-4);
+        traffic.setVehicleSize(9999, 2.0f, 2.0f); // as is an index off the end
     }
 
     TEST_MAIN("traffic-system");

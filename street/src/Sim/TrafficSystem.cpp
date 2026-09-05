@@ -121,6 +121,19 @@ void TrafficSystem::setVehicleLength(std::size_t index, float length)
     if (index < vehicles_.size() && length > 1.0f) vehicles_[index].length = length;
 }
 
+namespace {
+
+/// The class's own size, for a vehicle drawn as the loft that class builds.
+void SizeFromClass(Vehicle& vehicle)
+{
+    const VehicleDimensions d = VehicleFactory::dimensionsFor(vehicle.type);
+    vehicle.length     = d.length;
+    vehicle.width      = d.width;
+    vehicle.bodyHeight = d.height;
+}
+
+}  // namespace
+
 void TrafficSystem::buildLanes()
 {
     lanes_.clear();
@@ -169,7 +182,7 @@ void TrafficSystem::spawnMoving(Rng& rng, int count)
         vehicle.lane    = i % static_cast<int>(lanes_.size());
         vehicle.variant = rng.intRange(0, kVariantCount - 1);
         vehicle.type    = typeForVariant(vehicle.variant);
-        vehicle.length  = VehicleFactory::dimensionsFor(vehicle.type).length;
+        SizeFromClass(vehicle);
 
         const float length = lanes_[static_cast<std::size_t>(vehicle.lane)].length;
         const float slot   = length / static_cast<float>(perLane);
@@ -234,7 +247,7 @@ void TrafficSystem::spawnParked(Rng& rng, int count)
         vehicle.parked  = true;
         vehicle.variant = rng.intRange(0, kVariantCount - 1);
         vehicle.type    = typeForVariant(vehicle.variant);
-        vehicle.length  = VehicleFactory::dimensionsFor(vehicle.type).length;
+        SizeFromClass(vehicle);
         // A small lateral and angular error, because nobody parks perfectly.
         vehicle.parkedAt = Vector2(bay.x + rng.signed_(0.10f), bay.z + rng.signed_(0.18f));
         vehicle.parkedHeading = bay.heading + rng.signed_(0.035f);
@@ -274,7 +287,7 @@ void TrafficSystem::buildLineup(std::uint32_t seed)
         vehicle.parked        = true;
         vehicle.variant       = variant;
         vehicle.type          = typeForVariant(variant);
-        vehicle.length        = VehicleFactory::dimensionsFor(vehicle.type).length;
+        SizeFromClass(vehicle);
         vehicle.parkedAt      = lineupPlace(variant);
         vehicle.parkedHeading = 0.0f;
         vehicles_.push_back(vehicle);
@@ -435,6 +448,100 @@ void TrafficSystem::update(float deltaSeconds, const TrafficSignalController& si
             vehicle.indicator = 0;
         }
     }
+}
+
+void TrafficSystem::setVehicleSize(std::size_t index, float width, float height)
+{
+    if (index >= vehicles_.size()) return;
+    if (width > 0.5f) vehicles_[index].width = width;
+    if (height > 0.5f) vehicles_[index].bodyHeight = height;
+}
+
+std::vector<TrafficSystem::Solid> TrafficSystem::solids() const
+{
+    std::vector<Solid> out;
+    out.reserve(vehicles_.size());
+    for (const Vehicle& vehicle : vehicles_)
+    {
+        Solid solid;
+        solid.centre = vehicle.groundPosition(lanes_);
+        if (vehicle.parked)
+            solid.heading = vehicle.parkedHeading;
+        else if (vehicle.inTurn)
+        {
+            const Vector2 dir = BezierTangent(vehicle.turnFrom, vehicle.turnVia, vehicle.turnTail,
+                                              vehicle.turnPhase);
+            solid.heading = LaneHeading(dir);
+        }
+        else
+            solid.heading = lanes_[static_cast<std::size_t>(vehicle.lane)].heading();
+        solid.halfLength = vehicle.length * 0.5f;
+        solid.halfWidth  = vehicle.width * 0.5f;
+        solid.height     = vehicle.bodyHeight;
+        out.push_back(solid);
+    }
+    return out;
+}
+
+namespace {
+
+/// @p point in the box's own frame: x across the car, z along it.
+Vector2 IntoBody(const Vector2& point, const TrafficSystem::Solid& solid)
+{
+    const float dx = point.X - solid.centre.X;
+    const float dz = point.Y - solid.centre.Y;
+    // The heading is a yaw about +Y with +Z at zero, so the body's forward is
+    // (sin, cos) and its right is (cos, -sin).
+    const float s = std::sin(solid.heading), c = std::cos(solid.heading);
+    return Vector2(dx * c - dz * s, dx * s + dz * c);
+}
+
+}  // namespace
+
+bool TrafficSystem::blocks(const Vector3& point, float radius) const
+{
+    // Under the sills is not inside the car: a camera at ankle height beside a
+    // kerb is beside the car, not in it. Over the roof is not inside it either.
+    if (point.Y > 0.0f)
+    {
+        for (const Solid& solid : solids())
+        {
+            if (point.Y > solid.height + radius) continue;
+            const Vector2 local = IntoBody(Vector2(point.X, point.Z), solid);
+            if (std::fabs(local.X) < solid.halfWidth + radius
+                && std::fabs(local.Y) < solid.halfLength + radius)
+                return true;
+        }
+    }
+    return false;
+}
+
+Vector3 TrafficSystem::pushOut(const Vector3& point, float radius) const
+{
+    Vector3 out = point;
+    if (point.Y <= 0.0f) return out;
+    for (const Solid& solid : solids())
+    {
+        if (point.Y > solid.height + radius) continue;
+        const Vector2 local = IntoBody(Vector2(out.X, out.Z), solid);
+        const float halfW = solid.halfWidth + radius;
+        const float halfL = solid.halfLength + radius;
+        if (std::fabs(local.X) >= halfW || std::fabs(local.Y) >= halfL) continue;
+        // Out through the nearest face. Sideways is nearly always the shorter
+        // way and is also the one that puts somebody on the pavement rather
+        // than in front of the car that is already moving.
+        const float outX = halfW - std::fabs(local.X);
+        const float outZ = halfL - std::fabs(local.Y);
+        Vector2 fixed = local;
+        if (outX <= outZ)
+            fixed.X = (local.X < 0.0f ? -1.0f : 1.0f) * halfW;
+        else
+            fixed.Y = (local.Y < 0.0f ? -1.0f : 1.0f) * halfL;
+        const float s = std::sin(solid.heading), c = std::cos(solid.heading);
+        out.X = solid.centre.X + fixed.X * c + fixed.Y * s;
+        out.Z = solid.centre.Y - fixed.X * s + fixed.Y * c;
+    }
+    return out;
 }
 
 bool TrafficSystem::occupies(const Vector2& point, float radius) const

@@ -53,12 +53,20 @@ public:
     /// Returns the walkable surface height under a point, or a large negative
     /// number where there is none.
     using GroundProbe = std::function<float(float x, float z)>;
+    /// Returns the nearest point outside anything that can *move into* the
+    /// camera -- a car -- and the point itself otherwise. Walking into a car
+    /// is stopped by the collision probe; a car driving into the camera is
+    /// not, and without this it would carry the camera down the road inside
+    /// its bodywork.
+    using EscapeProbe = std::function<Microsoft::Xna::Framework::Vector3(
+        const Microsoft::Xna::Framework::Vector3&)>;
 
     CameraController();
 
     void setCamera(Camera* camera) { camera_ = camera; }
     void setCollisionProbe(CollisionProbe probe) { collision_ = std::move(probe); }
     void setGroundProbe(GroundProbe probe) { ground_ = std::move(probe); }
+    void setEscapeProbe(EscapeProbe probe) { escape_ = std::move(probe); }
 
     void setMode(CameraMode mode);
     [[nodiscard]] CameraMode mode() const { return mode_; }
@@ -97,6 +105,9 @@ public:
 private:
     void applyLook(float deltaYaw, float deltaPitch);
     void moveWithCollision(const Microsoft::Xna::Framework::Vector3& delta);
+    /// Eases the camera out of anything that has moved into it, at walking
+    /// pace. Called every frame in Walk mode and once on entering it.
+    void escapeSolids(float deltaSeconds);
 
     Camera*    camera_ = nullptr;
     CameraMode mode_   = CameraMode::Fly;
@@ -117,6 +128,7 @@ private:
 
     CollisionProbe collision_;
     GroundProbe    ground_;
+    EscapeProbe    escape_;
 
     /// Vertical velocity in Walk mode, so stepping off a kerb is a fall and not
     /// a teleport.

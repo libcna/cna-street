@@ -7,6 +7,7 @@
 
 #include "Microsoft/Xna/Framework/Matrix.hpp"
 #include "Microsoft/Xna/Framework/Vector2.hpp"
+#include "Microsoft/Xna/Framework/Vector3.hpp"
 
 #include <vector>
 
@@ -45,6 +46,11 @@ struct Vehicle
     VehicleType type = VehicleType::Hatchback;
     int   variant = 0;        ///< which built mesh and paint this one uses
     float length = 4.3f;
+    /// The drawn model's width and height, for the solid the walking camera
+    /// meets. Defaulted from the class and overwritten where an authored
+    /// model stands in for it.
+    float width  = 1.8f;
+    float bodyHeight = 1.5f;
     bool  parked = false;
     /// Where a parked vehicle sits, and which way it points.
     Microsoft::Xna::Framework::Vector2 parkedAt{0.0f, 0.0f};
@@ -136,6 +142,36 @@ public:
     /// walking camera do not walk through one.
     [[nodiscard]] bool occupies(const Microsoft::Xna::Framework::Vector2& point,
                                 float radius) const;
+
+    /// One vehicle as a solid: an oriented box on the road, of the size the
+    /// model that is drawn for it actually is. A circle of the car's own
+    /// length -- which is what @ref occupies uses, and all a pedestrian
+    /// needs to walk round a parked car -- reaches 2.2 m either side of a
+    /// hatchback, which as a wall to walk into is a metre and a half of
+    /// nothing in the road.
+    struct Solid
+    {
+        Microsoft::Xna::Framework::Vector2 centre{0.0f, 0.0f};
+        float heading = 0.0f;   ///< yaw about +Y, the way the body points
+        float halfLength = 2.2f;
+        float halfWidth  = 0.9f;
+        float height     = 1.5f;
+    };
+    /// Every vehicle's solid this instant, parked and moving alike.
+    [[nodiscard]] std::vector<Solid> solids() const;
+    /// Whether @p point, given a body of radius @p radius, is inside any
+    /// vehicle. Cheap enough to call twice a frame from the walking camera.
+    [[nodiscard]] bool blocks(const Microsoft::Xna::Framework::Vector3& point,
+                              float radius) const;
+    /// If @p point is inside a vehicle, the nearest point outside it, and
+    /// @p point otherwise. Used to ease the walking camera out of a car that
+    /// has driven into it rather than letting the car take it along.
+    [[nodiscard]] Microsoft::Xna::Framework::Vector3 pushOut(
+        const Microsoft::Xna::Framework::Vector3& point, float radius) const;
+
+    /// Gives one vehicle the width and height of the model drawn for it, so
+    /// the solid the player walks into is the car they can see.
+    void setVehicleSize(std::size_t index, float width, float height);
 
     /// How many distinct vehicle meshes the scene has to build.
     static constexpr int kVariantCount = 12;

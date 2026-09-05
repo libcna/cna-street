@@ -343,6 +343,8 @@ void StreetApplication::LoadContent()
     controller_.setViewpoints(scene_->viewpoints());
     controller_.setGroundProbe([this](float x, float z) { return scene_->groundHeight(x, z); });
     controller_.setCollisionProbe([this](const Vector3& point) { return scene_->isSolid(point); });
+    controller_.setEscapeProbe(
+        [this](const Vector3& point) { return scene_->pushOutOfSolids(point); });
 
     const std::vector<Viewpoint>& viewpoints = scene_->viewpoints();
     if (!viewpoints.empty())
