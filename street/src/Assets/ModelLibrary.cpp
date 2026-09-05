@@ -144,6 +144,17 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
                     material.castsShadow = false;
                     material.writesDepth = false;
                 }
+                // Foliage: a masked, double-sided part is a leaf card. Its
+                // scan says a fresh leaf is half glossy, which is true of the
+                // leaf and wrong for the card, because the card is seen from
+                // both sides with one normal and the whole underside of a
+                // crown then mirrors the sky. Rougher and with a third of the
+                // specular, the crown reads as leaves rather than as tinsel.
+                if (material.alphaMode == AlphaModeEXT::Mask && material.doubleSided)
+                {
+                    material.roughness = std::min(material.roughness * 1.7f, 2.5f);
+                    material.specular  = 0.35f;
+                }
             }
             else
             {
@@ -160,7 +171,8 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
             {
                 auto mesh2 = std::make_unique<GpuMesh>(*part, local, material.name);
                 triangles_ += static_cast<std::size_t>(mesh2->triangleCount());
-                result->parts.push_back(Part{installed, mesh2.get(), bone});
+                result->parts.push_back(Part{installed, mesh2.get(), bone,
+                                             mesh->getNameProperty()});
                 meshes_.push_back(std::move(mesh2));
             }
             catch (const std::exception&)
@@ -187,10 +199,20 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
     modelByName_[asset] = model.get();
     models_.push_back(std::move(model));
     ++loaded_;
+    // Which maps actually arrived, because a part whose textures failed to
+    // load draws as flat white and nothing else reports it.
+    int textured = 0, normalMapped = 0;
+    for (const Part& part : result->parts)
+    {
+        if (part.material->albedo != nullptr) ++textured;
+        if (part.material->normal != nullptr) ++normalMapped;
+    }
     CNA::Logger::Info("cna-street: imported '" + asset + "' -- "
                       + std::to_string(result->parts.size()) + " part(s), "
                       + std::to_string(result->triangleCount()) + " triangles, "
-                      + std::to_string(result->height()) + " m tall as authored");
+                      + std::to_string(result->height()) + " m tall as authored, "
+                      + std::to_string(textured) + " textured, " + std::to_string(normalMapped)
+                      + " normal-mapped");
     return result;
 }
 

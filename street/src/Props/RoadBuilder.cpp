@@ -696,6 +696,7 @@ void RoadBuilder::buildIronwork(GeometryCollector& collector, Rng& rng)
     {
         if (std::fabs(z) < kSideLine + 3.0f) continue;
         const float x = rng.range(-1.4f, 1.4f);
+        manholes_.push_back(Vector3(x, 0.0f, z));
         collector.setRegion(x, z);
         MeshBuilder& builder = collector.builder(iron);
         builder.setUvMode(UvMode::Explicit);

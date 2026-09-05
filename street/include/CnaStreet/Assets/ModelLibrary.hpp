@@ -71,6 +71,11 @@ public:
         /// The scene-graph transform of the node this part hangs from.
         Microsoft::Xna::Framework::Matrix bone =
             Microsoft::Xna::Framework::Matrix::getIdentityProperty();
+        /// The name of the mesh this part came from, as the file named it. A
+        /// scanned prop often ships its variants side by side in one file --
+        /// a fresh hydrant and an aged one, a clean bin and a rusted one --
+        /// and the name is how a caller takes one and leaves the other.
+        std::string node;
     };
 
     struct Imported

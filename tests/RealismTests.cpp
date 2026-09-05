@@ -12,7 +12,10 @@
 #include "TestSupport.hpp"
 
 #include "CnaStreet/Assets/TextureFactory.hpp"
+#include "CnaStreet/Core/Rng.hpp"
 #include "CnaStreet/Props/PropFactory.hpp"
+#include "CnaStreet/Props/RoadBuilder.hpp"
+#include "CnaStreet/Scene/CityLayout.hpp"
 #include "CnaStreet/Props/VehicleFactory.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
 #include "CnaStreet/Render/RenderSettings.hpp"
@@ -253,6 +256,31 @@ int main()
                 ++n;
             }
         CHECK_MSG(static_cast<double>(dark) / n < 0.02, "cracks cover under two per cent of a wall");
+    }
+
+    CASE("manhole covers lie on the crown of the main carriageway, clear of the junction");
+    {
+        // The road builder now hands its manhole positions to the scene, which
+        // stands a scanned cast-iron cover on each painted one. A cover that
+        // wandered into a lane, or into the junction box where the scanned
+        // frame would sit under turning traffic, would be visible from every
+        // viewpoint and reported by none.
+        CityLayout layout;
+        layout.generate(20260903u);
+        MaterialLibrary materials(nullptr);
+        RoadBuilder roads(layout, materials);
+        GeometryCollector collector;
+        Rng rng = Rng::derive(20260903u, "highway");
+        roads.build(collector, rng);
+        const std::vector<Vector3>& covers = roads.manholes();
+        CHECK_MSG(covers.size() >= 4, "a street this long has a run of manhole covers");
+        for (const Vector3& p : covers)
+        {
+            CHECK_MSG(std::fabs(p.X) <= 1.5f, "a manhole cover sits within 1.5 m of the crown");
+            CHECK_MSG(std::fabs(p.Z) > Metrics::kSideStreetHalfWidth + 2.0f,
+                      "and out of the junction box");
+            CHECK_NEAR(p.Y, 0.0, 1e-6);
+        }
     }
 
     TEST_MAIN("realism");

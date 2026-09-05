@@ -49,6 +49,12 @@ public:
     void build(GeometryCollector& collector, Rng& rng);
 
     [[nodiscard]] const std::vector<Crossing>& crossings() const { return crossings_; }
+    /// Where the manhole covers are, so a scanned cover can be stood on each
+    /// painted one.
+    [[nodiscard]] const std::vector<Microsoft::Xna::Framework::Vector3>& manholes() const
+    {
+        return manholes_;
+    }
 
 private:
     void buildCarriageway(GeometryCollector& collector, Rng& rng);
@@ -61,6 +67,7 @@ private:
     const CityLayout&      layout_;
     const MaterialLibrary& materials_;
     std::vector<Crossing>  crossings_;
+    std::vector<Microsoft::Xna::Framework::Vector3> manholes_;
 };
 
 }  // namespace CnaStreet

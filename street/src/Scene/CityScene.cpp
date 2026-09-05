@@ -88,6 +88,17 @@ void CityScene::build(const RenderSettings& settings)
     CNA::Logger::Info("cna-street: laying out the street");
     layout_.generate(settings.seed);
     buildStats_.plots = static_cast<int>(layout_.plots().size());
+    // Where each plot is and what it is built as, so a viewpoint can be aimed
+    // at a brick warehouse rather than at where one was hoped to be.
+    for (std::size_t i = 0; i < layout_.plots().size(); ++i)
+    {
+        const Plot& plot = layout_.plots()[i];
+        CNA::Logger::Debug("cna-street: plot " + std::to_string(i) + " style "
+                           + std::to_string(static_cast<int>(plot.style)) + " x "
+                           + std::to_string(plot.minX) + ".." + std::to_string(plot.maxX) + " z "
+                           + std::to_string(plot.minZ) + ".." + std::to_string(plot.maxZ)
+                           + (plot.hasShop ? " shop '" + plot.shopName + "'" : ""));
+    }
 
     CNA::Logger::Info("cna-street: building the highway");
     {
@@ -96,6 +107,7 @@ void CityScene::build(const RenderSettings& settings)
         RoadBuilder roads(layout_, materials_);
         roads.build(collector, rng);
         crossings_ = roads.crossings();
+        manholes_  = roads.manholes();
         publish(collector, 0.0f, settings.shadowDistance);
     }
 
@@ -146,6 +158,11 @@ void CityScene::build(const RenderSettings& settings)
     }
     CNA::Logger::Info("cna-street: traffic and people");
     buildTrafficAndPeople(settings);
+    CNA::Logger::Info("cna-street: dressing the street");
+    {
+        Rng rng = Rng::derive(settings.seed, "dressing");
+        buildDressing(rng, settings);
+    }
 
     // After the trees and the vehicles, because the district beyond the
     // frontage borrows both: the same far trees at the same pitch, and the
@@ -686,6 +703,69 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
     }
 }
 
+namespace {
+
+BoundingBox TransformBounds(const BoundingBox& box, const Matrix& transform)
+{
+    Vector3 lo(1e30f, 1e30f, 1e30f);
+    Vector3 hi(-1e30f, -1e30f, -1e30f);
+    for (int i = 0; i < 8; ++i)
+    {
+        const Vector3 corner((i & 1) ? box.Max.X : box.Min.X, (i & 2) ? box.Max.Y : box.Min.Y,
+                             (i & 4) ? box.Max.Z : box.Min.Z);
+        const Vector3 p = Vector3::Transform(corner, transform);
+        lo = Vector3(std::min(lo.X, p.X), std::min(lo.Y, p.Y), std::min(lo.Z, p.Z));
+        hi = Vector3(std::max(hi.X, p.X), std::max(hi.Y, p.Y), std::max(hi.Z, p.Z));
+    }
+    return BoundingBox(lo, hi);
+}
+
+void Grow(Vector3& lo, Vector3& hi, const BoundingBox& box)
+{
+    lo = Vector3(std::min(lo.X, box.Min.X), std::min(lo.Y, box.Min.Y), std::min(lo.Z, box.Min.Z));
+    hi = Vector3(std::max(hi.X, box.Max.X), std::max(hi.Y, box.Max.Y), std::max(hi.Z, box.Max.Z));
+}
+
+}  // namespace
+
+void CityScene::PropMesh::append(const PropMesh& other, const Matrix& at)
+{
+    if (other.empty()) return;
+    Vector3 lo = empty() ? Vector3(1e30f, 1e30f, 1e30f) : bounds.Min;
+    Vector3 hi = empty() ? Vector3(-1e30f, -1e30f, -1e30f) : bounds.Max;
+    for (const Part& part : other.parts)
+    {
+        Part placed = part;
+        placed.local = part.local * at;
+        Grow(lo, hi, TransformBounds(part.mesh->bounds(), placed.local));
+        parts.push_back(placed);
+    }
+    bounds = BoundingBox(lo, hi);
+}
+
+CityScene::PropMesh CityScene::importedProp(const std::string& asset, const Matrix& adjust,
+                                            const std::function<bool(const std::string&)>& include)
+{
+    PropMesh prop;
+    const ModelLibrary::Imported* model = models_.load(asset);
+    if (model == nullptr) return prop;
+    Vector3 lo(1e30f, 1e30f, 1e30f);
+    Vector3 hi(-1e30f, -1e30f, -1e30f);
+    for (const ModelLibrary::Part& part : model->parts)
+    {
+        if (part.mesh == nullptr || part.material == nullptr) continue;
+        if (include && !include(part.node)) continue;
+        PropMesh::Part placed;
+        placed.material = part.material;
+        placed.mesh     = part.mesh;
+        placed.local    = part.bone * adjust;
+        Grow(lo, hi, TransformBounds(part.mesh->bounds(), placed.local));
+        prop.parts.push_back(placed);
+    }
+    if (!prop.parts.empty()) prop.bounds = BoundingBox(lo, hi);
+    return prop;
+}
+
 CityScene::PropMesh CityScene::makeProp(const std::string& name,
                                         const std::function<void(GeometryCollector&)>& build)
 {
@@ -724,6 +804,10 @@ void CityScene::placeProp(const PropMesh& prop, const std::vector<Matrix>& trans
         group.mesh           = part.mesh;
         group.material       = part.material;
         group.transforms     = transforms;
+        // An imported part hangs from a node of its own; the placement is of
+        // the prop, so the node's transform goes in front of every copy.
+        if (part.local != Matrix::getIdentityProperty())
+            for (Matrix& transform : group.transforms) transform = part.local * transform;
         group.cullDistance   = cullDistance;
         group.shadowDistance = shadowDistance;
         group.castsShadow    = castsShadow;
@@ -750,7 +834,7 @@ void CityScene::submitProp(const PropMesh& prop, const Matrix& transform,
     for (const PropMesh::Part& part : prop.parts)
         renderer_.submitDynamic(part.mesh,
                                 overrideMaterial != nullptr ? overrideMaterial : part.material,
-                                transform, shadowOnly);
+                                part.local * transform, shadowOnly);
 }
 
 void CityScene::update(float deltaSeconds, const RenderSettings& settings)
@@ -1070,13 +1154,48 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     const PropMesh lampSide = makeProp("lamp-side", [&](GeometryCollector& c) {
         props.streetLamp(c, M::kLampSideHeight, M::kLampArmReach * 0.8f);
     });
-    const PropMesh bench   = makeProp("bench", [&](GeometryCollector& c) { props.bench(c); });
+    // Scanned props where the content root has them, generated ones where it
+    // does not. A scanned hydrant, cabinet or bench is the single cheapest
+    // realism there is at eye level: the eye judges a street by its furniture,
+    // and a photogrammetry scan carries the dents, the paint runs and the
+    // rust bloom that no generator here was ever going to.
+    //
+    // Poly Haven ships variants side by side in one file -- a fresh hydrant at
+    // x = -0.3 and an aged one at x = +0.3 -- so one variant is taken by node
+    // name and slid back onto the origin.
+    PropMesh hydrant = importedProp("ph-fire-hydrant", Matrix::CreateTranslation(0.3f, 0.0f, 0.0f),
+                                    [](const std::string& node) {
+                                        return node.find("aged") == std::string::npos;
+                                    });
+    if (hydrant.empty())
+        hydrant = makeProp("hydrant", [&](GeometryCollector& c) { props.hydrant(c); });
+    // The street seating kit is a set of modules; the ones from x = -2.32 to 0
+    // make one bench with a back and two arm rests, centred here.
+    PropMesh bench = importedProp(
+        "ph-street-seating", Matrix::CreateTranslation(1.16f, 0.0f, 0.0f),
+        [](const std::string& node) {
+            static const char* const kBenchNodes[] = {
+                "legs_double", "legs_single", "crossbar", "back_support_r", "back_support_l",
+                "arm_rest_01", "arm_rest_02", "seat", "seat_back", "suspended_support_01"};
+            for (const char* wanted : kBenchNodes)
+                if (node == wanted) return true;
+            return false;
+        });
+    if (bench.empty()) bench = makeProp("bench", [&](GeometryCollector& c) { props.bench(c); });
+    std::vector<PropMesh> cabinets;
+    for (const char* asset : {"ph-utility-box-1", "ph-utility-box-2"})
+    {
+        PropMesh box = importedProp(asset);
+        if (!box.empty()) cabinets.push_back(std::move(box));
+    }
+    if (cabinets.empty())
+        cabinets.push_back(makeProp("cabinet", [&](GeometryCollector& c) {
+            props.utilityCabinet(c, rng);
+        }));
     const PropMesh bollard = makeProp("bollard", [&](GeometryCollector& c) { props.bollard(c); });
     const PropMesh bin     = makeProp("litter-bin", [&](GeometryCollector& c) { props.litterBin(c); });
-    const PropMesh hydrant = makeProp("hydrant", [&](GeometryCollector& c) { props.hydrant(c); });
-    const PropMesh cabinet = makeProp("cabinet", [&](GeometryCollector& c) {
-        props.utilityCabinet(c, rng);
-    });
+    // A refuse sack beside one bin in three, on collection day.
+    const PropMesh sack = importedProp("ph-trash-bag");
     const PropMesh bikeStand = makeProp("bike-stand", [&](GeometryCollector& c) {
         props.bicycleStand(c);
     });
@@ -1097,8 +1216,9 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
         props.busShelter(c);
     });
 
-    std::vector<Matrix> lampMainAt, lampSideAt, benchAt, bollardAt, binAt, hydrantAt, cabinetAt,
-        bikeAt, shelterAt;
+    std::vector<Matrix> lampMainAt, lampSideAt, benchAt, bollardAt, binAt, hydrantAt, bikeAt,
+        shelterAt, sackAt;
+    std::vector<std::vector<Matrix>> cabinetAt(cabinets.size());
 
     const std::vector<FootwayRun>& runs = layout_.footways();
     for (std::size_t index = 0; index < runs.size(); ++index)
@@ -1140,6 +1260,11 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
             {
                 const Vector3 b = at(s + 1.9f, band);
                 binAt.push_back(Place(b.X, b.Y, b.Z, faceRoad));
+                if (!sack.empty() && rng.chance(0.34f))
+                {
+                    const Vector3 g = at(s + 2.45f, band + rng.signed_(0.08f));
+                    sackAt.push_back(Place(g.X, g.Y, g.Z, rng.range(0.0f, MathHelper::TwoPi)));
+                }
             }
             if (run.main && lamp % 3 == 2)
             {
@@ -1182,7 +1307,7 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
         if (rng.chance(run.main ? 0.75f : 0.45f))
         {
             const Vector3 p = at(rng.range(18.0f, std::max(19.0f, length - 12.0f)), wall);
-            cabinetAt.push_back(Place(p.X, p.Y, p.Z, faceRoad));
+            cabinetAt[rng.index(cabinets.size())].push_back(Place(p.X, p.Y, p.Z, faceRoad));
         }
         for (float s = rhythm.first + 26.0f; s < length - 10.0f; s += 58.0f)
         {
@@ -1260,7 +1385,9 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     placeProp(bollard, bollardAt, "bollard", cull * 0.4f, shade * 0.4f);
     placeProp(bin, binAt, "litter-bin", cull * 0.5f, shade * 0.6f);
     placeProp(hydrant, hydrantAt, "hydrant", cull * 0.4f, shade * 0.4f);
-    placeProp(cabinet, cabinetAt, "cabinet", cull * 0.7f, shade);
+    for (std::size_t i = 0; i < cabinets.size(); ++i)
+        placeProp(cabinets[i], cabinetAt[i], "cabinet-" + std::to_string(i), cull * 0.7f, shade);
+    placeProp(sack, sackAt, "refuse-sack", cull * 0.3f, shade * 0.3f);
     placeProp(bikeStand, bikeAt, "bike-stand", cull * 0.4f, shade * 0.5f);
     for (std::size_t i = 0; i < bikes.size(); ++i)
         placeProp(bikes[i], bikeOnStand[i], "bicycle", cull * 0.35f, shade * 0.4f);
@@ -1383,12 +1510,41 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
     const PropMesh grate = makeProp("tree-grate", [&](GeometryCollector& c) {
         props.treeGrate(c);
     });
-    const PropMesh planter = makeProp("planter", [&](GeometryCollector& c) {
-        props.planter(c, rng);
-    });
+    // Scanned planter boxes with scanned shrubs in them, where the content
+    // root has them; the generated trough with its clipped sphere otherwise.
+    // Two shrub clumps sit in the soil a hand below the rim.
+    std::vector<PropMesh> planters;
+    {
+        const PropMesh shrubs = importedProp(
+            "ph-shrub-3", Matrix::CreateTranslation(-0.23f, 0.29f, 0.0f),
+            [](const std::string& node) { return node == "shrub_03_a" || node == "shrub_03_b"; });
+        for (const char* asset : {"ph-planter-1", "ph-planter-2"})
+        {
+            PropMesh box = importedProp(asset);
+            if (box.empty()) continue;
+            box.append(shrubs, Matrix::getIdentityProperty());
+            planters.push_back(std::move(box));
+        }
+        if (planters.empty())
+            planters.push_back(makeProp("planter", [&](GeometryCollector& c) {
+                props.planter(c, rng);
+            }));
+    }
+    // The hero tree: a scanned small tree cut to a street level of detail (see
+    // scripts/blender-tree-lod.py), stood at the pits nearest the showcase
+    // viewpoints -- the west footway north of the junction -- and scaled up
+    // from its 4.6 m to a street tree's height. The generated trees stand
+    // everywhere else, so the hero corridor gets the leaf-level realism and
+    // the rest of the district stays cheap.
+    const PropMesh heroTree    = importedProp("ph-tree-small");
+    const PropMesh heroTreeFar = importedProp("ph-tree-small-far");
+    auto heroPit = [](const Vector3& p) {
+        return p.X < 0.0f && p.Z > 18.0f && p.Z < 68.0f;
+    };
 
     std::vector<std::vector<Matrix>> treeAt(kTreeVariants);
-    std::vector<Matrix> grateAt, planterAt, scruffAt;
+    std::vector<std::vector<Matrix>> planterAt(planters.size());
+    std::vector<Matrix> grateAt, scruffAt, heroTreeAt;
 
     for (const FootwayRun& run : layout_.footways())
     {
@@ -1416,8 +1572,12 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
                 if (!rng.chance(0.82f)) continue;   // the gaps where one died
                 const Vector3 p = at(s, FurnitureBand(run) + 0.15f);
                 const int variant = rng.intRange(0, kTreeVariants - 1);
-                treeAt[static_cast<std::size_t>(variant)].push_back(
-                    Place(p.X, p.Y, p.Z, rng.range(0.0f, MathHelper::TwoPi)));
+                const float yaw = rng.range(0.0f, MathHelper::TwoPi);
+                if (!heroTree.empty() && heroPit(p))
+                    heroTreeAt.push_back(Matrix::CreateScale(rng.range(1.55f, 1.85f))
+                                         * Place(p.X, p.Y, p.Z, yaw));
+                else
+                    treeAt[static_cast<std::size_t>(variant)].push_back(Place(p.X, p.Y, p.Z, yaw));
                 treePositions_.push_back(p);
                 // The grate sits flush with the paving, not on top of it.
                 grateAt.push_back(Place(p.X, p.Y - 0.012f, p.Z,
@@ -1436,7 +1596,7 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
         {
             if (!rng.chance(0.45f)) continue;
             const Vector3 p = at(s + rng.signed_(3.0f), -(run.width * 0.5f - 0.55f));
-            planterAt.push_back(Place(p.X, p.Y, p.Z, YawTowards(kerb)));
+            planterAt[rng.index(planters.size())].push_back(Place(p.X, p.Y, p.Z, YawTowards(kerb)));
         }
 
         // And the scruff along the building line: grass through the joint where
@@ -1457,8 +1617,16 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
                   /*castsShadow=*/true, &distantTrees[static_cast<std::size_t>(i)], 52.0f);
         buildStats_.trees += static_cast<int>(treeAt[static_cast<std::size_t>(i)].size());
     }
+    // The same tree at a quarter of the geometry past 55 m -- cut by the same
+    // script from the same source, so the crown keeps its shape across the
+    // switch rather than popping to a different tree.
+    placeProp(heroTree, heroTreeAt, "tree-hero", cull, shade, /*castsShadow=*/true,
+              heroTreeFar.empty() ? nullptr : &heroTreeFar, 55.0f);
+    buildStats_.trees += static_cast<int>(heroTreeAt.size());
     placeProp(grate, grateAt, "tree-grate", cull * 0.35f, 0.0f, false);
-    placeProp(planter, planterAt, "planter", cull * 0.5f, shade * 0.6f);
+    for (std::size_t i = 0; i < planters.size(); ++i)
+        placeProp(planters[i], planterAt[i], "planter-" + std::to_string(i), cull * 0.5f,
+                  shade * 0.6f);
     placeProp(scruff, scruffAt, "ground-scruff", 42.0f, 0.0f, false);
 }
 
@@ -1971,6 +2139,129 @@ void CityScene::buildShopDisplays(const RenderSettings& settings)
         CNA::Logger::Debug("cna-street: model unavailable -- " + failure);
 }
 
+void CityScene::buildDressing(Rng& rng, const RenderSettings& settings)
+{
+    // The scanned things that make a street look used rather than built:
+    // manhole covers on the crown of the road, a car under a cover in one bay,
+    // a cafe's tables and A-board out on the footway, a crate and a carton by
+    // a shop door. None of them is structural and every one of them is a
+    // photogrammetry scan, which is what lets them survive the close-ups the
+    // showcase viewpoints take.
+    const float cull  = settings.propCullDistance;
+    const float shade = settings.propShadowDistance;
+    const float ground = M::kCurbHeight;
+
+    // --- manhole covers ------------------------------------------------------
+    const PropMesh manhole = importedProp("ph-manhole");
+    if (!manhole.empty())
+    {
+        std::vector<Matrix> at;
+        for (const Vector3& p : manholes_)
+            at.push_back(Place(p.X, 0.004f, p.Z, rng.range(0.0f, MathHelper::TwoPi)));
+        placeProp(manhole, at, "manhole-cover", cull * 0.3f, 0.0f, false);
+    }
+
+    // --- a covered car in a hero bay ----------------------------------------
+    // The west parking lane between the shop window and the kerbside
+    // viewpoints, in the first bay no parked car took. A car under a cover is
+    // the one vehicle in the scene that is a scan rather than a loft, and it
+    // reads as one from the pavement.
+    const PropMesh covered = importedProp("ph-covered-car");
+    if (!covered.empty())
+    {
+        const float x = -(M::kMainCarriagewayWidth * 0.5f - M::kParkingLaneWidth * 0.5f);
+        const float pitch = M::kParkingBayLength + 0.65f;
+        const float from = M::kSideStreetHalfWidth + 14.0f;
+        float best = 0.0f, bestScore = 1e30f;
+        for (float z = from + pitch * 0.5f; z < 70.0f; z += pitch)
+        {
+            bool free = true;
+            for (const Vehicle& other : traffic_.vehicles())
+                if (other.parked && other.parkedAt.X < 0.0f
+                    && std::fabs(other.parkedAt.Y - z) < pitch * 0.95f)
+                    free = false;
+            if (!free) continue;
+            const float score = std::fabs(z - 44.0f);
+            if (score < bestScore) { bestScore = score; best = z; }
+        }
+        if (bestScore < 1e29f)
+        {
+            placeProp(covered, {Place(x + 0.05f, 0.0f, best, MathHelper::Pi + 0.02f)},
+                      "covered-car", cull * 0.6f, shade);
+            CNA::Logger::Info("cna-street: covered car in the bay at z = " + std::to_string(best));
+        }
+    }
+
+    // --- pavement cafes ------------------------------------------------------
+    // A table and two chairs, and an A-board, on the footway outside each
+    // bakery: against the building line, out of the walking line, turned a
+    // little. The window display's transform gives the shop's position and
+    // which way it faces; the footway is a metre and a half out from it.
+    const PropMesh cafeSet = importedProp("ph-cafe-set");
+    const PropMesh board   = importedProp("ph-chalkboard");
+    std::vector<Matrix> cafeAt, boardAt;
+    int cafes = 0;
+    for (const ShopDisplay& display : displays_)
+    {
+        if (display.kind != ShopKind::Bakery) continue;
+        const Vector3 out = Vector3::Normalize(Vector3::TransformNormal(Vector3::UnitZ,
+                                                                        display.stand));
+        const Vector3 along(-out.Z, 0.0f, out.X);
+        const Vector3 base = display.stand.getTranslationProperty();
+        // Only where the footway is wide enough for a table and a walking
+        // line beside it, which is the main street.
+        if (std::fabs(out.X) < 0.5f) continue;
+        const float faceOut = std::atan2(out.X, out.Z);
+        const Vector3 t = base + out * 1.55f + along * 0.9f;
+        cafeAt.push_back(Place(t.X, ground, t.Z, faceOut + rng.signed_(0.5f)));
+        if (rng.chance(0.6f))
+        {
+            const Vector3 t2 = base + out * 1.55f - along * 1.1f;
+            cafeAt.push_back(Place(t2.X, ground, t2.Z, faceOut + rng.signed_(0.5f)));
+        }
+        const Vector3 b = base + out * 1.0f - along * 2.6f;
+        boardAt.push_back(Place(b.X, ground, b.Z, faceOut + rng.signed_(0.25f)));
+        ++cafes;
+    }
+    placeProp(cafeSet, cafeAt, "cafe-seating", cull * 0.4f, shade * 0.5f);
+    placeProp(board, boardAt, "a-board", cull * 0.35f, shade * 0.4f);
+
+    // --- deliveries ----------------------------------------------------------
+    // A crate and a carton beside one shop door in five, against the wall.
+    // The house-number anchors are beside the doors, so a door is where one
+    // of them is.
+    const PropMesh crate  = importedProp("ph-crate");
+    const PropMesh carton = importedProp("ph-cardboard-box");
+    std::vector<Matrix> crateAt, cartonAt;
+    for (const FacadeAnchor& anchor : anchors_)
+    {
+        if (anchor.kind != FacadeAnchor::Kind::HouseNumber) continue;
+        if (!rng.chance(0.2f)) continue;
+        const Vector3 out = Vector3::Normalize(Vector3(anchor.normal.X, 0.0f, anchor.normal.Z));
+        const Vector3 along(-out.Z, 0.0f, out.X);
+        const Vector3 p = Vector3(anchor.position.X, ground, anchor.position.Z) + out * 0.34f
+                          + along * rng.range(0.9f, 1.4f);
+        const float yaw = std::atan2(out.X, out.Z) + rng.signed_(0.3f);
+        if (rng.chance(0.5f))
+        {
+            crateAt.push_back(Place(p.X, p.Y, p.Z, yaw));
+            if (rng.chance(0.5f))
+                crateAt.push_back(Place(p.X, p.Y + 0.31f, p.Z, yaw + rng.signed_(0.2f)));
+        }
+        else
+        {
+            cartonAt.push_back(Place(p.X, p.Y, p.Z, yaw));
+        }
+    }
+    placeProp(crate, crateAt, "crate", cull * 0.3f, shade * 0.3f);
+    placeProp(carton, cartonAt, "carton", cull * 0.3f, shade * 0.3f);
+
+    CNA::Logger::Info("cna-street: dressing -- " + std::to_string(manholes_.size())
+                      + " manhole covers, " + std::to_string(cafes) + " pavement cafes, "
+                      + std::to_string(crateAt.size() + cartonAt.size()) + " deliveries"
+                      + (covered.empty() ? "" : ", one covered car"));
+}
+
 void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
 {
     // --- the fleet ----------------------------------------------------------
@@ -2336,6 +2627,17 @@ void CityScene::buildViewpoints()
     // with the signal head and the crossing in the foreground.
     viewpoints_.push_back(Viewpoint{"Corner to corner",
                                     Vector3(8.7f, eye + 0.1f, -10.4f), 3.90f, 0.05f, 1.05f});
+
+    // --- the hero corridor ---------------------------------------------------
+    // Two more photographs, both on the west footway north of the junction
+    // where the scanned content is densest, each framed so that the things a
+    // stranger's eye goes to first -- the hydrant at their feet, the tables
+    // outside the shop, the car under its cover, the scanned tree over it --
+    // are the things that survive being looked at.
+    viewpoints_.push_back(Viewpoint{"Pavement cafe",
+                                    Vector3(-6.3f, 1.40f, 40.5f), 3.58f, -0.05f, 1.0996f});
+    viewpoints_.push_back(Viewpoint{"Covered car",
+                                    Vector3(-5.2f, 1.30f, 51.5f), 0.30f, -0.05f, 1.0996f});
 
     if (!lineup_) return;
     // The development line-up: a square side view and a three-quarter front of

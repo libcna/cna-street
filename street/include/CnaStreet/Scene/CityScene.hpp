@@ -115,14 +115,32 @@ private:
         {
             const Material* material = nullptr;
             const GpuMesh*  mesh     = nullptr;
+            /// Where this part sits within the prop. Identity for everything
+            /// generated here, which builds each prop about its own origin;
+            /// an imported model hangs its parts from nodes with transforms
+            /// of their own, and those are composed in front of the placement.
+            Microsoft::Xna::Framework::Matrix local =
+                Microsoft::Xna::Framework::Matrix::getIdentityProperty();
         };
         std::vector<Part> parts;
         Microsoft::Xna::Framework::BoundingBox bounds;
         [[nodiscard]] bool empty() const { return parts.empty(); }
+        /// Adds another prop's parts, offset by @p at: a shrub in a planter.
+        void append(const PropMesh& other, const Microsoft::Xna::Framework::Matrix& at);
     };
 
     /// Runs a generator into a fresh collector and uploads what it produced.
     PropMesh makeProp(const std::string& name, const std::function<void(GeometryCollector&)>& build);
+    /// A prop from an imported model, or an empty one when the model is not
+    /// there -- which is the cue to build the generated stand-in instead. The
+    /// parts whose node name @p include accepts (every part when it is null),
+    /// each carrying its node transform and then @p adjust, which is how a
+    /// file that ships two variants side by side yields one of them standing
+    /// on the origin.
+    PropMesh importedProp(const std::string& asset,
+                          const Microsoft::Xna::Framework::Matrix& adjust =
+                              Microsoft::Xna::Framework::Matrix::getIdentityProperty(),
+                          const std::function<bool(const std::string&)>& include = nullptr);
     /// Registers a prop's parts as instance groups sharing one transform list.
     void placeProp(const PropMesh& prop,
                    const std::vector<Microsoft::Xna::Framework::Matrix>& transforms,
@@ -137,6 +155,10 @@ private:
 
     void buildStreetFurniture(Rng& rng, const RenderSettings& settings);
     void buildVegetation(Rng& rng, const RenderSettings& settings);
+    /// The scanned props that make the street look used: manhole covers, a
+    /// covered car, pavement cafes, deliveries by the doors. After the traffic,
+    /// because the car takes a bay no parked car did.
+    void buildDressing(Rng& rng, const RenderSettings& settings);
     void buildSignalsAndSigns(Rng& rng, const RenderSettings& settings);
     /// Shop fascias and house numbers, on the anchors the façade generator
     /// left behind while it was building the elevations.
@@ -158,6 +180,7 @@ private:
     ModelLibrary&    models_;
     CityLayout      layout_;
     std::vector<Crossing> crossings_;
+    std::vector<Microsoft::Xna::Framework::Vector3> manholes_;
     std::vector<FacadeAnchor> anchors_;
     std::vector<ShopDisplay>  displays_;
 
