@@ -33,4 +33,13 @@ if(CNA_STREET_TEST_PYTHON)
     add_test(NAME validate_assets
              COMMAND "${CNA_STREET_TEST_PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/validate-assets.py"
              WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+    # Every derived car faces +Z with its front wheels at the front. A model
+    # that arrives from its author back to front and is not turned drives
+    # permanently in reverse; the flag that used to declare which ones needed
+    # turning was never checked, and never worked. Passes in a tree that has
+    # derived nothing.
+    add_test(NAME vehicle_orientation
+             COMMAND "${CNA_STREET_TEST_PYTHON}"
+                     "${CMAKE_SOURCE_DIR}/scripts/vehicle-orientation.py" --check
+             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
 endif()
