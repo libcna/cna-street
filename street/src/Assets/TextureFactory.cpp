@@ -1307,13 +1307,16 @@ SurfaceMaps TextureFactory::shopStock(int size, std::uint32_t seed)
             const float r = saturate(std::fabs(hue * 6.0f - 3.0f) - 1.0f);
             const float g = saturate(2.0f - std::fabs(hue * 6.0f - 2.0f));
             const float b = saturate(2.0f - std::fabs(hue * 6.0f - 4.0f));
-            const float label[3] = {Mix(0.30f, r * 0.55f, 0.75f), Mix(0.30f, g * 0.55f, 0.75f),
-                                    Mix(0.30f, b * 0.55f, 0.75f)};
+            // Half as saturated as the first version: through a pane of glass
+            // from the pavement a shelf reads as tone, and a shelf of six
+            // clean hues read as confetti even when most of it was card.
+            const float label[3] = {Mix(0.36f, r * 0.55f, 0.48f), Mix(0.36f, g * 0.55f, 0.48f),
+                                    Mix(0.36f, b * 0.55f, 0.48f)};
 
             const float fx = u * static_cast<float>(kCols) - static_cast<float>(cx);
             const float fy = v * static_cast<float>(kRows) - static_cast<float>(cy);
             float base[3];
-            if (kind < 0.62f)
+            if (kind < 0.74f)
             {
                 // White card with a label band across the middle third, on
                 // about half of them; the rest are plain card with a small
@@ -1329,7 +1332,7 @@ SurfaceMaps TextureFactory::shopStock(int size, std::uint32_t seed)
                                              * smoothstep(0.30f, 0.34f, fx) * (1.0f - smoothstep(0.62f, 0.66f, fx));
                 for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], label[c] * 1.3f, band);
             }
-            else if (kind < 0.86f)
+            else if (kind < 0.90f)
             {
                 // A coloured box with a pale panel on it.
                 for (int c = 0; c < 3; ++c) base[c] = label[c] * bright * 1.15f;

@@ -200,6 +200,28 @@ private:
     [[nodiscard]] float nominalRoughnessOf(const std::string& name) const;
     [[nodiscard]] float nominalMetallicOf(const std::string& name) const;
 
+    /// A surface the content root carries as a *scanned* PBR set rather than a
+    /// generated one -- see `scripts/prepare-surfaces.py` and `authored.txt`.
+    /// Its maps are taken at face value: the roughness and metalness factors
+    /// become 1 so the map is the value, the UV scale maps the geometry's tile
+    /// onto the scan's physical size, and the base colour is reset to white
+    /// unless the scan was neutralised for tinting.
+    struct Authored
+    {
+        Microsoft::Xna::Framework::Vector2 uvScale{1.0f, 1.0f};
+        bool keepTint = false;
+    };
+    /// Reads `authored.txt` from the content root. Idempotent.
+    void loadAuthored();
+public:
+    /// Whether @p name was installed from a scanned set. Public because the
+    /// catalogue's own post-install adjustments -- a roughness set by hand
+    /// after `install` -- must not be applied over a map that already carries
+    /// the measured value.
+    [[nodiscard]] bool isAuthored(const std::string& name) const;
+    [[nodiscard]] std::size_t authoredCount() const { return authoredInstalled_; }
+private:
+
     /// Installs one material. @p generate is called only when the surface is not
     /// already compiled into the content root, which is the whole point of the
     /// pipeline: a full content build turns a nine-second start-up into a
@@ -219,6 +241,9 @@ private:
     std::unordered_map<std::string, float> nominalRoughness_;
     std::unordered_map<std::string, float> nominalMetallic_;
     bool nominalsLoaded_ = false;
+    std::unordered_map<std::string, Authored> authored_;
+    bool authoredLoaded_ = false;
+    std::size_t authoredInstalled_ = 0;
     std::size_t textureBytes_ = 0;
 };
 

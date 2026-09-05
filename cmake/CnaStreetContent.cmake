@@ -22,37 +22,31 @@ set(CNA_STREET_EXTERNAL_DIR "${CMAKE_SOURCE_DIR}/assets/external/downloads" CACH
     "Where scripts/fetch-assets.sh puts the external glTF sources")
 
 # The manifest's local names, so the compiled asset is called what the runtime
-# asks for. Read at configure time, which is the right time: the manifest
-# changes when somebody adds an asset, and that is a configure-worthy event.
+# asks for. Read at configure time through scripts/manifest-tool.py, which is
+# the one place that knows the manifest's shape: an asset may be a single .glb
+# or a .gltf with a buffer and a folder of images, and the surfaces declared
+# beside them are not models at all. Without Python there are no imported
+# models and no scanned surfaces, and the build says so once rather than
+# guessing at JSON with a regular expression.
 set(CNA_STREET_MODEL_NAMES "")
-if(EXISTS "${CMAKE_SOURCE_DIR}/assets/external/manifest.json")
-    # Zipped rather than matched as one pattern: CMake's regex engine has no
-    # non-greedy repetition, so "name ... file" across a JSON object cannot be
-    # written as a single match. Every asset carries exactly one of each, in
-    # that order, so the two lists line up.
-    file(READ "${CMAKE_SOURCE_DIR}/assets/external/manifest.json" _manifest)
-    string(REGEX MATCHALL "\"name\"[ \t]*:[ \t]*\"[^\"]+\"" _names "${_manifest}")
-    string(REGEX MATCHALL "\"file\"[ \t]*:[ \t]*\"[^\"]+\"" _files "${_manifest}")
-    list(LENGTH _names _name_count)
-    list(LENGTH _files _file_count)
-    if(_name_count EQUAL _file_count)
-        math(EXPR _last "${_name_count} - 1")
-        if(_last GREATER_EQUAL 0)
-            foreach(_i RANGE ${_last})
-                list(GET _names ${_i} _n)
-                list(GET _files ${_i} _f)
-                string(REGEX MATCH "\"([^\"]+)\"$" _m "${_n}")
-                set(_local "${CMAKE_MATCH_1}")
-                string(REGEX MATCH "\"([^\"]+)\"$" _m "${_f}")
-                string(REGEX REPLACE "\\.(glb|gltf)$" "" _stem "${CMAKE_MATCH_1}")
-                if(_local AND _stem)
-                    list(APPEND CNA_STREET_MODEL_NAMES "${_stem}=${_local}")
-                endif()
-            endforeach()
+set(CNA_STREET_MANIFEST "${CMAKE_SOURCE_DIR}/assets/external/manifest.json")
+find_program(CNA_STREET_PYTHON NAMES python3 python)
+if(EXISTS "${CNA_STREET_MANIFEST}")
+    if(CNA_STREET_PYTHON)
+        execute_process(
+            COMMAND "${CNA_STREET_PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/manifest-tool.py" models
+            OUTPUT_VARIABLE _models
+            RESULT_VARIABLE _models_result
+            OUTPUT_STRIP_TRAILING_WHITESPACE)
+        if(_models_result EQUAL 0)
+            string(REPLACE "\n" ";" CNA_STREET_MODEL_NAMES "${_models}")
+        else()
+            message(WARNING "cna-street: scripts/manifest-tool.py could not read the manifest; "
+                            "no imported models will be compiled")
         endif()
     else()
-        message(WARNING "cna-street: assets/external/manifest.json has ${_name_count} names "
-                        "and ${_file_count} files; the model name map is skipped")
+        message(STATUS "cna-street: python3 not found; the content build will compile the "
+                       "generated surfaces only, with no imported models or scanned surfaces")
     endif()
 endif()
 
@@ -61,7 +55,6 @@ if(TARGET cna_tool_source_to_cnb)
     # Python should still compile textures -- but it is the thing to run before
     # trusting the manifest, and it found an undeclared 7.8 MB model sitting in
     # the fetched set on its first run.
-    find_program(CNA_STREET_PYTHON NAMES python3 python)
     if(CNA_STREET_PYTHON)
         add_custom_target(validate-assets
             COMMAND "${CNA_STREET_PYTHON}"
@@ -81,6 +74,9 @@ if(TARGET cna_tool_source_to_cnb)
                 -D "GLTF_COMPILER=$<IF:$<TARGET_EXISTS:cna_tool_gltf_to_cnb>,$<TARGET_FILE:cna_tool_gltf_to_cnb>,>"
                 -D "GLTF_SOURCE=${CNA_STREET_EXTERNAL_DIR}"
                 -D "MODEL_NAMES=${CNA_STREET_MODEL_NAMES}"
+                -D "MANIFEST=${CNA_STREET_MANIFEST}"
+                -D "PYTHON=${CNA_STREET_PYTHON}"
+                -D "PREPARE=${CMAKE_SOURCE_DIR}/scripts/prepare-surfaces.py"
                 -P "${CMAKE_CURRENT_LIST_DIR}/CnaStreetBuildContent.cmake"
         DEPENDS bake-assets cna_tool_source_to_cnb
                 $<$<TARGET_EXISTS:cna_tool_gltf_to_cnb>:cna_tool_gltf_to_cnb>

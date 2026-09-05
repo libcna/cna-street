@@ -16,3 +16,6 @@ compile_commands.json
 # themselves are 114 MB of somebody else's work and are fetched by
 # scripts/fetch-assets.sh rather than vendored.
 /assets/external/downloads/
+
+# Python bytecode from the asset scripts.
+__pycache__/

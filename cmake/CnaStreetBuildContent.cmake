@@ -19,6 +19,27 @@ if(NOT bake_result EQUAL 0)
     message(FATAL_ERROR "cna-street: bake-assets failed (${bake_result})")
 endif()
 
+# --- scanned surfaces -------------------------------------------------------
+# After the bake, before the compile: where the manifest declares a scanned PBR
+# set for a catalogue surface and it has been fetched, prepare-surfaces.py
+# writes its three maps over the generated ones under the same name, and
+# authored.txt beside them. The runtime treats those maps as measured values
+# rather than as a generator's output. Pillow missing or nothing fetched is a
+# message, not a failure: the generated surfaces stand.
+if(DEFINED PYTHON AND NOT PYTHON STREQUAL "" AND DEFINED MANIFEST AND EXISTS "${MANIFEST}")
+    get_filename_component(_downloads "${GLTF_SOURCE}" ABSOLUTE)
+    message(STATUS "cna-street: preparing scanned surfaces")
+    execute_process(COMMAND "${PYTHON}" "${PREPARE}"
+                            --manifest "${MANIFEST}"
+                            --downloads "${_downloads}"
+                            --staging "${STAGING}"
+                    RESULT_VARIABLE prepare_result)
+    if(NOT prepare_result EQUAL 0)
+        message(WARNING "cna-street: prepare-surfaces.py failed (${prepare_result}); "
+                        "the generated surfaces stand")
+    endif()
+endif()
+
 file(GLOB sources "${STAGING}/*.png")
 list(LENGTH sources source_count)
 message(STATUS "cna-street: compiling ${source_count} images to .cnb")
@@ -63,6 +84,15 @@ else()
                     "will not be normalised at runtime")
 endif()
 
+# The list of scanned surfaces, so a content-backed start-up knows which maps
+# to take at face value. Removed when this build has none, or a stale list
+# would mark generated surfaces as measured.
+if(EXISTS "${STAGING}/authored.txt")
+    file(COPY_FILE "${STAGING}/authored.txt" "${OUTPUT}/authored.txt")
+else()
+    file(REMOVE "${OUTPUT}/authored.txt")
+endif()
+
 # --- imported glTF models ----------------------------------------------------
 # The second half of the pipeline, and the more interesting one: CNA's own
 # glTF importer, driven by cna_tool_gltf_to_cnb, which links the content
@@ -72,56 +102,50 @@ endif()
 # The models are absent from a tree that has not run scripts/fetch-assets.sh,
 # and that is not an error here any more than it is at runtime.
 set(models 0)
-if(DEFINED GLTF_COMPILER AND NOT GLTF_COMPILER STREQUAL "" AND DEFINED GLTF_SOURCE)
-    file(GLOB gltf_sources "${GLTF_SOURCE}/*.glb" "${GLTF_SOURCE}/*.gltf")
-    list(LENGTH gltf_sources gltf_count)
-    if(gltf_count GREATER 0)
-        message(STATUS "cna-street: importing ${gltf_count} glTF model(s) through CNA")
-        # The staging directory keeps the extracted images the model refers to;
-        # they are copied beside the .cnb because a compiled Model carries its
-        # textures as external references rather than absorbing them.
-        set(gltf_staging "${STAGING}/gltf")
-        file(MAKE_DIRECTORY "${gltf_staging}")
-        foreach(source IN LISTS gltf_sources)
-            get_filename_component(stem "${source}" NAME_WE)
-            # The manifest's local name, not the upstream file's: the runtime
-            # asks for "chair-damask", not "ChairDamaskPurplegold".
-            set(logical "${stem}")
-            if(DEFINED MODEL_NAMES)
-                foreach(pair IN LISTS MODEL_NAMES)
-                    string(REGEX MATCH "^([^=]+)=(.*)$" matched "${pair}")
-                    if(matched AND CMAKE_MATCH_1 STREQUAL "${stem}")
-                        set(logical "${CMAKE_MATCH_2}")
-                    endif()
-                endforeach()
-            endif()
-            file(REMOVE_RECURSE "${gltf_staging}/${logical}")
-            file(MAKE_DIRECTORY "${gltf_staging}/${logical}")
-            execute_process(COMMAND "${GLTF_COMPILER}" "${source}" "${OUTPUT}" "${logical}"
-                                    --keep-cnj "${gltf_staging}/${logical}" --quiet
-                            RESULT_VARIABLE import_result
-                            ERROR_VARIABLE import_error)
-            if(NOT import_result EQUAL 0)
-                # A model CNA declines is reported and skipped rather than
-                # failing the build: the scene has a fallback for every one of
-                # them, and a single unsupported extension in one prop should
-                # not cost the whole content build. What it must not do is pass
-                # silently.
-                message(WARNING "cna-street: could not import ${stem}: ${import_error}")
-                continue()
-            endif()
-            # The images the model refers to, beside it. cnb_info lists them as
-            # external references; they are ordinary JPEG/PNG files and
-            # ContentManager resolves them by name.
-            file(GLOB extracted "${gltf_staging}/${logical}/*.jpg"
-                                "${gltf_staging}/${logical}/*.png")
-            foreach(image IN LISTS extracted)
-                get_filename_component(image_name "${image}" NAME)
-                file(COPY_FILE "${image}" "${OUTPUT}/${image_name}")
-            endforeach()
-            math(EXPR models "${models} + 1")
+if(DEFINED GLTF_COMPILER AND NOT GLTF_COMPILER STREQUAL "" AND DEFINED GLTF_SOURCE
+   AND DEFINED MODEL_NAMES)
+    # One `relative/path.gltf=logical-name` per manifest asset, from
+    # manifest-tool.py at configure time. The path is relative to the
+    # downloads directory; the logical name is what the runtime asks
+    # ContentManager for ("chair-damask", not "ChairDamaskPurplegold").
+    set(gltf_staging "${STAGING}/gltf")
+    file(MAKE_DIRECTORY "${gltf_staging}")
+    foreach(pair IN LISTS MODEL_NAMES)
+        string(REGEX MATCH "^([^=]+)=(.*)$" matched "${pair}")
+        if(NOT matched)
+            continue()
+        endif()
+        set(source "${GLTF_SOURCE}/${CMAKE_MATCH_1}")
+        set(logical "${CMAKE_MATCH_2}")
+        if(NOT EXISTS "${source}")
+            # Not fetched. Not an error here any more than at runtime.
+            continue()
+        endif()
+        file(REMOVE_RECURSE "${gltf_staging}/${logical}")
+        file(MAKE_DIRECTORY "${gltf_staging}/${logical}")
+        execute_process(COMMAND "${GLTF_COMPILER}" "${source}" "${OUTPUT}" "${logical}"
+                                --keep-cnj "${gltf_staging}/${logical}" --quiet
+                        RESULT_VARIABLE import_result
+                        ERROR_VARIABLE import_error)
+        if(NOT import_result EQUAL 0)
+            # A model CNA declines is reported and skipped rather than failing
+            # the build: the scene has a fallback for every one of them, and a
+            # single unsupported extension in one prop should not cost the
+            # whole content build. What it must not do is pass silently.
+            message(WARNING "cna-street: could not import ${logical}: ${import_error}")
+            continue()
+        endif()
+        # The images the model refers to, beside it, for a compiled Model that
+        # carries its textures as external references rather than absorbing
+        # them. ContentManager resolves them by name.
+        file(GLOB extracted "${gltf_staging}/${logical}/*.jpg"
+                            "${gltf_staging}/${logical}/*.png")
+        foreach(image IN LISTS extracted)
+            get_filename_component(image_name "${image}" NAME)
+            file(COPY_FILE "${image}" "${OUTPUT}/${image_name}")
         endforeach()
-    endif()
+        math(EXPR models "${models} + 1")
+    endforeach()
 endif()
 
 message(STATUS "cna-street: content build complete -- ${compiled} surfaces and "

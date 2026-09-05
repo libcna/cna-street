@@ -133,12 +133,17 @@ const Material* MaterialLibrary::add(const std::string& name, const Assets::Surf
     const auto existing = derived_.find(name);
     if (existing != derived_.end()) return existing->second.get();
 
-    material.name     = name;
-    material.albedo   = upload(maps.albedo, true, name + ".albedo");
-    material.normal   = upload(maps.normal, false, name + ".normal");
-    material.orm      = upload(maps.orm, false, name + ".orm");
-    material.emissive = maps.emissive.empty() ? nullptr
-                                              : upload(maps.emissive, true, name + ".emissive");
+    material.name = name;
+    // Only a map that was handed over replaces what the material already
+    // carries. An imported model arrives with its textures already on the
+    // GPU, borrowed off the effect the importer built, and passes empty maps;
+    // the first version of this overwrote every one of those pointers with
+    // the null an empty upload returns, so every imported prop in the scene
+    // drew as flat white and its 4K texture set was loaded for nothing.
+    if (!maps.albedo.empty())   material.albedo   = upload(maps.albedo, true, name + ".albedo");
+    if (!maps.normal.empty())   material.normal   = upload(maps.normal, false, name + ".normal");
+    if (!maps.orm.empty())      material.orm      = upload(maps.orm, false, name + ".orm");
+    if (!maps.emissive.empty()) material.emissive = upload(maps.emissive, true, name + ".emissive");
     auto owned = std::make_unique<Material>(material);
     Material* raw = owned.get();
     derived_.emplace(name, std::move(owned));
@@ -316,6 +321,24 @@ void MaterialLibrary::install(MaterialId id, const std::string& name,
     if (installFromContent(material, name))
     {
         ++loadedCount_;
+        loadAuthored();
+        const auto authored = authored_.find(name);
+        if (authored != authored_.end())
+        {
+            // A scanned set. Its roughness and metalness maps carry measured
+            // values, so the factors are 1 and the map is the answer; the
+            // catalogue's declared roughness described the generator this scan
+            // replaced. The UV scale maps the geometry's tile onto the scan's
+            // physical size, and a scan that was not neutralised for tinting
+            // carries its own colour, so the tint comes off.
+            material.roughness = 1.0f;
+            material.metallic  = 1.0f;
+            material.uvScale   = authored->second.uvScale;
+            if (!authored->second.keepTint) material.baseColour = Vector3::One;
+            ++authoredInstalled_;
+            materials_[static_cast<std::size_t>(id)] = std::move(material);
+            return;
+        }
         // The maps came from the content root, so there is no CPU-side image to
         // measure; the nominals came with them.
         loadNominals();
@@ -380,6 +403,40 @@ void MaterialLibrary::applyNominals(Material& material)
                               + std::to_string(material.metallic)
                               + " but its ORM map carries none; it will render as a dielectric");
     }
+}
+
+void MaterialLibrary::loadAuthored()
+{
+    if (authoredLoaded_) return;
+    authoredLoaded_ = true;
+    if (content_ == nullptr) return;
+    std::ifstream in(std::filesystem::path(content_->getRootDirectoryProperty())
+                     / "authored.txt");
+    if (!in) return;   // no scanned surfaces in this content build, which is fine
+    std::string line;
+    while (std::getline(in, line))
+    {
+        if (line.empty() || line[0] == '#') continue;
+        std::istringstream fields(line);
+        std::string name;
+        float u = 1.0f, v = 1.0f;
+        int keepTint = 0;
+        if (!(fields >> name >> u >> v)) continue;
+        fields >> keepTint;
+        Authored entry;
+        entry.uvScale  = Vector2(u, v);
+        entry.keepTint = keepTint != 0;
+        authored_[name] = entry;
+    }
+    if (!authored_.empty())
+        CNA::Logger::Info("cna-street: the content root carries "
+                          + std::to_string(authored_.size()) + " scanned surface(s)");
+}
+
+bool MaterialLibrary::isAuthored(const std::string& name) const
+{
+    const auto found = authored_.find(name);
+    return found != authored_.end();
 }
 
 float MaterialLibrary::nominalRoughnessOf(const std::string& name) const
@@ -486,11 +543,13 @@ void MaterialLibrary::build(std::uint32_t seed)
     install(MaterialId::BrickBuff, "brick-buff",
             [&] { return TextureFactory::brick(kLarge, s + 12u, 0.85f, 0.40f); }, pbr(0.86f, 0.0f));
     {
-        Material engineering = materials_[static_cast<std::size_t>(MaterialId::BrickRed)];
-        engineering.name       = "brick-engineering";
+        // Engineering brick: the red brick's texture again, darkened by its
+        // tint, when generated -- and a scan of its own when the content root
+        // has one, which is why it is installed rather than copied.
+        Material engineering = pbr(0.66f, 0.0f);
         engineering.baseColour = Vector3(0.52f, 0.46f, 0.46f);
-        engineering.roughness  = 0.66f;
-        materials_[static_cast<std::size_t>(MaterialId::BrickEngineering)] = engineering;
+        install(MaterialId::BrickEngineering, "brick-engineering",
+                [&] { return TextureFactory::brick(kLarge, s + 11u, 0.08f, 0.55f); }, engineering);
     }
 
     {
@@ -571,8 +630,9 @@ void MaterialLibrary::build(std::uint32_t seed)
         // and weathering but scale the joints out of sight with a large tile.
         // Divided by what the generator wrote, because this is set *after*
         // install and so bypasses the normalisation there.
-        materials_[static_cast<std::size_t>(MaterialId::ConcretePanel)].roughness =
-            0.70f / nominalRoughnessOf("concrete-panel");
+        if (!isAuthored("concrete-panel"))
+            materials_[static_cast<std::size_t>(MaterialId::ConcretePanel)].roughness =
+                0.70f / nominalRoughnessOf("concrete-panel");
 
         // The district beyond the modelled frontage. Six façades as *images* of
         // a storey rather than as geometry: at 200 m a modelled reveal is a

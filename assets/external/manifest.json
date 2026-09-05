@@ -15,7 +15,15 @@
     "individual model in KhronosGroup/glTF-Sample-Assets' own Models.md, which does",
     "carry models under other terms -- the Duck is SCEA, Sponza is a CRYENGINE",
     "agreement, Virtual City is a testing-only 3DRT licence, and none of those is",
-    "here."
+    "here.",
+    "",
+    "Two further kinds of entry, both from Poly Haven (polyhaven.com), whose whole",
+    "library is CC0-1.0: models that ship as a .gltf, a .bin and a folder of images",
+    "(declared with a `files` list rather than one `file`), and scanned PBR texture",
+    "sets under `surfaces`, each replacing one generated surface of the catalogue",
+    "by name. A surface declares its physical size and the tile size the geometry",
+    "lays it at, so the content build can write the UV scale that keeps a brick",
+    "the size of a brick. Nothing under downloads/ is committed."
   ],
   "version": 1,
   "assets": [
@@ -386,6 +394,1970 @@
       ],
       "role": "Furniture shop window.",
       "fitMetres": 0.78
+    },
+    {
+      "name": "ph-fire-hydrant",
+      "title": "Fire Hydrant",
+      "author": "Gonçalo Felício",
+      "copyright": "(c) Poly Haven / Gonçalo Felício",
+      "source": "https://polyhaven.com/a/fire_hydrant",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/fire_hydrant/1k/fire_hydrant_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/fire_hydrant/1k/fire_hydrant_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/fire_hydrant/fire_hydrant_1k.gltf",
+          "sha256": "aaca81b2904e6e5f1fb10a854c7b9a921232624387d1f8757b5c6bdaedcd9eb0",
+          "bytes": 20926
+        },
+        {
+          "path": "polyhaven/fire_hydrant/1k/fire_hydrant.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/fire_hydrant/fire_hydrant.bin",
+          "sha256": "a3c7ed023bc4aff190902764326e7f83ae1a108f6bac2a1b637c38a8e03eb516",
+          "bytes": 1928772
+        },
+        {
+          "path": "polyhaven/fire_hydrant/1k/textures/fire_hydrant_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fire_hydrant/fire_hydrant_nor_gl_1k.jpg",
+          "sha256": "f6786775276c7b48f0582fdd7c43984b63b15b7a8e0ea0e2f2af8cdab98c06d7",
+          "bytes": 490552
+        },
+        {
+          "path": "polyhaven/fire_hydrant/1k/textures/fire_hydrant_aged_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fire_hydrant/fire_hydrant_aged_diff_1k.jpg",
+          "sha256": "3198cabcaf5107e59109bd07dfe8e4c87b3f0533173d10fafdaf86f8024a291e",
+          "bytes": 629331
+        },
+        {
+          "path": "polyhaven/fire_hydrant/1k/textures/fire_hydrant_aged_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fire_hydrant/fire_hydrant_aged_arm_1k.jpg",
+          "sha256": "9c46b014735a4e8df5a80e4c030ddb321c9aeaa715ad4ea3eb60e6f0909c9d0a",
+          "bytes": 665642
+        },
+        {
+          "path": "polyhaven/fire_hydrant/1k/textures/fire_hydrant_aged_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fire_hydrant/fire_hydrant_aged_nor_gl_1k.jpg",
+          "sha256": "6fadc78fd5d696bf594ff021aaf93a0c6aced761830f9aa6971c51b17c869c35",
+          "bytes": 543768
+        },
+        {
+          "path": "polyhaven/fire_hydrant/1k/textures/fire_hydrant_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fire_hydrant/fire_hydrant_diff_1k.jpg",
+          "sha256": "a3d0b8b6fcd8a39c8d5067f8ef95e3290053131887398f89baf57c1f8d24ab45",
+          "bytes": 570746
+        },
+        {
+          "path": "polyhaven/fire_hydrant/1k/textures/fire_hydrant_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/fire_hydrant/fire_hydrant_arm_1k.jpg",
+          "sha256": "d15bf8fc6389ae48a1060a38057c2093469e62f585c8033d300b80af81d40f9d",
+          "bytes": 671743
+        }
+      ],
+      "sizeMetres": [
+        0.87,
+        0.32,
+        0.8
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Hydrants at the kerb, in place of the generated one."
+    },
+    {
+      "name": "ph-utility-box-1",
+      "title": "Utility Box 01",
+      "author": "James Ray Cock",
+      "copyright": "(c) Poly Haven / James Ray Cock",
+      "source": "https://polyhaven.com/a/utility_box_01",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/utility_box_01/1k/utility_box_01_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/utility_box_01/1k/utility_box_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/utility_box_01/utility_box_01_1k.gltf",
+          "sha256": "5b9f8c45f2640c9dd831dc3450529e45b24c987208ddcf73010fe717ce8c454e",
+          "bytes": 2766
+        },
+        {
+          "path": "polyhaven/utility_box_01/1k/textures/utility_box_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/utility_box_01/utility_box_01_diff_1k.jpg",
+          "sha256": "6a703a4cdf20c3fc3d0400fa815e5a1834836c96c207bdb57ba9e4a5db3a5532",
+          "bytes": 558681
+        },
+        {
+          "path": "polyhaven/utility_box_01/1k/textures/utility_box_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/utility_box_01/utility_box_01_nor_gl_1k.jpg",
+          "sha256": "1c4e377906c13e864c9c7ffbd31a7d86075f28b948bf54872d6ad3ab38a08124",
+          "bytes": 557001
+        },
+        {
+          "path": "polyhaven/utility_box_01/1k/textures/utility_box_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/utility_box_01/utility_box_01_arm_1k.jpg",
+          "sha256": "e65428774e94b6a8aeb7a23802e0af8f1568952ea79e21a7a3475b957e34956b",
+          "bytes": 716061
+        },
+        {
+          "path": "polyhaven/utility_box_01/1k/utility_box_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/utility_box_01/utility_box_01.bin",
+          "sha256": "e4249eb754d7802154eed36bb12070dc24c90fc331f355d60ef7570d61fc0f5c",
+          "bytes": 142552
+        }
+      ],
+      "sizeMetres": [
+        0.52,
+        0.43,
+        1.12
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Cable cabinets against the building line."
+    },
+    {
+      "name": "ph-utility-box-2",
+      "title": "Utility Box 02",
+      "author": "James Ray Cock",
+      "copyright": "(c) Poly Haven / James Ray Cock",
+      "source": "https://polyhaven.com/a/utility_box_02",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/utility_box_02/1k/utility_box_02_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/utility_box_02/1k/utility_box_02_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/utility_box_02/utility_box_02_1k.gltf",
+          "sha256": "d3f87ce0852709498602f6a096be99a9e13f0ac2619f99edcebad9e89f9faf00",
+          "bytes": 2764
+        },
+        {
+          "path": "polyhaven/utility_box_02/1k/textures/utility_box_02_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/utility_box_02/utility_box_02_diff_1k.jpg",
+          "sha256": "78a0c93b1d8d394beee5989c0d3470a9c8c4e902f708acf3c11cd4edafbe08b1",
+          "bytes": 553096
+        },
+        {
+          "path": "polyhaven/utility_box_02/1k/textures/utility_box_02_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/utility_box_02/utility_box_02_arm_1k.jpg",
+          "sha256": "f85575f891c97354d2fff11d5d0e2bc5f7d3aeab853ff3d75100c30c177a9cc5",
+          "bytes": 720694
+        },
+        {
+          "path": "polyhaven/utility_box_02/1k/textures/utility_box_02_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/utility_box_02/utility_box_02_nor_gl_1k.jpg",
+          "sha256": "e7c85b37fa5420591b6fa5dcef7875c927c8dc51f38c39c5844d53284ef37c74",
+          "bytes": 552902
+        },
+        {
+          "path": "polyhaven/utility_box_02/1k/utility_box_02.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/utility_box_02/utility_box_02.bin",
+          "sha256": "0f0a3f8ecc0358e36e97120aa752c2456a78bf922671e6f77e402b0aa58ecfce",
+          "bytes": 199784
+        }
+      ],
+      "sizeMetres": [
+        0.92,
+        0.43,
+        1.12
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Cable cabinets against the building line, second design."
+    },
+    {
+      "name": "ph-street-seating",
+      "title": "Modular Street Seating",
+      "author": "Stuart Attenborrow",
+      "copyright": "(c) Poly Haven / Stuart Attenborrow",
+      "source": "https://polyhaven.com/a/modular_street_seating",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/modular_street_seating/1k/modular_street_seating_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/modular_street_seating/1k/modular_street_seating_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/modular_street_seating/modular_street_seating_1k.gltf",
+          "sha256": "ae0c5b89927446dd3c3dc8fc021c5a6042448b785f340affaa132307d8a7b18d",
+          "bytes": 29629
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_supports_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_supports_diff_1k.jpg",
+          "sha256": "3d2dc8a4ac499b540445be6277a1fa7c84fb7cdbf0fbe04d9738d806393393e4",
+          "bytes": 721380
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_armrests_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_armrests_nor_gl_1k.jpg",
+          "sha256": "1625c7492bfdc6fb97a49a09e5f958bfc62d46b7fc97bdcda97ba83fc13f18c4",
+          "bytes": 324073
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_timber_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_timber_arm_1k.jpg",
+          "sha256": "07b108f3c6ee8afe56c9c23592d48f80344992bd0512080a1cc2bf37e7c7cb84",
+          "bytes": 762344
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_supports_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_supports_nor_gl_1k.jpg",
+          "sha256": "5396d42fc24e0bf0e038767dc0548c4562b359930a9f8ade61897d18192ec929",
+          "bytes": 477177
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_timber_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_timber_diff_1k.jpg",
+          "sha256": "2dce35474445e91743ec1e5a1ffbc405cdd3b7ec94be945d93d684e23e127be3",
+          "bytes": 596026
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_connectors_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_connectors_nor_gl_1k.jpg",
+          "sha256": "1debc33dce0a35acee944281a712b90ce3ba0a1914e0d30201dc45e4639ecd28",
+          "bytes": 398150
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_armrests_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_armrests_diff_1k.jpg",
+          "sha256": "1df79fcf237bcca5dcbd6af8e283e775125e723d2782dee3184550564905990f",
+          "bytes": 612860
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_supports_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_supports_arm_1k.jpg",
+          "sha256": "8dbdaf063699c6d81319a9f0ac2fa5997236981fa703103fdadb008570df8de2",
+          "bytes": 734095
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_connectors_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_connectors_diff_1k.jpg",
+          "sha256": "0b869d0b8d85d89e79fdb74794a45532b64b32221272c3777089730ca9097003",
+          "bytes": 212785
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_armrests_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_armrests_arm_1k.jpg",
+          "sha256": "0016585de0b1d3accd9b204f912e76e03385901410e02e5c8dd3186333ff882f",
+          "bytes": 622643
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_timber_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_timber_nor_gl_1k.jpg",
+          "sha256": "b7d0fff50ca56f12a3ebc3056c0c8104be84efce118a38094608d8e15af27d9a",
+          "bytes": 557669
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/textures/modular_street_seating_connectors_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/modular_street_seating/modular_street_seating_connectors_arm_1k.jpg",
+          "sha256": "30af91ae8f610ce5ffc15289005b1e6eaf7e904048ad7cd129dcd6e68163512c",
+          "bytes": 591917
+        },
+        {
+          "path": "polyhaven/modular_street_seating/1k/modular_street_seating.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/modular_street_seating/modular_street_seating.bin",
+          "sha256": "968558aa808b6cf74783b375d32a346a4de2ce9c118c0f17fba24c6999f03547",
+          "bytes": 977224
+        }
+      ],
+      "sizeMetres": [
+        4.34,
+        0.77,
+        0.95
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Benches on the main street."
+    },
+    {
+      "name": "ph-chalkboard",
+      "title": "Standing Chalkboard 01",
+      "author": "ParzivalCG",
+      "copyright": "(c) Poly Haven / ParzivalCG",
+      "source": "https://polyhaven.com/a/standing_chalkboard_01",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/standing_chalkboard_01/1k/standing_chalkboard_01_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/standing_chalkboard_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/standing_chalkboard_01/standing_chalkboard_01_1k.gltf",
+          "sha256": "95e3a825067d6a96adf1e732ff088485bc8edc1f87e79f707c97a44702be0574",
+          "bytes": 5145
+        },
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/standing_chalkboard_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/standing_chalkboard_01/standing_chalkboard_01.bin",
+          "sha256": "5d848d6ed6dd5c69a99620bbddc7516b2175cbc4b1fdefc02538c27dd8ddeb69",
+          "bytes": 100120
+        },
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/textures/standing_chalkboard_01_frame_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/standing_chalkboard_01/standing_chalkboard_01_frame_nor_gl_1k.jpg",
+          "sha256": "941c640d2d9aa63fe78302569868ceb1277bdd85a503faf5ac5a14fef6c85ef7",
+          "bytes": 503632
+        },
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/textures/standing_chalkboard_01_board_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/standing_chalkboard_01/standing_chalkboard_01_board_arm_1k.jpg",
+          "sha256": "090e2f7e70170e2d22c710ff19fb368a78c1c010cf59a51bde9b8647d6cf3b4d",
+          "bytes": 491057
+        },
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/textures/standing_chalkboard_01_board_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/standing_chalkboard_01/standing_chalkboard_01_board_diff_1k.jpg",
+          "sha256": "27a77bb4472385470469a2dcc25c2dc4e3ce303d46ba2fb60f5e6b1f6242fc4f",
+          "bytes": 142727
+        },
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/textures/standing_chalkboard_01_frame_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/standing_chalkboard_01/standing_chalkboard_01_frame_arm_1k.jpg",
+          "sha256": "a2922087465730645fbf32724fa4c44a276d91d339e5c97ff421826de171ec4a",
+          "bytes": 671800
+        },
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/textures/standing_chalkboard_01_board_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/standing_chalkboard_01/standing_chalkboard_01_board_nor_gl_1k.jpg",
+          "sha256": "3ac29c09203e61c4d96eded3f90c4247a0178214913a94cffb7dfd55a5f4b9f3",
+          "bytes": 164130
+        },
+        {
+          "path": "polyhaven/standing_chalkboard_01/1k/textures/standing_chalkboard_01_frame_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/standing_chalkboard_01/standing_chalkboard_01_frame_diff_1k.jpg",
+          "sha256": "37bb9789728b29eb30d02f82ad96d8a123d7dda14438314f40d2721ce8ab7617",
+          "bytes": 538645
+        }
+      ],
+      "sizeMetres": [
+        0.92,
+        0.76,
+        1.51
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "A-board outside the cafes and bakeries."
+    },
+    {
+      "name": "ph-cafe-set",
+      "title": "Outdoor Table Chair Set 01",
+      "author": "James Ray Cock",
+      "copyright": "(c) Poly Haven / James Ray Cock",
+      "source": "https://polyhaven.com/a/outdoor_table_chair_set_01",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/outdoor_table_chair_set_01/1k/outdoor_table_chair_set_01_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/outdoor_table_chair_set_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/outdoor_table_chair_set_01/outdoor_table_chair_set_01_1k.gltf",
+          "sha256": "1b718deb56a9f07b260a5f95926fb7caa5fd27918cacca283414c840e46415f2",
+          "bytes": 6826
+        },
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/textures/outdoor_table_chair_set_01_table_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/outdoor_table_chair_set_01/outdoor_table_chair_set_01_table_nor_gl_1k.jpg",
+          "sha256": "e30e3f639bea22013149e73bcbaeb95805bf831c7b93b80ab83a33e42672b044",
+          "bytes": 43095
+        },
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/textures/outdoor_table_chair_set_01_chair_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/outdoor_table_chair_set_01/outdoor_table_chair_set_01_chair_arm_1k.jpg",
+          "sha256": "71ac20bb124af45c3ff2fc5eee11d7c9d277ac245ac14ee4ba87291bb768937d",
+          "bytes": 179920
+        },
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/textures/outdoor_table_chair_set_01_table_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/outdoor_table_chair_set_01/outdoor_table_chair_set_01_table_arm_1k.jpg",
+          "sha256": "fecbe0e42db83d6f0ee8186afece1fd5c3a5834ff07926c00ac18468757d4377",
+          "bytes": 201642
+        },
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/textures/outdoor_table_chair_set_01_table_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/outdoor_table_chair_set_01/outdoor_table_chair_set_01_table_diff_1k.jpg",
+          "sha256": "7743a55a3a646ebdd9969e72594cb8b94e318d38956f2172a5e6934609a68bf4",
+          "bytes": 151897
+        },
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/outdoor_table_chair_set_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/outdoor_table_chair_set_01/outdoor_table_chair_set_01.bin",
+          "sha256": "d62458c79c6c902d1195bff875e42bf7579c6b309c6b96f9cd7543af43170220",
+          "bytes": 456856
+        },
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/textures/outdoor_table_chair_set_01_chair_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/outdoor_table_chair_set_01/outdoor_table_chair_set_01_chair_nor_gl_1k.jpg",
+          "sha256": "9b57cd67775146b0865f3e5409b54661080625789042846569f7f65ab37258b3",
+          "bytes": 46772
+        },
+        {
+          "path": "polyhaven/outdoor_table_chair_set_01/1k/textures/outdoor_table_chair_set_01_chair_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/outdoor_table_chair_set_01/outdoor_table_chair_set_01_chair_diff_1k.jpg",
+          "sha256": "60ed02a2c36098069235ad82937b2602e8940346f1d6a75c6386e78e03dbacb3",
+          "bytes": 155372
+        }
+      ],
+      "sizeMetres": [
+        0.78,
+        1.83,
+        0.86
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Pavement seating outside the cafes."
+    },
+    {
+      "name": "ph-planter-1",
+      "title": "Planter Box 01",
+      "author": "James Ray Cock",
+      "copyright": "(c) Poly Haven / James Ray Cock",
+      "source": "https://polyhaven.com/a/planter_box_01",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/planter_box_01/1k/planter_box_01_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/planter_box_01/1k/planter_box_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/planter_box_01/planter_box_01_1k.gltf",
+          "sha256": "15c7ff7396d872e5cad6743c796ff0f42e1f3f831fd334a26aa1fdbd11834a1f",
+          "bytes": 2787
+        },
+        {
+          "path": "polyhaven/planter_box_01/1k/textures/planter_box_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/planter_box_01/planter_box_01_nor_gl_1k.jpg",
+          "sha256": "7d2ad01fdfc8ea9e39af0ddc1db710380afad859dc3848302ff72d21a6e21a27",
+          "bytes": 707323
+        },
+        {
+          "path": "polyhaven/planter_box_01/1k/textures/planter_box_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/planter_box_01/planter_box_01_arm_1k.jpg",
+          "sha256": "b80b08f88166360af32a076082daaed820f0d364a5bef0acea651485017ccbd6",
+          "bytes": 745610
+        },
+        {
+          "path": "polyhaven/planter_box_01/1k/planter_box_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/planter_box_01/planter_box_01.bin",
+          "sha256": "cc97bc9ee05a90c78e27ca575a83eba86955e863dea8a12826f6ff02c2c11db3",
+          "bytes": 250580
+        },
+        {
+          "path": "polyhaven/planter_box_01/1k/textures/planter_box_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/planter_box_01/planter_box_01_diff_1k.jpg",
+          "sha256": "5ad77068bf07ca371e18322c04641754a7758f4479e2835b93f671b4a5143bee",
+          "bytes": 633117
+        }
+      ],
+      "sizeMetres": [
+        0.91,
+        0.41,
+        0.42
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Footway planters, in place of the generated trough."
+    },
+    {
+      "name": "ph-planter-2",
+      "title": "Planter Box 02",
+      "author": "James Ray Cock",
+      "copyright": "(c) Poly Haven / James Ray Cock",
+      "source": "https://polyhaven.com/a/planter_box_02",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/planter_box_02/1k/planter_box_02_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/planter_box_02/1k/planter_box_02_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/planter_box_02/planter_box_02_1k.gltf",
+          "sha256": "9ae29e813136cb056c672edbc5833ff5af2042b3cd15abc652e9d3fc338dca71",
+          "bytes": 2787
+        },
+        {
+          "path": "polyhaven/planter_box_02/1k/textures/planter_box_02_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/planter_box_02/planter_box_02_diff_1k.jpg",
+          "sha256": "0500b512d922e2dc311fb4d1bd23dd982732f1ed2d79264f608487e69ef193c1",
+          "bytes": 620574
+        },
+        {
+          "path": "polyhaven/planter_box_02/1k/textures/planter_box_02_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/planter_box_02/planter_box_02_nor_gl_1k.jpg",
+          "sha256": "c55e6d9db96b71cf4c863735927a80c0a3e4fed1c48229b386e8e1d29af8da58",
+          "bytes": 735299
+        },
+        {
+          "path": "polyhaven/planter_box_02/1k/textures/planter_box_02_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/planter_box_02/planter_box_02_arm_1k.jpg",
+          "sha256": "dcb9a181bd084811fdecb3412b5cb5167d9acedda53eb2eae50455e0b4b63b40",
+          "bytes": 750404
+        },
+        {
+          "path": "polyhaven/planter_box_02/1k/planter_box_02.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/planter_box_02/planter_box_02.bin",
+          "sha256": "eedaf12238996e02f5aa8e44515ec8746cc1bac19cb3480a5914a7b4ea20dcda",
+          "bytes": 359296
+        }
+      ],
+      "sizeMetres": [
+        1.25,
+        0.47,
+        0.45
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Footway planters, second design."
+    },
+    {
+      "name": "ph-shrub-1",
+      "title": "Shrub 01",
+      "author": "Rico Cilliers",
+      "copyright": "(c) Poly Haven / Rico Cilliers",
+      "source": "https://polyhaven.com/a/shrub_01",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/shrub_01/1k/shrub_01_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/shrub_01/1k/shrub_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/shrub_01/shrub_01_1k.gltf",
+          "sha256": "c3bb3340687d46c684b9dab82f5b2f92b7b0fe761842423d3c9e19f59a839393",
+          "bytes": 2895
+        },
+        {
+          "path": "polyhaven/shrub_01/1k/textures/shrub_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_01/shrub_01_nor_gl_1k.jpg",
+          "sha256": "076870a39a4e21a364cf94566e6dd1852a29045fdf1f23393637235b19d1c2e8",
+          "bytes": 746497
+        },
+        {
+          "path": "polyhaven/shrub_01/1k/shrub_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/shrub_01/shrub_01.bin",
+          "sha256": "a8646f51386c84b12a6be8324dd0c2357c393c9108aac911847a203cf490b426",
+          "bytes": 5239664
+        },
+        {
+          "path": "polyhaven/shrub_01/1k/textures/shrub_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_01/shrub_01_arm_1k.jpg",
+          "sha256": "8faecdc28d8f03ba0ac139be16e617e8bfd0778780ec1d7850812230378b89be",
+          "bytes": 386309
+        },
+        {
+          "path": "polyhaven/shrub_01/1k/textures/shrub_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_01/shrub_01_diff_1k.jpg",
+          "sha256": "fe60e639d694e1807c0a3ae97dd1d5a7e7b3f84e5fc32d0610b868ce48f36331",
+          "bytes": 502162
+        }
+      ],
+      "sizeMetres": [
+        2.59,
+        0.22,
+        0.4
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Planting in the footway planters."
+    },
+    {
+      "name": "ph-shrub-3",
+      "title": "Shrub 03",
+      "author": "Rico Cilliers",
+      "copyright": "(c) Poly Haven / Rico Cilliers",
+      "source": "https://polyhaven.com/a/shrub_03",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/shrub_03/1k/shrub_03_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/shrub_03/1k/shrub_03_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/shrub_03/shrub_03_1k.gltf",
+          "sha256": "b76d7c14bc027e834e82d3f984c32b5d060e62908aa90ff9420a637ca253a8ea",
+          "bytes": 7296
+        },
+        {
+          "path": "polyhaven/shrub_03/1k/shrub_03.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/shrub_03/shrub_03.bin",
+          "sha256": "bf4df21e6d2a2bc5f00b4c9142f776171fe7da00cf960001825748067af542b6",
+          "bytes": 238684
+        },
+        {
+          "path": "polyhaven/shrub_03/1k/textures/shrub_03_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_03/shrub_03_arm_1k.jpg",
+          "sha256": "3e2b16812a623037138eedace958210c5f3443a827bbe69663045bba5612f815",
+          "bytes": 396238
+        },
+        {
+          "path": "polyhaven/shrub_03/1k/textures/shrub_03_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_03/shrub_03_diff_1k.jpg",
+          "sha256": "3cadc7aba46d3aabbd7d6d2b1d04aa32e2a7da0bc87c2d38ef3cb1ee42cb03ec",
+          "bytes": 481841
+        },
+        {
+          "path": "polyhaven/shrub_03/1k/textures/shrub_03_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/shrub_03/shrub_03_nor_gl_1k.jpg",
+          "sha256": "ff856bacfce859b8a7555dd9a3b92fbd36b2e775d486be71df485afb4235d6c9",
+          "bytes": 504734
+        }
+      ],
+      "sizeMetres": [
+        1.37,
+        0.15,
+        0.4
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Planting in the footway planters, second species."
+    },
+    {
+      "name": "ph-crate",
+      "title": "Plastic Crate 01",
+      "author": "PierreB3D",
+      "copyright": "(c) Poly Haven / PierreB3D",
+      "source": "https://polyhaven.com/a/plastic_crate_01",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/plastic_crate_01/1k/plastic_crate_01_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/plastic_crate_01/1k/plastic_crate_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/plastic_crate_01/plastic_crate_01_1k.gltf",
+          "sha256": "42556fc8e39e5834ebf474dff79d4c0524fd3074be6c86c0c6704a10be8b3756",
+          "bytes": 2793
+        },
+        {
+          "path": "polyhaven/plastic_crate_01/1k/textures/plastic_crate_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/plastic_crate_01/plastic_crate_01_nor_gl_1k.jpg",
+          "sha256": "6f0c44778216d50672d6a23660b22dec8b96bb6e71518d699c24630c34cf9217",
+          "bytes": 884228
+        },
+        {
+          "path": "polyhaven/plastic_crate_01/1k/textures/plastic_crate_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/plastic_crate_01/plastic_crate_01_diff_1k.jpg",
+          "sha256": "d9109a42e397e39bbd7f42976d93122dbd5ccdef8ff64bce353571e1c1b994f6",
+          "bytes": 518288
+        },
+        {
+          "path": "polyhaven/plastic_crate_01/1k/textures/plastic_crate_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/plastic_crate_01/plastic_crate_01_arm_1k.jpg",
+          "sha256": "9a4af28d6fe8d5459a3c1a8706c0f8877221873ac9b83de580e6cfa63c3ecaa0",
+          "bytes": 993636
+        },
+        {
+          "path": "polyhaven/plastic_crate_01/1k/plastic_crate_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/plastic_crate_01/plastic_crate_01.bin",
+          "sha256": "59b307238a27f304739aeef0b1c9622d1e4efb31a96d805d2cfc0c461f9bb06d",
+          "bytes": 789920
+        }
+      ],
+      "sizeMetres": [
+        0.3,
+        0.41,
+        0.26
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Delivery clutter by shop doors."
+    },
+    {
+      "name": "ph-cardboard-box",
+      "title": "Cardboard Box 01",
+      "author": "Rahul Chaudhary",
+      "copyright": "(c) Poly Haven / Rahul Chaudhary",
+      "source": "https://polyhaven.com/a/cardboard_box_01",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/cardboard_box_01/1k/cardboard_box_01_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/cardboard_box_01/1k/cardboard_box_01_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/cardboard_box_01/cardboard_box_01_1k.gltf",
+          "sha256": "6038bcc5bba5a08a5f6643a265977e37e3d14553e62981e144c33a89f10b78e1",
+          "bytes": 2903
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/1k/textures/cardboard_box_01_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/cardboard_box_01/cardboard_box_01_arm_1k.jpg",
+          "sha256": "5db63828d0f904c6a8d9c83afc912260b2a27261c15a28d06360519384574d2b",
+          "bytes": 398433
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/1k/cardboard_box_01.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/cardboard_box_01/cardboard_box_01.bin",
+          "sha256": "7212d43b4cb56459e46d31ab34dc7c310fcfbe170f4a588416dea07ae5628a4b",
+          "bytes": 381936
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/1k/textures/cardboard_box_01_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/cardboard_box_01/cardboard_box_01_diff_1k.jpg",
+          "sha256": "122c7ba8c5935e289804a730b480677a4bffdf74a45c91970cba682df92e171c",
+          "bytes": 567741
+        },
+        {
+          "path": "polyhaven/cardboard_box_01/1k/textures/cardboard_box_01_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/cardboard_box_01/cardboard_box_01_nor_gl_1k.jpg",
+          "sha256": "d2d1f529a851966b65411b5094510dd9eba03cd5c0a89921f79325c377a8e8eb",
+          "bytes": 817424
+        }
+      ],
+      "sizeMetres": [
+        0.39,
+        0.52,
+        0.34
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Delivery clutter by shop doors."
+    },
+    {
+      "name": "ph-trash-bag",
+      "title": "Trashbag",
+      "author": "Benny Weimer",
+      "copyright": "(c) Poly Haven / Benny Weimer",
+      "source": "https://polyhaven.com/a/trashbag",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/trashbag/1k/trashbag_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/trashbag/1k/trashbag_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/trashbag/trashbag_1k.gltf",
+          "sha256": "22202e1ec48d924577584dce6751d5ab198fd7c0aee44602e9a7317b5b60a4a7",
+          "bytes": 2738
+        },
+        {
+          "path": "polyhaven/trashbag/1k/textures/trashbag_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/trashbag/trashbag_nor_gl_1k.jpg",
+          "sha256": "33ddb9711bb3ab2ff1ed19fa361a4251909643fada7e5579a28f6346a58b4daf",
+          "bytes": 573449
+        },
+        {
+          "path": "polyhaven/trashbag/1k/textures/trashbag_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/trashbag/trashbag_diff_1k.jpg",
+          "sha256": "676e01cbeef39b51c9ecd67315c952a605c8db9c11544fbe11e14dcbd00be27f",
+          "bytes": 332301
+        },
+        {
+          "path": "polyhaven/trashbag/1k/textures/trashbag_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/trashbag/trashbag_arm_1k.jpg",
+          "sha256": "95e69ba47bc7b84f342cdbe4385cfab670295827740fb09407b967ea2114c0aa",
+          "bytes": 684660
+        },
+        {
+          "path": "polyhaven/trashbag/1k/trashbag.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/trashbag/trashbag.bin",
+          "sha256": "7bfac5b9c39a058af347944b437f712718ec129ec883c16339179862cc155fe2",
+          "bytes": 106316
+        }
+      ],
+      "sizeMetres": [
+        0.53,
+        0.46,
+        0.57
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Refuse sacks beside the bins."
+    },
+    {
+      "name": "ph-manhole",
+      "title": "Water Manhole Cover",
+      "author": "Raunox",
+      "copyright": "(c) Poly Haven / Raunox",
+      "source": "https://polyhaven.com/a/water_manhole_cover",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/water_manhole_cover/1k/water_manhole_cover_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/water_manhole_cover/1k/water_manhole_cover_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/water_manhole_cover/water_manhole_cover_1k.gltf",
+          "sha256": "9d692740cb6e70cee977a6ccb54a270271b81250b47468e9ef6387bd58215cf9",
+          "bytes": 4253
+        },
+        {
+          "path": "polyhaven/water_manhole_cover/1k/textures/water_manhole_cover_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/water_manhole_cover/water_manhole_cover_arm_1k.jpg",
+          "sha256": "6d5856a467c9286fc993f2bd80bb5c30464fd8a127c8418fc8fc6c34bc54231d",
+          "bytes": 669586
+        },
+        {
+          "path": "polyhaven/water_manhole_cover/1k/textures/water_manhole_cover_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/water_manhole_cover/water_manhole_cover_nor_gl_1k.jpg",
+          "sha256": "e2c1eac759b8c7430ffc8c59a45f4db98f890f9a22c3d968605a81e99e92bf43",
+          "bytes": 1008913
+        },
+        {
+          "path": "polyhaven/water_manhole_cover/1k/textures/water_manhole_cover_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/water_manhole_cover/water_manhole_cover_diff_1k.jpg",
+          "sha256": "cb78919f60c929125317f19f9ecbba9f21089b7c0d6e0428c68f6fa401e6e720",
+          "bytes": 448420
+        },
+        {
+          "path": "polyhaven/water_manhole_cover/1k/water_manhole_cover.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/water_manhole_cover/water_manhole_cover.bin",
+          "sha256": "ada713d1f6f879164d3475e2ee18d69b4c4ecc8f100126e3921b7b3ea42c9267",
+          "bytes": 202320
+        }
+      ],
+      "sizeMetres": [
+        0.69,
+        0.69,
+        0.07
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Manhole covers in the carriageway."
+    },
+    {
+      "name": "ph-covered-car",
+      "title": "Covered Car",
+      "author": "MP",
+      "copyright": "(c) Poly Haven / MP",
+      "source": "https://polyhaven.com/a/covered_car",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/covered_car/1k/covered_car_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/covered_car/1k/covered_car_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/covered_car/covered_car_1k.gltf",
+          "sha256": "80b210b08673833a8085812b9ee71286213b2af92654886e5a1a368977265aa7",
+          "bytes": 9687
+        },
+        {
+          "path": "polyhaven/covered_car/1k/covered_car.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/covered_car/covered_car.bin",
+          "sha256": "dcbd7bf82d415e30d02c3e7056013b44729de7b712868b5ab9bf29f2b3b8bc57",
+          "bytes": 394464
+        },
+        {
+          "path": "polyhaven/covered_car/1k/textures/covered_car_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/covered_car/covered_car_nor_gl_1k.jpg",
+          "sha256": "6769694abe28c53e5c35ad1cefdd462b56416e7d89a6bcf5a9d9f6c922b46d05",
+          "bytes": 641340
+        },
+        {
+          "path": "polyhaven/covered_car/1k/textures/covered_car_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/covered_car/covered_car_arm_1k.jpg",
+          "sha256": "e77f73234311701dd8088ec572e61d4ec7838bd28e9ea13ffe5e28f79da8e085",
+          "bytes": 745781
+        },
+        {
+          "path": "polyhaven/covered_car/1k/textures/covered_car_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/covered_car/covered_car_diff_1k.jpg",
+          "sha256": "c4616a5c7c1327e4bc127b600e59d9dcb2123f8926f1570a1ca4a068d97f4d34",
+          "bytes": 558004
+        }
+      ],
+      "sizeMetres": [
+        1.79,
+        4.38,
+        1.41
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "A car under a cover in a parking bay of the hero block."
+    },
+    {
+      "name": "ph-trash-can",
+      "title": "Metal Trash Can",
+      "author": "GurJas Studios",
+      "copyright": "(c) Poly Haven / GurJas Studios",
+      "source": "https://polyhaven.com/a/metal_trash_can",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/metal_trash_can/1k/metal_trash_can_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/metal_trash_can/1k/metal_trash_can_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/metal_trash_can/metal_trash_can_1k.gltf",
+          "sha256": "ccdc55ecfe43db2174c9257891e92551882a874564bb9a7908cafc5268b46c0c",
+          "bytes": 15481
+        },
+        {
+          "path": "polyhaven/metal_trash_can/1k/textures/metal_trash_can_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/metal_trash_can/metal_trash_can_diff_1k.jpg",
+          "sha256": "920c895a31b1cd2c000123c0592c70c33d46562752987da98070e7e0eebb662f",
+          "bytes": 551939
+        },
+        {
+          "path": "polyhaven/metal_trash_can/1k/textures/metal_trash_can_rust_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/metal_trash_can/metal_trash_can_rust_diff_1k.jpg",
+          "sha256": "51c44248305b111d978f7e0cbfe4a71ab7f49549968ce37c54b635d74c2cfba1",
+          "bytes": 768161
+        },
+        {
+          "path": "polyhaven/metal_trash_can/1k/textures/metal_trash_can_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/metal_trash_can/metal_trash_can_arm_1k.jpg",
+          "sha256": "b23dcdb2ed40c1c6cfbd2d2779c6f075025b7269bfbbed2a70c6bdb7167e47fb",
+          "bytes": 731776
+        },
+        {
+          "path": "polyhaven/metal_trash_can/1k/textures/metal_trash_can_rust_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/metal_trash_can/metal_trash_can_rust_nor_gl_1k.jpg",
+          "sha256": "a5497588e00e5e56db72e701457fc8a46d3a1fa7d9dd7bf9d79e02cada09e84b",
+          "bytes": 1085844
+        },
+        {
+          "path": "polyhaven/metal_trash_can/1k/textures/metal_trash_can_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/metal_trash_can/metal_trash_can_nor_gl_1k.jpg",
+          "sha256": "b977f17aa9d4718ffc91a62868b7171b4479578b8cffd1d32001d92552af81a4",
+          "bytes": 842945
+        },
+        {
+          "path": "polyhaven/metal_trash_can/1k/metal_trash_can.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/metal_trash_can/metal_trash_can.bin",
+          "sha256": "a9b9f526b655bef865933335f2cfc8c8f0bd1a35fda05b290a93e3061f2b6c8a",
+          "bytes": 378288
+        },
+        {
+          "path": "polyhaven/metal_trash_can/1k/textures/metal_trash_can_rust_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/metal_trash_can/metal_trash_can_rust_arm_1k.jpg",
+          "sha256": "31a6269e98a3a8b2a2d6db8f58724e0151d5312b5137e6d59b5a2ba873989159",
+          "bytes": 620549
+        }
+      ],
+      "sizeMetres": [
+        1.85,
+        0.56,
+        0.91
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Galvanised bins in the side street."
+    },
+    {
+      "name": "ph-roller-shutter",
+      "title": "Rollershutter Door",
+      "author": "MP",
+      "copyright": "(c) Poly Haven / MP",
+      "source": "https://polyhaven.com/a/rollershutter_door",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/rollershutter_door/1k/rollershutter_door_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/rollershutter_door/1k/rollershutter_door_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/rollershutter_door/rollershutter_door_1k.gltf",
+          "sha256": "913b2689f88f99cb75f8a6575e315ee90437e59976a2a3ce0b260d5636a14d30",
+          "bytes": 5378
+        },
+        {
+          "path": "polyhaven/rollershutter_door/1k/rollershutter_door.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/rollershutter_door/rollershutter_door.bin",
+          "sha256": "155cd44e199d4edd19769503c7ed22b0b4007869166d0193a7e2d5e3134dc38d",
+          "bytes": 46192
+        },
+        {
+          "path": "polyhaven/rollershutter_door/1k/textures/rollershutter_door_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rollershutter_door/rollershutter_door_arm_1k.jpg",
+          "sha256": "0a45cf8585a339ae542ef891f3aa697258079b98f1755b2d6716ea542d3de14a",
+          "bytes": 626069
+        },
+        {
+          "path": "polyhaven/rollershutter_door/1k/textures/rollershutter_door_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rollershutter_door/rollershutter_door_diff_1k.jpg",
+          "sha256": "b8cd7ad14fe5c691484fe240213c379bf18f21336afe6622bfa20c731eca010d",
+          "bytes": 600354
+        },
+        {
+          "path": "polyhaven/rollershutter_door/1k/textures/rollershutter_door_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rollershutter_door/rollershutter_door_nor_gl_1k.jpg",
+          "sha256": "3eaad465ac23e4b3d5fbf2e315b738f8d3039cd244a69ab8adcc7a0e786cdffb",
+          "bytes": 381716
+        },
+        {
+          "path": "polyhaven/rollershutter_door/1k/textures/rollershutter_door_graffiti_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/rollershutter_door/rollershutter_door_graffiti_diff_1k.jpg",
+          "sha256": "7438bee86fc32e3b6ca23ec694f179576749554dff7c3b281f30acd917c250af",
+          "bytes": 683274
+        }
+      ],
+      "sizeMetres": [
+        3.08,
+        0.3,
+        2.4
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "A shuttered doorway on a side-street elevation."
+    },
+    {
+      "name": "ph-road-barrier",
+      "title": "Concrete Road Barrier",
+      "author": "Amal Kumar",
+      "copyright": "(c) Poly Haven / Amal Kumar",
+      "source": "https://polyhaven.com/a/concrete_road_barrier",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/concrete_road_barrier/1k/concrete_road_barrier_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/concrete_road_barrier/1k/concrete_road_barrier_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/concrete_road_barrier/concrete_road_barrier_1k.gltf",
+          "sha256": "c371e87d303fff3f0c9fbe88520f7837514364e5c66aac3244e115ffa673d061",
+          "bytes": 2868
+        },
+        {
+          "path": "polyhaven/concrete_road_barrier/1k/textures/concrete_road_barrier_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/concrete_road_barrier/concrete_road_barrier_nor_gl_1k.jpg",
+          "sha256": "c1072f51ff5c3d7158f0fbb0aa26e82b816b745b9f03639c4816832af2b37c52",
+          "bytes": 961760
+        },
+        {
+          "path": "polyhaven/concrete_road_barrier/1k/textures/concrete_road_barrier_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/concrete_road_barrier/concrete_road_barrier_arm_1k.jpg",
+          "sha256": "b940847648012f2db8c24b16e07ad1e39b3bd33ea493203364deca209606e4b4",
+          "bytes": 619502
+        },
+        {
+          "path": "polyhaven/concrete_road_barrier/1k/textures/concrete_road_barrier_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/concrete_road_barrier/concrete_road_barrier_diff_1k.jpg",
+          "sha256": "88b2d79829ffec7b11ac4d9c8554328f30b665d2c17f634197fde4f1ca8696fe",
+          "bytes": 792641
+        },
+        {
+          "path": "polyhaven/concrete_road_barrier/1k/concrete_road_barrier.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/8k/concrete_road_barrier/concrete_road_barrier.bin",
+          "sha256": "64a4f9bc6e4af64d714a252c3c13428c430a60569deba3d52ca6b7dd3aa70d8c",
+          "bytes": 1374016
+        }
+      ],
+      "sizeMetres": [
+        1.55,
+        0.64,
+        0.84
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "A roadworks barrier at the far end of the side street."
+    },
+    {
+      "name": "ph-old-tyre",
+      "title": "Old Tyre",
+      "author": "MP",
+      "copyright": "(c) Poly Haven / MP",
+      "source": "https://polyhaven.com/a/old_tyre",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "glTF 2.0 (.gltf + .bin + JPEG/PNG textures at 1k)",
+      "file": "polyhaven/old_tyre/1k/old_tyre_1k.gltf",
+      "files": [
+        {
+          "path": "polyhaven/old_tyre/1k/old_tyre_1k.gltf",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/1k/old_tyre/old_tyre_1k.gltf",
+          "sha256": "ba7b417eb3dc747c356ac3cd1f125754755684eb664737a9f1fc9e490c0b766e",
+          "bytes": 2734
+        },
+        {
+          "path": "polyhaven/old_tyre/1k/textures/old_tyre_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/old_tyre/old_tyre_diff_1k.jpg",
+          "sha256": "0e34ce658c0844c0c94022233226d495930d514c917a5fa15ffee4760567439e",
+          "bytes": 650708
+        },
+        {
+          "path": "polyhaven/old_tyre/1k/textures/old_tyre_arm_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/old_tyre/old_tyre_arm_1k.jpg",
+          "sha256": "3bcf192f5b99a7a574f9e21e75927043e6726c601a5da15e3210a31db05e12d4",
+          "bytes": 776823
+        },
+        {
+          "path": "polyhaven/old_tyre/1k/old_tyre.bin",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/gltf/4k/old_tyre/old_tyre.bin",
+          "sha256": "659e7982c2de92ca1d13194c97bf112b6dec22d91daecc88e3912d37ce1b7252",
+          "bytes": 84160
+        },
+        {
+          "path": "polyhaven/old_tyre/1k/textures/old_tyre_nor_gl_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/old_tyre/old_tyre_nor_gl_1k.jpg",
+          "sha256": "34b716e140408985ddbab7d4bf1d8d430edf834cd2fd4639d82b14cb393fa73e",
+          "bytes": 722778
+        }
+      ],
+      "sizeMetres": [
+        0.6,
+        0.16,
+        0.6
+      ],
+      "transformations": [
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "Clutter in a service yard."
+    },
+    {
+      "name": "ph-tree-small",
+      "title": "Tree Small 02",
+      "author": "Rico Cilliers",
+      "copyright": "(c) Poly Haven / Rico Cilliers",
+      "source": "https://polyhaven.com/a/tree_small_02",
+      "sourceRepository": "https://polyhaven.com/models",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "Blender scene (.blend) with LOD0/LOD1 meshes and 1k textures",
+      "file": "derived/tree_small_02_street.glb",
+      "files": [
+        {
+          "path": "polyhaven-blend/tree_small_02/tree_small_02_1k.blend",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/blend/1k/tree_small_02/tree_small_02_1k.blend",
+          "sha256": "af3fef6da3eb97057d9d4d3c4281c5944696b8d518715deddd8500482d30b1bd",
+          "bytes": 63805841
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_branch_diff_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_branch_diff_1k.png",
+          "sha256": "a93ce54213c4a98cd01cb5c5f7ab46b77defcd66e1dd082e6912f6e60632e630",
+          "bytes": 1277270
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_branch_nor_gl_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_branch_nor_gl_1k.png",
+          "sha256": "0338a1400391893fdf6c6cbd1c22a573d6ab2300ad771d4916184bf206e1a671",
+          "bytes": 5754879
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_branch_rough_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_branch_rough_1k.png",
+          "sha256": "f285a54d141f30e39c7741e84a813c5cbccd9e9ee397af687176213f77d3e9a5",
+          "bytes": 421614
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_diff_1k.jpg",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/jpg/1k/tree_small_02/tree_small_02_diff_1k.jpg",
+          "sha256": "4e0093f407b3a1120a36de49a48ebe5a465a9a9b77e361c7a3e66866e115e404",
+          "bytes": 863246
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_leaves_alpha_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_alpha_1k.png",
+          "sha256": "4f143e2dda8a6a572f427ac378b92255d21761e4611de0d26e21816c01aa533b",
+          "bytes": 264711
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_leaves_diff_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_diff_1k.png",
+          "sha256": "d3fc48522c76aa1f91076c6b86f302669822ebe4e2acabd67d42c4d57eaa5ba0",
+          "bytes": 2338424
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_leaves_nor_gl_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_nor_gl_1k.png",
+          "sha256": "fa4ad390f2e68b745db8f568cad64c3272696c5e01312ae564795e37724d79b8",
+          "bytes": 4903387
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_leaves_rough_1k.png",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/png/1k/tree_small_02/tree_small_02_leaves_rough_1k.png",
+          "sha256": "f005213467e38bcb355b00c9a6eb9896b8d810ee885d5c7fa308d9f3326ef602",
+          "bytes": 1043665
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_nor_gl_1k.exr",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/1k/tree_small_02/tree_small_02_nor_gl_1k.exr",
+          "sha256": "cf999e30663267b55b6fab43ca97c1e96176bdc67268e6c25854d53f15267d64",
+          "bytes": 2462999
+        },
+        {
+          "path": "polyhaven-blend/tree_small_02/textures/tree_small_02_rough_1k.exr",
+          "url": "https://dl.polyhaven.org/file/ph-assets/Models/exr/1k/tree_small_02/tree_small_02_rough_1k.exr",
+          "sha256": "1ed5ad24397c065beb2b2d3521470730f24e957cbd5fb323ad3f9b6d267b4585",
+          "bytes": 978557
+        }
+      ],
+      "sizeMetres": [
+        2.92,
+        4.29,
+        4.65
+      ],
+      "transformations": [
+        "a street level of detail cut from the LOD1 mesh by scripts/blender-tree-lod.py in Blender: the wood decimated, a fraction of the leaf clusters kept and scaled up, the leaves alpha-masked, exported as one .glb",
+        "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+        "placed at its authored size: the file is in metres"
+      ],
+      "role": "The hero street trees nearest the showcase viewpoints; the generated trees stand everywhere else and beyond the switch distance.",
+      "derived": [
+        {
+          "name": "ph-tree-small",
+          "file": "derived/tree_small_02_street.glb",
+          "note": "near level of detail: 30 % of the wood, 40 % of the leaf clusters at 1.4x"
+        },
+        {
+          "name": "ph-tree-small-far",
+          "file": "derived/tree_small_02_far.glb",
+          "note": "far level of detail: 6 % of the wood, 10 % of the leaf clusters at 2.6x"
+        }
+      ],
+      "compile": false
+    }
+  ],
+  "surfaces": [
+    {
+      "name": "asphalt-main",
+      "title": "Asphalt 02",
+      "author": "Rob Tuytel",
+      "copyright": "(c) Poly Haven / Rob Tuytel",
+      "source": "https://polyhaven.com/a/asphalt_02",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/asphalt_02",
+      "files": {
+        "albedo": "asphalt_02_diff_1k.jpg",
+        "normal": "asphalt_02_nor_gl_1k.jpg",
+        "orm": "asphalt_02_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_diff_1k.jpg",
+          "sha256": "1aa5ce99f58a625c71d48cfc3e68b65ca85ccb00f39e045c0a928608a0ea25ed",
+          "bytes": 731707
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_nor_gl_1k.jpg",
+          "sha256": "42a1c381b53204e83a982db2864479a30bc127bbdeebb1006f8ee51bff099df3",
+          "bytes": 1240122
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_02/asphalt_02_arm_1k.jpg",
+          "sha256": "56bd8e591a3db579846fcb5185f60b0651e0bd4ea85c3529c339e6746243c9cf",
+          "bytes": 296770
+        }
+      },
+      "physicalMetres": 3.0,
+      "tileMetres": 5.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"asphalt-main\" surface."
+    },
+    {
+      "name": "asphalt-side",
+      "title": "Asphalt 04",
+      "author": "Jenelle van Heerden, Sergej Majboroda",
+      "copyright": "(c) Poly Haven / Jenelle van Heerden, Sergej Majboroda",
+      "source": "https://polyhaven.com/a/asphalt_04",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/asphalt_04",
+      "files": {
+        "albedo": "asphalt_04_diff_1k.jpg",
+        "normal": "asphalt_04_nor_gl_1k.jpg",
+        "orm": "asphalt_04_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_04/asphalt_04_diff_1k.jpg",
+          "sha256": "837a78bb1e94864c221f847c85480484e953a9ee958772481dd2c501e18def2e",
+          "bytes": 880083
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_04/asphalt_04_nor_gl_1k.jpg",
+          "sha256": "18b91c2a6d83a8fbaa8d7fe84e80a66bd6451e4ec2774a09bf4429498c8f3912",
+          "bytes": 986045
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_04/asphalt_04_arm_1k.jpg",
+          "sha256": "35f582fb66d223d242d294616aec5749affdc6ca0a97067311cd6f247f7ef081",
+          "bytes": 554776
+        }
+      },
+      "physicalMetres": 4.04,
+      "tileMetres": 5.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"asphalt-side\" surface."
+    },
+    {
+      "name": "asphalt-worn",
+      "title": "Asphalt 03",
+      "author": "Dario Barresi, Charlotte Baglioni",
+      "copyright": "(c) Poly Haven / Dario Barresi, Charlotte Baglioni",
+      "source": "https://polyhaven.com/a/asphalt_03",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/asphalt_03",
+      "files": {
+        "albedo": "asphalt_03_diff_1k.jpg",
+        "normal": "asphalt_03_nor_gl_1k.jpg",
+        "orm": "asphalt_03_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_03/asphalt_03_diff_1k.jpg",
+          "sha256": "95ad02e2631c41cf9fdd6a37596cf75adb4fb8a8b6880567cc78ed1c41dc5681",
+          "bytes": 788840
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_03/asphalt_03_nor_gl_1k.jpg",
+          "sha256": "978de8349ce2e9989325099a6fd1f5ea6b2826528e1264606a5c51296b1e2888",
+          "bytes": 974676
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/asphalt_03/asphalt_03_arm_1k.jpg",
+          "sha256": "36e898a43fd828e71f5bc08fa0f86dc2c7338194c87eb6a2b30d7216318b9f31",
+          "bytes": 1053867
+        }
+      },
+      "physicalMetres": 2.05,
+      "tileMetres": 3.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"asphalt-worn\" surface."
+    },
+    {
+      "name": "concrete-paving",
+      "title": "Square Floor Patern 01",
+      "author": "Rob Tuytel",
+      "copyright": "(c) Poly Haven / Rob Tuytel",
+      "source": "https://polyhaven.com/a/square_floor_patern_01",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/square_floor_patern_01",
+      "files": {
+        "albedo": "square_floor_patern_01_diff_1k.jpg",
+        "normal": "square_floor_patern_01_nor_gl_1k.jpg",
+        "orm": "square_floor_patern_01_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/square_floor_patern_01/square_floor_patern_01_diff_1k.jpg",
+          "sha256": "9d169406abb8a9961673cf8acae5ab29fb6c71dd89aa2fe10dc9e68eeef40b9f",
+          "bytes": 956891
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/square_floor_patern_01/square_floor_patern_01_nor_gl_1k.jpg",
+          "sha256": "5f7579bc7a080c575d91efa526072e8edd7f1f2e11fa9477493104f548faf27d",
+          "bytes": 749271
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/square_floor_patern_01/square_floor_patern_01_arm_1k.jpg",
+          "sha256": "106bd467e70a1738e719dd25d7998b4d5c2313a2cf1635f525e03f3c0b0dfd54",
+          "bytes": 835228
+        }
+      },
+      "physicalMetres": 3.0,
+      "tileMetres": 4.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"concrete-paving\" surface."
+    },
+    {
+      "name": "granite-kerb",
+      "title": "Granite Tile 04",
+      "author": "Amal Kumar",
+      "copyright": "(c) Poly Haven / Amal Kumar",
+      "source": "https://polyhaven.com/a/granite_tile_04",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/granite_tile_04",
+      "files": {
+        "albedo": "granite_tile_04_diff_1k.jpg",
+        "normal": "granite_tile_04_nor_gl_1k.jpg",
+        "orm": "granite_tile_04_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/granite_tile_04/granite_tile_04_diff_1k.jpg",
+          "sha256": "b9398f9d9a2b0aa66cb869bbcff4582a686f90aaefb1b03dea872db15369de61",
+          "bytes": 918404
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/granite_tile_04/granite_tile_04_nor_gl_1k.jpg",
+          "sha256": "985ee06cbf14c8cfdcead64761bc8eaeebe489a5b5572f846d4d5de60407a075",
+          "bytes": 677810
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/granite_tile_04/granite_tile_04_arm_1k.jpg",
+          "sha256": "ca6e89cd74746435614a361b97a167a037873bb92e980176ba97e1d9e9ab26ad",
+          "bytes": 930251
+        }
+      },
+      "physicalMetres": 2.0,
+      "tileMetres": [
+        1.0,
+        0.35
+      ],
+      "size": 512,
+      "transformations": [
+        "resampled to 512 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"granite-kerb\" surface."
+    },
+    {
+      "name": "brick-red",
+      "title": "Brick Wall 001",
+      "author": "Rob Tuytel, Dimitrios Savva",
+      "copyright": "(c) Poly Haven / Rob Tuytel, Dimitrios Savva",
+      "source": "https://polyhaven.com/a/brick_wall_001",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/brick_wall_001",
+      "files": {
+        "albedo": "brick_wall_001_diffuse_1k.jpg",
+        "normal": "brick_wall_001_nor_gl_1k.jpg",
+        "orm": "brick_wall_001_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_001/brick_wall_001_diffuse_1k.jpg",
+          "sha256": "6a1233ec0186703de830354d89f122991e61e67fb67e0846c7eaf6c5aefea902",
+          "bytes": 574381
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_001/brick_wall_001_nor_gl_1k.jpg",
+          "sha256": "8afbe3919308b168a6b7235fe7b930f670cfffa1a34de39ee790d55c9d7bda09",
+          "bytes": 295279
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_001/brick_wall_001_arm_1k.jpg",
+          "sha256": "8e6ab4cecd82c4305c9511065b0795bd579df89df8364a76a7359c1278bed38d",
+          "bytes": 123384
+        }
+      },
+      "physicalMetres": 3.0,
+      "tileMetres": 2.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"brick-red\" surface."
+    },
+    {
+      "name": "brick-buff",
+      "title": "Brick Wall 003",
+      "author": "Rob Tuytel, Dimitrios Savva",
+      "copyright": "(c) Poly Haven / Rob Tuytel, Dimitrios Savva",
+      "source": "https://polyhaven.com/a/brick_wall_003",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/brick_wall_003",
+      "files": {
+        "albedo": "brick_wall_003_diffuse_1k.jpg",
+        "normal": "brick_wall_003_nor_gl_1k.jpg",
+        "orm": "brick_wall_003_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_003/brick_wall_003_diffuse_1k.jpg",
+          "sha256": "cb691df78201bd292c1004a796b76ef8ee9895548fb545a4a4d6d77903eeec01",
+          "bytes": 665706
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_003/brick_wall_003_nor_gl_1k.jpg",
+          "sha256": "9bca29b5277b4d5be16ed2198ab705f2d754dfba509e9aec567ab4d2ed8a0981",
+          "bytes": 1242175
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_003/brick_wall_003_arm_1k.jpg",
+          "sha256": "e7e5fd9c0ac0c9ff1645effa3144105b9386d598119a092ff1bc0ffb20b71cdc",
+          "bytes": 221269
+        }
+      },
+      "physicalMetres": 4.0,
+      "tileMetres": 2.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"brick-buff\" surface."
+    },
+    {
+      "name": "brick-engineering",
+      "title": "Brick Wall 08",
+      "author": "Amal Kumar",
+      "copyright": "(c) Poly Haven / Amal Kumar",
+      "source": "https://polyhaven.com/a/brick_wall_08",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/brick_wall_08",
+      "files": {
+        "albedo": "brick_wall_08_diff_1k.jpg",
+        "normal": "brick_wall_08_nor_gl_1k.jpg",
+        "orm": "brick_wall_08_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_08/brick_wall_08_diff_1k.jpg",
+          "sha256": "e20bb6a284e612c4b3fd67e501fb1578705de3559872434e98be832c42671b85",
+          "bytes": 722173
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_08/brick_wall_08_nor_gl_1k.jpg",
+          "sha256": "d35e7be27c840ba20d68d10276a5954190ec5a3b2d8c8fd6672a6f7c6386e1df",
+          "bytes": 1068884
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/brick_wall_08/brick_wall_08_arm_1k.jpg",
+          "sha256": "c8ed72a7e05da500b4ed89cbbf8676b9be9d94be815b3008f81dc70b6e1b0759",
+          "bytes": 790694
+        }
+      },
+      "physicalMetres": 1.9,
+      "tileMetres": 2.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"brick-engineering\" surface."
+    },
+    {
+      "name": "render",
+      "title": "Plastered Wall 02",
+      "author": "Charlotte Baglioni",
+      "copyright": "(c) Poly Haven / Charlotte Baglioni",
+      "source": "https://polyhaven.com/a/plastered_wall_02",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/plastered_wall_02",
+      "files": {
+        "albedo": "plastered_wall_02_diff_1k.jpg",
+        "normal": "plastered_wall_02_nor_gl_1k.jpg",
+        "orm": "plastered_wall_02_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall_02/plastered_wall_02_diff_1k.jpg",
+          "sha256": "0a316ffd3f953a902325c06afb5a5863bbf71d13a353f9d85378562adca79603",
+          "bytes": 436395
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall_02/plastered_wall_02_nor_gl_1k.jpg",
+          "sha256": "0f1b4ea0c4707ea133f133c020923bddd8610a43a153281dad15d49f39ad9624",
+          "bytes": 960241
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/plastered_wall_02/plastered_wall_02_arm_1k.jpg",
+          "sha256": "4cc478e82ac6bcfb1962ddba5e5fd13e70fd26164480b83c8ec33770f5b3ee63",
+          "bytes": 548372
+        }
+      },
+      "physicalMetres": 2.23,
+      "tileMetres": 2.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build",
+        "colour divided out so the catalogue can tint it (neutralise in prepare-surfaces.py)"
+      ],
+      "role": "Replaces the generated \"render\" surface.",
+      "neutralise": true,
+      "neutralLuminance": 0.8,
+      "keepTint": true
+    },
+    {
+      "name": "ashlar",
+      "title": "Sandstone Blocks 05",
+      "author": "Rob Tuytel",
+      "copyright": "(c) Poly Haven / Rob Tuytel",
+      "source": "https://polyhaven.com/a/sandstone_blocks_05",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/sandstone_blocks_05",
+      "files": {
+        "albedo": "sandstone_blocks_05_diff_1k.jpg",
+        "normal": "sandstone_blocks_05_nor_gl_1k.jpg",
+        "orm": "sandstone_blocks_05_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sandstone_blocks_05/sandstone_blocks_05_diff_1k.jpg",
+          "sha256": "d17c322d9e793ab9fc198948a34f2632595560471ff8714f2b0e052bc75c9ee3",
+          "bytes": 635678
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sandstone_blocks_05/sandstone_blocks_05_nor_gl_1k.jpg",
+          "sha256": "ab42361855310d8de9b11470c6b21e512c9926decd5548dc9e9d72bd6cc06f3e",
+          "bytes": 1224895
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/sandstone_blocks_05/sandstone_blocks_05_arm_1k.jpg",
+          "sha256": "6bc226c4985aee587db5995754069dc2f01f6295cc997db3ebbebc6a33578e4d",
+          "bytes": 160386
+        }
+      },
+      "physicalMetres": 3.0,
+      "tileMetres": 2.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"ashlar\" surface."
+    },
+    {
+      "name": "concrete-panel",
+      "title": "Concrete Wall 008",
+      "author": "Dario Barresi, Charlotte Baglioni",
+      "copyright": "(c) Poly Haven / Dario Barresi, Charlotte Baglioni",
+      "source": "https://polyhaven.com/a/concrete_wall_008",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/concrete_wall_008",
+      "files": {
+        "albedo": "concrete_wall_008_diff_1k.jpg",
+        "normal": "concrete_wall_008_nor_gl_1k.jpg",
+        "orm": "concrete_wall_008_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_wall_008/concrete_wall_008_diff_1k.jpg",
+          "sha256": "a203166d280d3cfc6a91bbc9ffdae406eb9555b4a4f658cd92619063eb17c147",
+          "bytes": 623051
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_wall_008/concrete_wall_008_nor_gl_1k.jpg",
+          "sha256": "83cd3fa2c7cbf4c81402386065daf8fa6f72e1f1f77e02ccb1eedb28496909ae",
+          "bytes": 511519
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/concrete_wall_008/concrete_wall_008_arm_1k.jpg",
+          "sha256": "12b8b88bd0a9b303150f45cf0080371d78b7f04744d4ab14030b8958ec7dc2e3",
+          "bytes": 667023
+        }
+      },
+      "physicalMetres": 2.71,
+      "tileMetres": 2.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"concrete-panel\" surface."
+    },
+    {
+      "name": "roof-tile",
+      "title": "Roof 09",
+      "author": "Rob Tuytel",
+      "copyright": "(c) Poly Haven / Rob Tuytel",
+      "source": "https://polyhaven.com/a/roof_09",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/roof_09",
+      "files": {
+        "albedo": "roof_09_diff_1k.jpg",
+        "normal": "roof_09_nor_gl_1k.jpg",
+        "orm": "roof_09_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_09/roof_09_diff_1k.jpg",
+          "sha256": "6baaf5dca30d14566791ad6603e3b3dbd69b76990fd8d1314efc35dd2655e818",
+          "bytes": 553309
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_09/roof_09_nor_gl_1k.jpg",
+          "sha256": "60fc61343316bbe73399cdddfb3da8b47d41c2d147e2b3384f244f8be9ed1668",
+          "bytes": 325412
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/roof_09/roof_09_arm_1k.jpg",
+          "sha256": "837caae1811ad8d7633ffdfe24d78090169210b38098be3e63716870cf8c562f",
+          "bytes": 278085
+        }
+      },
+      "physicalMetres": 4.0,
+      "tileMetres": 2.0,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"roof-tile\" surface."
+    },
+    {
+      "name": "bark",
+      "title": "Bark Platanus",
+      "author": "Dimitrios Savva",
+      "copyright": "(c) Poly Haven / Dimitrios Savva",
+      "source": "https://polyhaven.com/a/bark_platanus",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/bark_platanus",
+      "files": {
+        "albedo": "bark_platanus_diff_1k.jpg",
+        "normal": "bark_platanus_nor_gl_1k.jpg",
+        "orm": "bark_platanus_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_platanus/bark_platanus_diff_1k.jpg",
+          "sha256": "4e302eeb6a66d50880484a08bd2c6e43974eb1636397d94d9c8bc54d508c2c1b",
+          "bytes": 906704
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_platanus/bark_platanus_nor_gl_1k.jpg",
+          "sha256": "af36a887dc9cac3ea70902bc6e26b1d3f2608f39f96880f6e7766d93fefe43f5",
+          "bytes": 1290168
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/bark_platanus/bark_platanus_arm_1k.jpg",
+          "sha256": "d6ad1c4a3b3eff5afceb9b9efce8a87aec8a99609c7acf6135f39f8c633cdf93",
+          "bytes": 653854
+        }
+      },
+      "physicalMetres": 1.5,
+      "tileMetres": 0.55,
+      "size": 1024,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"bark\" surface."
+    },
+    {
+      "name": "shop-floor",
+      "title": "Terrazzo Tiles",
+      "author": "Amal Kumar",
+      "copyright": "(c) Poly Haven / Amal Kumar",
+      "source": "https://polyhaven.com/a/terrazzo_tiles",
+      "sourceRepository": "https://polyhaven.com/textures",
+      "licence": "CC0-1.0",
+      "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+      "attributionRequired": false,
+      "redistributionAllowed": true,
+      "retrieved": "2026-09-05",
+      "originalFormat": "JPEG maps at 1k (diffuse, OpenGL normal, AO/roughness/metalness packed)",
+      "folder": "polyhaven-textures/terrazzo_tiles",
+      "files": {
+        "albedo": "terrazzo_tiles_diff_1k.jpg",
+        "normal": "terrazzo_tiles_nor_gl_1k.jpg",
+        "orm": "terrazzo_tiles_arm_1k.jpg"
+      },
+      "sources": {
+        "albedo": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/terrazzo_tiles/terrazzo_tiles_diff_1k.jpg",
+          "sha256": "462e3e719cda0472a33152523cf5ca2fc660e1c5869348be1609ba3dca12a2ef",
+          "bytes": 1166107
+        },
+        "normal": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/terrazzo_tiles/terrazzo_tiles_nor_gl_1k.jpg",
+          "sha256": "56bbe2d960b47ddb2dc538be2953a1ad07083b017cdada1cdc7958421a6cfcd9",
+          "bytes": 77954
+        },
+        "orm": {
+          "url": "https://dl.polyhaven.org/file/ph-assets/Textures/jpg/1k/terrazzo_tiles/terrazzo_tiles_arm_1k.jpg",
+          "sha256": "f6bc98a79c33010b54759c5dba5f915179a74b78d46f7b0d03ecf4feb6347c0e",
+          "bytes": 477964
+        }
+      },
+      "physicalMetres": 2.0,
+      "tileMetres": 2.4,
+      "size": 1024,
+      "occlusionScale": 0.22,
+      "emissiveFromAlbedo": true,
+      "transformations": [
+        "resampled to 1024 px and repacked as albedo / normal / ORM by scripts/prepare-surfaces.py",
+        "occlusion scaled to 0.22 and an emissive copy of the albedo written, as the catalogue does for every surface inside a shop",
+        "compiled to .cnb with a mip chain by cna_tool_source_to_cnb during the content build"
+      ],
+      "role": "Replaces the generated \"shop-floor\" surface: the terrazzo floor of every shop unit."
     }
   ]
 }

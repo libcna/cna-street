@@ -17,3 +17,14 @@ cna_street_test(camera_tests CameraTests.cpp)
 cna_street_test(content_pipeline_tests ContentPipelineTests.cpp)
 cna_street_test(appearance_tests AppearanceTests.cpp)
 cna_street_test(realism_tests RealismTests.cpp)
+
+# The licence gate as a test, where Python is available: every fetched asset
+# declared, every declared licence on the allow-list, every digest matching.
+# It runs in a tree that has fetched nothing too, where it checks the manifest
+# alone.
+find_program(CNA_STREET_TEST_PYTHON NAMES python3 python)
+if(CNA_STREET_TEST_PYTHON)
+    add_test(NAME validate_assets
+             COMMAND "${CNA_STREET_TEST_PYTHON}" "${CMAKE_SOURCE_DIR}/scripts/validate-assets.py"
+             WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}")
+endif()
