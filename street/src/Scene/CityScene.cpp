@@ -2300,11 +2300,42 @@ void CityScene::buildViewpoints()
     viewpoints_.push_back(Viewpoint{"Road surface",
                                     Vector3(1.6f, 0.42f, 30.0f), kSouth - 0.20f, -0.10f, 1.05f});
     // A street tree from under it: trunk, branch structure, leaf silhouette.
-    viewpoints_.push_back(Viewpoint{"Street tree",
-                                    Vector3(-4.6f, 1.50f, 39.0f), kWest - 0.55f, 0.42f, 1.15f});
+    // Aimed at a tree that is actually there -- the nearest to the middle of
+    // the west footway's north run -- from five metres down the footway, with
+    // the crown centre in the upper half of the frame. The first version of
+    // this viewpoint was aimed at where a tree was expected and showed a
+    // facade.
+    {
+        Vector3 tree(-6.2f, 0.0f, 35.7f);
+        float best = 1e30f;
+        for (const Vector3& p : treePositions_)
+        {
+            if (p.X > 0.0f || p.Z < 24.0f || p.Z > 60.0f) continue;
+            const float d = std::fabs(p.Z - 40.0f);
+            if (d < best) { best = d; tree = p; }
+        }
+        const Vector3 stand(tree.X - 1.4f, eye, tree.Z - 5.6f);
+        const Vector3 aim(tree.X, 4.3f, tree.Z);
+        const Vector3 to = aim - stand;
+        const float yaw = std::atan2(to.X, -to.Z);
+        const float pitch = std::atan2(to.Y, std::sqrt(to.X * to.X + to.Z * to.Z));
+        viewpoints_.push_back(Viewpoint{"Street tree", stand, yaw, pitch, 1.15f});
+    }
     // One bay of a façade filling the frame: reveal depth, sill, material scale.
     viewpoints_.push_back(Viewpoint{"Facade detail",
                                     Vector3(-6.2f, 3.10f, 52.0f), kWest + 0.18f, 0.30f, 0.80f});
+
+    // --- the photographs ----------------------------------------------------
+    // Two compositions a person with a camera would actually take, at the
+    // heights and fields of view a camera has, rather than views chosen to
+    // expose a weakness. A little below eye level, looking along the parked
+    // cars with the shopfronts behind them, in a 35 mm field.
+    viewpoints_.push_back(Viewpoint{"Kerbside",
+                                    Vector3(-6.05f, 1.28f, 31.2f), kSouth + 0.30f, -0.03f, 0.92f});
+    // Corner to corner across the junction, from the south-east footway,
+    // with the signal head and the crossing in the foreground.
+    viewpoints_.push_back(Viewpoint{"Corner to corner",
+                                    Vector3(8.7f, eye + 0.1f, -10.4f), 3.90f, 0.05f, 1.05f});
 
     if (!lineup_) return;
     // The development line-up: a square side view and a three-quarter front of
