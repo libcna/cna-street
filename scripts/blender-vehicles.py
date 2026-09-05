@@ -13,7 +13,10 @@
 #   * the backdrop, the baked shadow plane and any other object the table
 #     below names dropped, and every object's transform applied;
 #   * turned so the long axis is Y and the front is -Y -- Blender's front, which
-#     the glTF exporter writes as +Z, the way this project's vehicles face;
+#     the glTF exporter writes as +Z, the way this project's vehicles face.
+#     *Which* end is the front is measured from the body's shape rather than
+#     declared per model (see front_toward_negative_y), because a declaration
+#     nothing checks is how a car shipped driving permanently in reverse;
 #   * scaled uniformly to the real car's length, stood on z = 0 and centred,
 #     because the eight files arrive in five different units;
 #   * a body whose windows are only in its texture's alpha (the Kadett) split
@@ -56,6 +59,9 @@ import bpy
 import mathutils
 import numpy as np
 
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import vehicle_pose   # noqa: E402  -- the shared nose-direction rule
+
 VEHICLES = {
     # name: uid on Sketchfab and in Objaverse, the real car's length in metres,
     # objects that are backdrop rather than car, materials whose texture alpha
@@ -66,6 +72,9 @@ VEHICLES = {
     # `tyres="hint"`: the Astra's mesh is a soup whose tyre pieces come out
     # partial, so its tyres are taken from the objects that stand on the
     # ground rather than from connected pieces.
+    # `front="-Y"` / `"+Y"`: overrides the measured nose direction for a model
+    # the reading gets wrong. None of the eight needs one, and adding one
+    # should mean the sheet from scripts/vehicle-orientation.py was looked at.
     "opel-astra-gtc":    dict(uid="d76ad5a0495443eda24a9052565ef9a8", length=4.466,
                               drop=["Object_76"], near=150000, far=18000, texture=2048,
                               tyres="hint"),
@@ -81,10 +90,13 @@ VEHICLES = {
                               drop=[], alpha_split=["Material"], near=60000, far=14000),
     "honda-civic-ek":    dict(uid="b9604dd71c6546ec842702682019492a", length=4.180,
                               drop=[], near=120000, far=18000, texture=2048),
-    # The Mini arrives facing the other way from the seven others, which
-    # nobody saw while it was parked and everybody saw once it drove.
+    # The Mini arrives facing the other way from the seven others. It used to
+    # carry `flip=True` for it; the flag turned the car and then a second
+    # reading of the same file turned it back, and it drove in reverse for a
+    # whole pass. Which way a car faces is now measured, not declared -- see
+    # front_toward_negative_y and scripts/vehicle-orientation.py.
     "mini-cooper-s":     dict(uid="b262744901a04cda823f17289d1a4847", length=3.655,
-                              drop=[], near=60000, far=14000, flip=True),
+                              drop=[], near=60000, far=14000),
 }
 
 GLASS_WORDS = ("glass", "window", "windsh", "vitre", "glas", "glazing")
@@ -125,6 +137,63 @@ def bounds(objects):
 
 def triangle_count(objects):
     return sum(sum(len(p.vertices) - 2 for p in o.data.polygons) for o in objects)
+
+
+def turn(objects, radians):
+    """Turns every object about the world Z axis and bakes it into the mesh.
+
+    Through `matrix_world` rather than `rotation_euler`, and that is the whole
+    point of the function: Blender's glTF importer leaves every object in
+    QUATERNION rotation mode, where `rotation_euler` is an unused field.
+    Writing to it turns nothing, `transform_apply` then reports FINISHED
+    having applied an identity, and the object comes back with the euler
+    zeroed -- so the code reads as though it worked. That is how the Mini
+    shipped facing backwards through a whole pass with a `flip=True` beside
+    it in the table: the flag was set, the turn was written, and no rotation
+    ever happened.
+    """
+    rotation = mathutils.Matrix.Rotation(radians, 4, "Z")
+    for o in objects:
+        o.matrix_world = rotation @ o.matrix_world
+    select_only(objects)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+
+
+def front_toward_negative_y(objects):
+    """Which end of a car standing along Y is its nose, from the shape alone.
+
+    Returns True when the front is toward -Y, which is the pose this script
+    exports (Blender's -Y becomes glTF's +Z, the heading Geometry::Place calls
+    zero and the direction every lane and every lofted vehicle is built for).
+    The rule itself is scripts/vehicle_pose.py, shared with the checker that
+    tests the exported files, so what decides a pose and what verifies it
+    cannot drift apart.
+    """
+    along, up, area = [], [], []
+    for o in objects:
+        mesh = o.data
+        if len(mesh.vertices) < 3:
+            continue
+        flat = np.empty(len(mesh.vertices) * 3, dtype="f8")
+        mesh.vertices.foreach_get("co", flat)
+        world = flat.reshape(-1, 3) @ np.array(o.matrix_world.to_3x3().transposed())
+        world += np.array(o.matrix_world.translation)
+        mesh.calc_loop_triangles()
+        if not mesh.loop_triangles:
+            continue
+        triangles = np.empty(len(mesh.loop_triangles) * 3, dtype="i8")
+        mesh.loop_triangles.foreach_get("vertices", triangles)
+        centroid, size = vehicle_pose.triangle_centroids(world, triangles)
+        along.append(centroid[:, 1])
+        up.append(centroid[:, 2])
+        area.append(size)
+    if not along:
+        return True
+    score, cabin, deck = vehicle_pose.front_score(np.concatenate(along), np.concatenate(up),
+                                                  np.concatenate(area))
+    log(f"  front: cabin {cabin:+.2f}, deck {deck:+.2f} -> nose toward "
+        f"{'-Y (as exported)' if score >= 0.0 else '+Y (turning it)'}")
+    return score >= 0.0
 
 
 def split_alpha(obj, material_name):
@@ -575,17 +644,28 @@ def process(name, spec, args):
             bpy.data.objects.remove(o, do_unlink=True)
     objects = mesh_objects()
 
-    # The long axis along Y, the front toward -Y.
+    # The long axis along Y, and then the front toward -Y -- read off the
+    # body's own shape rather than declared, so a file that arrives back to
+    # front cannot ship a car that drives in reverse. `front` in the table
+    # overrides the reading for a model it gets wrong; none of the eight
+    # needs one.
     lo, hi = bounds(objects)
     size = hi - lo
     if size.x > size.y:
-        for o in objects:
-            o.rotation_euler.z += math.pi / 2
-    if spec.get("flip", False):
-        for o in objects:
-            o.rotation_euler.z += math.pi
+        turn(objects, math.pi / 2)
+    declared = spec.get("front")
+    forward = front_toward_negative_y(objects) if declared is None else (declared == "-Y")
+    if declared is not None:
+        log(f"  front: declared {declared} in the table, overriding the reading")
+    if not forward:
+        turn(objects, math.pi)
     select_only(objects)
     bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    # And read it again: the pose that leaves here is the one
+    # scripts/vehicle-orientation.py holds the exported file to, so a turn
+    # that did not take is caught here rather than from the kerb.
+    if not front_toward_negative_y(objects):
+        log("  front: WARNING -- the body still reads as facing +Y after the turn")
     lo, hi = bounds(objects)
     size = hi - lo
     scale = spec["length"] / size.y
