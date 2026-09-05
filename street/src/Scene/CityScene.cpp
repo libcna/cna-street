@@ -895,8 +895,13 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
     // --- vehicles -----------------------------------------------------------
     if (settings.traffic && !vehicleMeshes_.empty())
     {
-        for (const Vehicle& vehicle : traffic_.vehicles())
+        const std::vector<Vehicle>& fleet = traffic_.vehicles();
+        for (std::size_t v = 0; v < fleet.size(); ++v)
         {
+            const Vehicle& vehicle = fleet[v];
+            // A parked loft a hero model stands in for is registered as a
+            // static prop instead, so it is in the reflection probes too.
+            if (v < vehicleReplaced_.size() && vehicleReplaced_[v]) continue;
             const int variant = std::clamp(vehicle.variant, 0,
                                            static_cast<int>(vehicleMeshes_.size()) - 1);
             const VehicleMesh& mesh = vehicleMeshes_[static_cast<std::size_t>(variant)];
@@ -2161,6 +2166,9 @@ void CityScene::buildDressing(Rng& rng, const RenderSettings& settings)
         placeProp(manhole, at, "manhole-cover", cull * 0.3f, 0.0f, false);
     }
 
+    // --- the hero cars --------------------------------------------------------
+    buildHeroVehicles(rng, settings);
+
     // --- a covered car in a hero bay ----------------------------------------
     // The west parking lane between the shop window and the kerbside
     // viewpoints, in the first bay no parked car took. A car under a cover is
@@ -2260,6 +2268,114 @@ void CityScene::buildDressing(Rng& rng, const RenderSettings& settings)
                       + " manhole covers, " + std::to_string(cafes) + " pavement cafes, "
                       + std::to_string(crateAt.size() + cartonAt.size()) + " deliveries"
                       + (covered.empty() ? "" : ", one covered car"));
+}
+
+void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
+{
+    vehicleReplaced_.assign(traffic_.vehicles().size(), false);
+    heroVehicles_ = 0;
+
+    // Eight authored cars under CC-BY, each normalised by
+    // scripts/blender-vehicles.py to face +Z on y = 0 at its real length, with
+    // a far level of detail beside it. The mix is a continental street's: two
+    // superminis, a hatchback, two saloons, an estate, a small car and a van.
+    static const char* const kHeroCars[] = {
+        "car-opel-astra-gtc", "car-fiat-punto-gt",  "car-renault-logan",
+        "car-vaz-2104",       "car-honda-civic-ek", "car-small-price-car",
+        "car-mini-cooper-s",  "car-mercedes-sprinter",
+    };
+    struct Hero
+    {
+        PropMesh near, far;
+        float length = 4.4f;
+        std::vector<Matrix> at;
+        std::string name;
+    };
+    std::vector<Hero> heroes;
+    for (const char* asset : kHeroCars)
+    {
+        Hero hero;
+        hero.near = importedProp(asset);
+        if (hero.near.empty()) continue;
+        hero.far    = importedProp(std::string(asset) + "-far");
+        hero.length = hero.near.bounds.Max.Z - hero.near.bounds.Min.Z;
+        hero.name   = asset;
+        heroes.push_back(std::move(hero));
+    }
+    if (heroes.empty()) return;
+
+    // The bays the showcase viewpoints look at: both parking lanes of the
+    // main street north of the junction, from the crossing to the far end of
+    // the hero corridor. Nearest the cameras first, so the best-known models
+    // land where they are looked at hardest.
+    const float from = M::kSideStreetHalfWidth + 12.0f;
+    const float to   = 68.0f;
+    const std::vector<Vehicle>& fleet = traffic_.vehicles();
+    std::vector<std::size_t> bays;
+    for (std::size_t i = 0; i < fleet.size(); ++i)
+    {
+        const Vehicle& vehicle = fleet[i];
+        if (!vehicle.parked) continue;
+        if (vehicle.parkedAt.Y < from || vehicle.parkedAt.Y > to) continue;
+        if (std::fabs(vehicle.parkedAt.X) > M::kMainCarriagewayWidth) continue;
+        bays.push_back(i);
+    }
+    std::sort(bays.begin(), bays.end(), [&](std::size_t a, std::size_t b) {
+        return fleet[a].parkedAt.Y < fleet[b].parkedAt.Y;
+    });
+
+    // Deal the models out in a seeded order rather than in list order, so the
+    // two lanes do not read as the same eight cars twice, and never the same
+    // model in two neighbouring bays.
+    std::vector<std::size_t> deck;
+    for (std::size_t h = 0; h < heroes.size(); ++h) deck.push_back(h);
+    for (std::size_t i = deck.size(); i > 1; --i)
+        std::swap(deck[i - 1], deck[rng.index(i)]);
+
+    std::size_t dealt = 0;
+    std::size_t lastOnSide[2] = {SIZE_MAX, SIZE_MAX};
+    for (const std::size_t index : bays)
+    {
+        const Vehicle& vehicle = fleet[index];
+        const int side = vehicle.parkedAt.X < 0.0f ? 0 : 1;
+        // Room for it: the bay pitch minus both neighbours' errors, or the
+        // gap to the nearest other parked car on this side.
+        float room = 1e30f;
+        for (std::size_t j = 0; j < fleet.size(); ++j)
+        {
+            if (j == index || !fleet[j].parked) continue;
+            if ((fleet[j].parkedAt.X < 0.0f) != (side == 0)) continue;
+            const float gap = std::fabs(fleet[j].parkedAt.Y - vehicle.parkedAt.Y);
+            room = std::min(room, gap * 2.0f - fleet[j].length);
+        }
+        std::size_t pick = SIZE_MAX;
+        for (std::size_t attempt = 0; attempt < heroes.size(); ++attempt)
+        {
+            const std::size_t candidate = deck[(dealt + attempt) % deck.size()];
+            if (candidate == lastOnSide[side]) continue;
+            if (heroes[candidate].length + 0.45f > room) continue;
+            pick = candidate;
+            dealt += attempt + 1;
+            break;
+        }
+        if (pick == SIZE_MAX) continue;
+        lastOnSide[side] = pick;
+        heroes[pick].at.push_back(vehicle.transform(traffic_.lanes()));
+        vehicleReplaced_[index] = true;
+        ++heroVehicles_;
+    }
+
+    const float cull  = settings.propCullDistance;
+    const float shade = settings.propShadowDistance;
+    for (Hero& hero : heroes)
+    {
+        if (hero.at.empty()) continue;
+        placeProp(hero.near, hero.at, "hero-" + hero.name, cull * 0.75f, shade,
+                  /*castsShadow=*/true, hero.far.empty() ? nullptr : &hero.far, 45.0f);
+    }
+    CNA::Logger::Info("cna-street: " + std::to_string(heroVehicles_) + " hero vehicles over "
+                      + std::to_string(heroes.size()) + " models parked in "
+                      + std::to_string(bays.size()) + " hero bays");
 }
 
 void CityScene::buildTrafficAndPeople(const RenderSettings& settings)

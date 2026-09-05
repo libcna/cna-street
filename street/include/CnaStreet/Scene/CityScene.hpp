@@ -159,6 +159,13 @@ private:
     /// covered car, pavement cafes, deliveries by the doors. After the traffic,
     /// because the car takes a bay no parked car did.
     void buildDressing(Rng& rng, const RenderSettings& settings);
+    /// The hero vehicles: licensed, authored car models parked in the bays
+    /// the showcase viewpoints look at, in place of the lofted ones the
+    /// traffic system put there. The loft stays in the simulation -- it still
+    /// occupies its bay and pedestrians still walk round it -- and is simply
+    /// not drawn. Called from buildDressing, before the covered car takes a
+    /// bay of its own.
+    void buildHeroVehicles(Rng& rng, const RenderSettings& settings);
     void buildSignalsAndSigns(Rng& rng, const RenderSettings& settings);
     /// Shop fascias and house numbers, on the anchors the façade generator
     /// left behind while it was building the elevations.
@@ -218,6 +225,10 @@ private:
         std::vector<WheelPlacement> wheels;
     };
     std::vector<VehicleMesh> vehicleMeshes_;
+    /// One flag per vehicle in `traffic_`: true for a parked loft that a
+    /// hero model stands in for, so `submit` leaves it out.
+    std::vector<bool> vehicleReplaced_;
+    int heroVehicles_ = 0;
     /// The far level of detail of each street tree, kept for the district
     /// beyond the modelled frontage, which plants the same trees at the same
     /// pitch and never gets close enough to want the near one.

@@ -39,6 +39,13 @@ ALLOWED = {
     "Apache-2.0": {"attribution": True, "redistribute": True},
 }
 
+# Licences a *tool* may carry. A tool is run, never linked, never
+# redistributed and never drawn -- Blender itself is GPL and nothing it
+# exports is -- so copyleft is fine here and would not be for an asset.
+TOOL_ALLOWED = {"GPL-3.0-or-later", "GPL-2.0-or-later", "MIT", "Apache-2.0", "BSD-3-Clause"}
+TOOL_REQUIRED = ("name", "title", "author", "source", "sourceRepository", "licence",
+                 "licenceUrl", "retrieved", "file", "sha256", "bytes", "role")
+
 COMMON = (
     "name", "title", "author", "copyright", "source", "sourceRepository",
     "licence", "licenceUrl", "attributionRequired", "redistributionAllowed",
@@ -81,6 +88,7 @@ def main() -> int:
     manifest = json.loads(manifest_path.read_text())
     assets = manifest.get("assets", [])
     surfaces = manifest.get("surfaces", [])
+    tools = manifest.get("tools", [])
     if not assets and not surfaces:
         print("validate-assets: the manifest declares nothing", file=sys.stderr)
         return 1
@@ -189,6 +197,18 @@ def main() -> int:
             check_file(name, path, digest, size, bool(surface.get("redistributionAllowed")))
         declared_files.add(f"{surface.get('folder', '')}/info.json")
 
+    for tool in tools:
+        name = tool.get("name", "<unnamed tool>")
+        for field in TOOL_REQUIRED:
+            if field not in tool or tool[field] in ("", None):
+                problems.append(f"{name}: missing or empty field '{field}'")
+        if tool.get("licence") not in TOOL_ALLOWED:
+            problems.append(f"{name}: tool licence '{tool.get('licence')}' is not on the tool allow-list")
+        if name in seen_names:
+            problems.append(f"{name}: local name is already used by a {seen_names[name]}")
+        seen_names[name] = "tool"
+        check_file(name, tool.get("file", ""), tool.get("sha256"), tool.get("bytes"), True)
+
     if downloads.is_dir():
         for path in sorted(downloads.rglob("*")):
             if not path.is_file():
@@ -203,7 +223,8 @@ def main() -> int:
                 )
 
     print(
-        f"validate-assets: {len(assets)} model(s) and {len(surfaces)} surface(s) declared, "
+        f"validate-assets: {len(assets)} model(s), {len(surfaces)} surface(s) and "
+        f"{len(tools)} tool(s) declared, "
         f"{checked} file(s) present and verified, {len(problems)} problem(s)"
     )
     for problem in problems:
