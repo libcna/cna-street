@@ -74,6 +74,26 @@ struct Material
     float shadowDistance = 0.0f;
     /// Excluded from the depth/normal prepass as well as the shadow pass.
     bool writesDepth = true;
+    /// Blended as *reflection plus attenuated background* rather than as a
+    /// coloured filter: `out = lit + behind * (1 - alpha)`, XNA's premultiplied
+    /// `AlphaBlend`, instead of `out = lit * alpha + behind * (1 - alpha)`.
+    ///
+    /// That is what a pane of glass is. Its reflection is not made fainter by
+    /// its transparency -- a window that transmits nine tenths of the light
+    /// still mirrors the street at full Fresnel strength -- and under the
+    /// ordinary blend the specular term was multiplied by a 0.24 alpha and
+    /// vanished, which is why every shop window on the street read as a milky
+    /// filter over its interior and none of them reflected anything. With this
+    /// set, `baseColour` is the tint of the *reflection layer* (near black for
+    /// clear glass, which contributes no diffuse of its own) and `alpha` is
+    /// how much the pane blocks of what stands behind it.
+    bool premultipliedBlend = false;
+    /// Lit by the sky and its own emission only, never by the sun. For the
+    /// rooms behind the shopfronts: they are enclosed, the sun does not reach
+    /// three metres into them past a soffit, and a cascade atlas quantised at
+    /// 8 bits paints the back wall of a room it can barely see with bands of
+    /// acne.
+    bool sunlit = true;
 
     [[nodiscard]] bool isBlended() const
     {

@@ -604,10 +604,22 @@ void MaterialLibrary::build(std::uint32_t seed)
     // Glazing
     // ---------------------------------------------------------------------
     {
+        // Glass is a reflection layer over whatever stands behind it, and it
+        // is blended as one: `out = reflection + behind * (1 - alpha)`, see
+        // `Material::premultipliedBlend`. So the base colour here is the tint
+        // of the *reflection layer* -- near black, because clear glass has no
+        // diffuse of its own and the grime on it is what little there is --
+        // and the alpha is how much the pane blocks of the room behind it,
+        // not how much it shows of itself. The version this replaces had a
+        // pale (0.72, 0.78, 0.76) base at alpha 0.34 under the ordinary blend,
+        // which painted a milky filter over every interior and multiplied the
+        // Fresnel reflection by 0.34 into invisibility: not one window on the
+        // street reflected anything.
         Material glass = pbr(0.06f, 0.0f);
         glass.alphaMode   = AlphaModeEXT::Blend;
-        glass.alpha       = 0.34f;
-        glass.baseColour  = Vector3(0.72f, 0.78f, 0.76f);
+        glass.premultipliedBlend = true;
+        glass.alpha       = 0.22f;
+        glass.baseColour  = Vector3(0.050f, 0.056f, 0.054f);
         glass.ior         = 1.52f;
         glass.specular    = 1.0f;
         glass.castsShadow = false;   // a pane casting an opaque shadow is a tell
@@ -617,11 +629,13 @@ void MaterialLibrary::build(std::uint32_t seed)
 
         Material shop = materials_[static_cast<std::size_t>(MaterialId::Glazing)];
         shop.name       = "shop-glazing";
-        shop.alpha      = 0.24f;      // large, clean, frequently cleaned panes
+        // Large, clean, frequently cleaned panes: they block almost nothing
+        // and their reflection is a mirror of the street.
+        shop.alpha      = 0.14f;
         // Divided by the glazing generator's own value: this material shares
         // that surface's textures and never passes through normaliseFactors.
         shop.roughness  = 0.035f / nominalRoughnessOf("glazing");
-        shop.baseColour = Vector3(0.80f, 0.84f, 0.83f);
+        shop.baseColour = Vector3(0.030f, 0.034f, 0.033f);
         materials_[static_cast<std::size_t>(MaterialId::ShopGlazing)] = shop;
     }
     {
@@ -913,8 +927,13 @@ void MaterialLibrary::build(std::uint32_t seed)
         // 0.52 with a pale texture behind it produced a fleet of greenhouses.
         Material glass = pbr(0.05f, 0.0f);
         glass.alphaMode   = AlphaModeEXT::Blend;
-        glass.alpha       = 0.80f;
-        glass.baseColour  = Vector3(0.055f, 0.062f, 0.068f);
+        // Reflection plus attenuated cabin, like every other pane in the
+        // scene. Tinted automotive glass blocks about half of what is behind
+        // it at street angles; the rest of what reaches the eye is the
+        // reflection, now at its full Fresnel strength.
+        glass.premultipliedBlend = true;
+        glass.alpha       = 0.55f;
+        glass.baseColour  = Vector3(0.016f, 0.018f, 0.020f);
         glass.ior         = 1.52f;
         glass.specular    = 1.0f;
         glass.castsShadow = false;

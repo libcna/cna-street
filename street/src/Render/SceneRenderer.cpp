@@ -8,6 +8,7 @@
 #include "CNA/Graphics/CascadedShadowMap.hpp"
 #include "CNA/Graphics/DepthNormalPrepass.hpp"
 #include "CNA/Graphics/DirectionalLightEXT.hpp"
+#include "CNA/Graphics/EnvironmentProcessor.hpp"
 #include "CNA/Graphics/GpuTimer.hpp"
 #include "CNA/Graphics/InstancedRendererEXT.hpp"
 #include "CNA/Graphics/RenderPipeline.hpp"
@@ -20,19 +21,27 @@
 #include "CNA/Logger.hpp"
 #include "Microsoft/Xna/Framework/Color.hpp"
 #include "Microsoft/Xna/Framework/Graphics/BlendState.hpp"
+#include "Microsoft/Xna/Framework/Graphics/CubeMapFace.hpp"
+#include "Microsoft/Xna/Framework/Graphics/DepthFormat.hpp"
 #include "Microsoft/Xna/Framework/Graphics/DepthStencilState.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ImageBasedLightEXT.hpp"
 #include "Microsoft/Xna/Framework/Graphics/PbrEffect.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SkinnedPbrEffect.hpp"
 #include "Microsoft/Xna/Framework/Graphics/RasterizerState.hpp"
+#include "Microsoft/Xna/Framework/Graphics/RenderTarget2D.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SamplerState.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ShaderEffect.hpp"
+#include "Microsoft/Xna/Framework/Graphics/SurfaceFormat.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
+#include "Microsoft/Xna/Framework/Graphics/TextureCube.hpp"
 #include "Microsoft/Xna/Framework/Graphics/TextureTransformEXT.hpp"
+#include "Microsoft/Xna/Framework/MathHelper.hpp"
 #include "System/Diagnostics/Stopwatch.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <filesystem>
 #include <unordered_map>
 #include <cmath>
 #include <vector>
@@ -42,6 +51,7 @@ using namespace Microsoft::Xna::Framework::Graphics;
 using CNA::Graphics::CascadedShadowMap;
 using CNA::Graphics::DepthNormalPrepass;
 using CNA::Graphics::DirectionalLightEXT;
+using CNA::Graphics::EnvironmentProcessor;
 using CNA::Graphics::GpuTimer;
 using CNA::Graphics::InstancedRendererEXT;
 using CNA::Graphics::RenderPipeline;
@@ -119,6 +129,48 @@ BoundingBox TransformBox(const BoundingBox& box, const Matrix& transform)
         hi = Vector3(std::max(hi.X, p.X), std::max(hi.Y, p.Y), std::max(hi.Z, p.Z));
     }
     return BoundingBox(lo, hi);
+}
+
+Vector3 BoxCentre(const BoundingBox& box)
+{
+    return Vector3((box.Min.X + box.Max.X) * 0.5f, (box.Min.Y + box.Max.Y) * 0.5f,
+                   (box.Min.Z + box.Max.Z) * 0.5f);
+}
+
+/// sRGB byte to linear, for reading a probe capture back.
+float DecodeSrgb(int byte)
+{
+    const float s = static_cast<float>(byte) / 255.0f;
+    return s <= 0.04045f ? s / 12.92f : std::pow((s + 0.055f) / 1.055f, 2.4f);
+}
+
+/// Linear radiance to the 8-bit cube texel the sky cube uses: `L / scale`,
+/// quantised. The same function `SkySystem` encodes with, so a probe's texels
+/// and the sky's mean the same thing under one `ImageBasedLightEXT::Intensity`.
+std::uint8_t EncodeCube(float linear, float scale)
+{
+    const float mapped = linear / std::max(scale, 1e-4f);
+    return static_cast<std::uint8_t>(std::lround(std::clamp(mapped, 0.0f, 1.0f) * 255.0f));
+}
+
+/// The camera that looks out of one cube face. `forward` is the face's axis;
+/// `up` is chosen so that the rendered image's rows run the way the face's
+/// texel rows do in `SkySystem::cubeDirection`. The columns come out mirrored
+/// -- a cube map is addressed from inside the cube, a camera image from
+/// outside -- and the capture flips them when it copies the face in.
+void ProbeFaceBasis(CubeMapFace face, Vector3& forward, Vector3& up)
+{
+    switch (face)
+    {
+        case CubeMapFace::PositiveX: forward = Vector3(1.0f, 0.0f, 0.0f);  up = Vector3(0.0f, 1.0f, 0.0f);  return;
+        case CubeMapFace::NegativeX: forward = Vector3(-1.0f, 0.0f, 0.0f); up = Vector3(0.0f, 1.0f, 0.0f);  return;
+        case CubeMapFace::PositiveY: forward = Vector3(0.0f, 1.0f, 0.0f);  up = Vector3(0.0f, 0.0f, -1.0f); return;
+        case CubeMapFace::NegativeY: forward = Vector3(0.0f, -1.0f, 0.0f); up = Vector3(0.0f, 0.0f, 1.0f);  return;
+        case CubeMapFace::PositiveZ: forward = Vector3(0.0f, 0.0f, 1.0f);  up = Vector3(0.0f, 1.0f, 0.0f);  return;
+        case CubeMapFace::NegativeZ: forward = Vector3(0.0f, 0.0f, -1.0f); up = Vector3(0.0f, 1.0f, 0.0f);  return;
+    }
+    forward = Vector3(0.0f, 0.0f, 1.0f);
+    up      = Vector3(0.0f, 1.0f, 0.0f);
 }
 
 }  // namespace
@@ -341,6 +393,8 @@ void SceneRenderer::submitDynamic(const GpuMesh* mesh, const Material* material,
     item.world       = world;
     item.worldBounds = TransformBox(mesh->bounds(), world);
     item.worldSphere = BoundingSphere::CreateFromBoundingBox(item.worldBounds);
+    // A mover reflects wherever it happens to be this frame.
+    item.probe       = shadowOnly ? nullptr : nearestProbe(BoxCentre(item.worldBounds));
     dynamic_.push_back(item);
 }
 
@@ -473,35 +527,23 @@ void SceneRenderer::applyLighting(const RenderSettings& settings)
     sun.setEnabledProperty(true);
     const Vector3 direction = sky_.lightDirection();
     sun.setDirectionProperty(direction);
-    sun.setDiffuseColorProperty(sky_.sunColour());
-    sun.setSpecularColorProperty(sky_.sunColour());
+    sun.setDiffuseColorProperty(sky_.sunColour() * lightScale_);
+    sun.setSpecularColorProperty(sky_.sunColour() * lightScale_);
     effect.getDirectionalLight1Property().setEnabledProperty(false);
     effect.getDirectionalLight2Property().setEnabledProperty(false);
 
-    effect.setAmbientLightColorProperty(sky_.ambientColour());
+    effect.setAmbientLightColorProperty(sky_.ambientColour() * lightScale_);
 
-    if (sky_.hasImageBasedLighting() && settings.imageBasedLighting)
-    {
-        ImageBasedLightEXT environment;
-        environment.Irradiance          = sky_.irradiance();
-        environment.PrefilteredSpecular = sky_.prefiltered();
-        environment.BrdfLut             = sky_.brdfLut();
-        environment.PrefilteredMipCount = sky_.prefilteredMipCount();
-        // The cube holds radiance divided by this; the effect multiplies it
-        // back. Leaving it at 1 is what makes an HDR sky light a scene as if it
-        // were a photograph of one.
-        environment.Intensity           = sky_.environmentScale() * settings.iblIntensity;
-        effect.setImageBasedLightEXT(environment);
-    }
-    else
-    {
-        effect.setImageBasedLightEXT(ImageBasedLightEXT{});
-    }
+    // The sky's environment to start with; a draw with a probe swaps its own in.
+    environmentBound_ = false;
+    applyEnvironment(nullptr, settings);
 
     // Distance fog matched to the sky's own horizon haze, so the far end of the
     // street fades into the same colour the sky is that direction rather than
-    // into a fog colour picked by hand.
-    if (settings.heightFog)
+    // into a fog colour picked by hand. Not while a probe is being captured:
+    // the capture is a picture of the surfaces, and fogging them would put
+    // haze into every reflection at every distance.
+    if (settings.heightFog && !capturingProbe_)
     {
         effect.setFogEnabledProperty(true);
         const Vector3 haze = sky_.ambientColour();
@@ -526,15 +568,56 @@ void SceneRenderer::applyLighting(const RenderSettings& settings)
     }
 }
 
-void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
-                                  const Camera& camera, const RenderSettings& settings)
+void SceneRenderer::applyEnvironment(const ReflectionProbe* probe, const RenderSettings& settings)
 {
-    (void)settings;
+    if (environmentBound_ && probe == boundProbe_) return;
+    environmentBound_ = true;
+    boundProbe_       = probe;
+
+    PbrEffect& effect = *effect_;
+    if (!sky_.hasImageBasedLighting() || !settings.imageBasedLighting)
+    {
+        effect.setImageBasedLightEXT(ImageBasedLightEXT{});
+        return;
+    }
+
+    ImageBasedLightEXT environment;
+    // The sky's products unless the probe has its own. Both cubes are stored
+    // at the sky's scale, so one Intensity serves whichever fills each slot.
+    const bool local = probe != nullptr && probe->prefiltered != nullptr;
+    environment.PrefilteredSpecular = local ? probe->prefiltered.get() : sky_.prefiltered();
+    environment.PrefilteredMipCount = local ? probe->prefilteredMips : sky_.prefilteredMipCount();
+    environment.Irradiance = local && settings.probeIrradiance && probe->irradiance != nullptr
+                                 ? probe->irradiance.get()
+                                 : sky_.irradiance();
+    environment.BrdfLut = sky_.brdfLut();
+    // The cube holds radiance divided by this; the effect multiplies it back.
+    // Leaving it at 1 is what makes an HDR sky light a scene as if it were a
+    // photograph of one.
+    environment.Intensity = sky_.environmentScale() * settings.iblIntensity * lightScale_;
+    effect.setImageBasedLightEXT(environment);
+}
+
+void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
+                                  const Matrix& view, const Matrix& projection,
+                                  const RenderSettings& settings, const ReflectionProbe* probe)
+{
     PbrEffect& effect = *effect_;
 
     effect.setWorldProperty(world);
-    effect.setViewProperty(camera.view());
-    effect.setProjectionProperty(camera.projection());
+    effect.setViewProperty(view);
+    effect.setProjectionProperty(projection);
+
+    // A room is not lit by the sun. Switching the light off for the draw, rather
+    // than leaving it to the shadow map, is what keeps the cascade atlas's
+    // 8-bit acne off the back wall of every shop; the ambient and the baked
+    // emissive are the whole of an interior's light, as they should be.
+    const Vector3 sunColour = material.sunlit ? sky_.sunColour() * lightScale_ : Vector3::Zero;
+    auto& sun = effect.getDirectionalLight0Property();
+    sun.setDiffuseColorProperty(sunColour);
+    sun.setSpecularColorProperty(sunColour);
+
+    applyEnvironment(probe, settings);
 
     effect.setDiffuseColorProperty(material.baseColour);
     effect.setAlphaProperty(material.alpha);
@@ -581,6 +664,11 @@ void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
     device_.setRasterizerStateProperty(material.doubleSided
                                            ? RasterizerState::CullNone
                                            : RasterizerState::CullCounterClockwise);
+    // Glass composites as reflection plus attenuated background; everything
+    // else that blends is a coloured filter. See Material::premultipliedBlend.
+    if (material.isBlended())
+        device_.setBlendStateProperty(material.premultipliedBlend ? BlendState::AlphaBlend
+                                                                  : BlendState::NonPremultiplied);
     effect.Apply();
 }
 
@@ -628,58 +716,62 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
     for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
     {
         shadows_->begin(cascade);
-
         // Each cascade covers a distance band; anything past its split is drawn
         // by a coarser cascade and would only cost fill here.
-        const float split = shadows_->getSplitDistance(cascade);
-
-        for (const SceneItem& item : items_)
-        {
-            if (!item.material->castsShadow) continue;
-            const float distance = DistanceToBox(eye, item.worldBounds);
-            if (distance > split + item.worldSphere.Radius) continue;
-            if (item.shadowDistance > 0.0f && distance > item.shadowDistance) continue;
-            caster->SetUniformMat4("uWorld", &item.world.M11);
-            item.mesh->draw(device_);
-            ++stats_.shadowDrawCalls;
-        }
-
-        for (const SceneItem& item : dynamic_)
-        {
-            if (!item.material->castsShadow) continue;
-            const float distance = DistanceToBox(eye, item.worldBounds);
-            if (distance > split + item.worldSphere.Radius) continue;
-            caster->SetUniformMat4("uWorld", &item.world.M11);
-            item.mesh->draw(device_);
-            ++stats_.shadowDrawCalls;
-        }
-
-        // Instanced props are drawn one at a time here. CNA's shadow caster
-        // program takes its world matrix from a uniform and has no instanced
-        // variant, so a batch cannot be cast in one call; see
-        // docs/cna-findings.md CNA-F6. The distance limit keeps that honest:
-        // past ~70 m a bollard's shadow is a pixel.
-        for (std::size_t g = 0; g < groups_.size(); ++g)
-        {
-            const InstanceGroup& group = groups_[g];
-            if (!group.castsShadow || !group.material->castsShadow) continue;
-            const float limit = std::min(group.shadowDistance > 0.0f ? group.shadowDistance
-                                                                     : propShadowLimit,
-                                         split);
-            for (std::size_t i = 0; i < group.transforms.size(); ++i)
-            {
-                const BoundingSphere& sphere = group.spheres[i];
-                if (Vector3::Distance(eye, sphere.Center) - sphere.Radius > limit) continue;
-                caster->SetUniformMat4("uWorld", &group.transforms[i].M11);
-                group.mesh->draw(device_);
-                ++stats_.shadowDrawCalls;
-            }
-        }
-
+        drawCasters(eye, shadows_->getSplitDistance(cascade), propShadowLimit);
         shadows_->end();
     }
 
     stats_.drewShadows = stats_.shadowDrawCalls > 0;
+}
+
+void SceneRenderer::drawCasters(const Vector3& eye, float split, float propShadowLimit)
+{
+    ShaderEffect* caster = shadows_->getCasterEffect();
+    if (caster == nullptr) return;
+
+    for (const SceneItem& item : items_)
+    {
+        if (!item.material->castsShadow) continue;
+        const float distance = DistanceToBox(eye, item.worldBounds);
+        if (distance > split + item.worldSphere.Radius) continue;
+        if (item.shadowDistance > 0.0f && distance > item.shadowDistance) continue;
+        caster->SetUniformMat4("uWorld", &item.world.M11);
+        item.mesh->draw(device_);
+        ++stats_.shadowDrawCalls;
+    }
+
+    for (const SceneItem& item : dynamic_)
+    {
+        if (!item.material->castsShadow) continue;
+        const float distance = DistanceToBox(eye, item.worldBounds);
+        if (distance > split + item.worldSphere.Radius) continue;
+        caster->SetUniformMat4("uWorld", &item.world.M11);
+        item.mesh->draw(device_);
+        ++stats_.shadowDrawCalls;
+    }
+
+    // Instanced props are drawn one at a time here. CNA's shadow caster
+    // program takes its world matrix from a uniform and has no instanced
+    // variant, so a batch cannot be cast in one call; see
+    // docs/cna-findings.md CNA-F6. The distance limit keeps that honest:
+    // past ~70 m a bollard's shadow is a pixel.
+    for (std::size_t g = 0; g < groups_.size(); ++g)
+    {
+        const InstanceGroup& group = groups_[g];
+        if (!group.castsShadow || !group.material->castsShadow) continue;
+        const float limit = std::min(group.shadowDistance > 0.0f ? group.shadowDistance
+                                                                 : propShadowLimit,
+                                     split);
+        for (std::size_t i = 0; i < group.transforms.size(); ++i)
+        {
+            const BoundingSphere& sphere = group.spheres[i];
+            if (Vector3::Distance(eye, sphere.Center) - sphere.Radius > limit) continue;
+            caster->SetUniformMat4("uWorld", &group.transforms[i].M11);
+            group.mesh->draw(device_);
+            ++stats_.shadowDrawCalls;
+        }
+    }
 }
 
 void SceneRenderer::drawSkinned(const Camera& camera, const RenderSettings& settings)
@@ -810,23 +902,22 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
     device_.setBlendStateProperty(BlendState::Opaque);
     applyLighting(settings);
 
-    const Material* current = nullptr;
+    const Matrix& view = camera.view();
+    const Matrix& projection = camera.projection();
     for (std::size_t index : visibleOpaque_)
     {
         const SceneItem& item = items_[index];
-        applyMaterial(*item.material, item.world, camera, settings);
-        current = item.material;
+        applyMaterial(*item.material, item.world, view, projection, settings, item.probe);
         item.mesh->draw(device_);
         ++stats_.drawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
     }
-    (void)current;
 
     for (std::size_t index : visibleDynamic_)
     {
         const SceneItem& item = dynamic_[index];
         if (item.material->isBlended()) continue;
-        applyMaterial(*item.material, item.world, camera, settings);
+        applyMaterial(*item.material, item.world, view, projection, settings, item.probe);
         item.mesh->draw(device_);
         ++stats_.drawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
@@ -841,7 +932,8 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
         const GpuMesh* mesh = visibleGroupMesh_[g];
         if (mesh == nullptr) continue;
 
-        applyMaterial(*group.material, Matrix::getIdentityProperty(), camera, settings);
+        applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
+                      nullptr);
         InstancedRendererEXT instanced(device_, mesh->part());
         instanced.setFallbackEnabled(true);
         instanced.setInstances(visible);
@@ -859,10 +951,12 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
 void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& settings)
 {
     applyLighting(settings);
+    const Matrix& view = camera.view();
+    const Matrix& projection = camera.projection();
     for (std::size_t index : visibleTransparent_)
     {
         const SceneItem& item = items_[index];
-        applyMaterial(*item.material, item.world, camera, settings);
+        applyMaterial(*item.material, item.world, view, projection, settings, item.probe);
         item.mesh->draw(device_);
         ++stats_.drawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
@@ -871,7 +965,7 @@ void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& 
     {
         const SceneItem& item = dynamic_[index];
         if (!item.material->isBlended()) continue;
-        applyMaterial(*item.material, item.world, camera, settings);
+        applyMaterial(*item.material, item.world, view, projection, settings, item.probe);
         item.mesh->draw(device_);
         ++stats_.drawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
@@ -884,7 +978,8 @@ void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& 
         if (!group.material->isBlended()) continue;
         const GpuMesh* mesh = visibleGroupMesh_[g];
         if (mesh == nullptr) continue;
-        applyMaterial(*group.material, Matrix::getIdentityProperty(), camera, settings);
+        applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
+                      nullptr);
         InstancedRendererEXT instanced(device_, mesh->part());
         instanced.setFallbackEnabled(true);
         instanced.setInstances(visible);
@@ -932,6 +1027,322 @@ void SceneRenderer::dumpShadowAtlas(const std::string& path) const
                       + std::to_string(height) + " -> " + path + "  range "
                       + std::to_string(darkest) + ".." + std::to_string(brightest) + ", mean "
                       + std::to_string(mean));
+}
+
+// ---------------------------------------------------------------------------
+// Reflection probes
+// ---------------------------------------------------------------------------
+
+const ReflectionProbe* SceneRenderer::nearestProbe(const Vector3& at) const
+{
+    const ReflectionProbe* best = nullptr;
+    float bestDistance = 1e30f;
+    for (const auto& probe : probes_)
+    {
+        // Horizontal distance only: every probe stands at eye height, and a
+        // window on the fourth floor is still nearest the probe below it.
+        const float dx = probe->position.X - at.X;
+        const float dz = probe->position.Z - at.Z;
+        const float distance = dx * dx + dz * dz;
+        if (distance < bestDistance)
+        {
+            bestDistance = distance;
+            best = probe.get();
+        }
+    }
+    return best;
+}
+
+void SceneRenderer::drawProbeFace(const Vector3& eye, const Matrix& view, const Matrix& projection,
+                                  int size, const RenderSettings& settings)
+{
+    const BoundingFrustum frustum(view * projection);
+
+    // The sky first, depth writes off, scaled and encoded the way the geometry
+    // will be so the reader decodes both with one curve.
+    device_.setDepthStencilStateProperty(DepthStencilState::None);
+    device_.setBlendStateProperty(BlendState::Opaque);
+    sky_.draw(view, projection, size, size, 0.0f, lightScale_, true);
+
+    device_.setDepthStencilStateProperty(DepthStencilState::Default);
+    device_.setBlendStateProperty(BlendState::Opaque);
+    // Into an 8-bit target directly, so the effect's own sRGB encode is wanted.
+    usingSceneTarget_ = false;
+    applyLighting(settings);
+
+    // What a probe sees is decided from where it stands, not from the camera:
+    // a shop interior 34 m away is culled here exactly as it would be from a
+    // viewer at the probe.
+    auto visibleFrom = [&](const SceneItem& item) {
+        if (item.shadowOnly) return false;
+        const float limit = item.cullDistance > 0.0f
+                                ? std::min(item.cullDistance, settings.propCullDistance)
+                                : 0.0f;
+        if (limit > 0.0f && DistanceToBox(eye, item.worldBounds) > limit) return false;
+        return frustum.Contains(item.worldBounds) != ContainmentType::Disjoint;
+    };
+
+    for (const SceneItem& item : items_)
+    {
+        if (item.material->isBlended() || !visibleFrom(item)) continue;
+        applyMaterial(*item.material, item.world, view, projection, settings, nullptr);
+        item.mesh->draw(device_);
+    }
+
+    std::vector<Matrix> visible;
+    for (const InstanceGroup& group : groups_)
+    {
+        if (group.material->isBlended()) continue;
+        const float limit = group.cullDistance > 0.0f
+                                ? std::min(group.cullDistance, settings.propCullDistance)
+                                : settings.propCullDistance;
+        visible.clear();
+        float nearest = 1e30f;
+        for (std::size_t i = 0; i < group.transforms.size(); ++i)
+        {
+            const BoundingSphere& sphere = group.spheres[i];
+            const float distance = Vector3::Distance(eye, sphere.Center) - sphere.Radius;
+            if (distance > limit) continue;
+            if (frustum.Contains(sphere) == ContainmentType::Disjoint) continue;
+            visible.push_back(group.transforms[i]);
+            nearest = std::min(nearest, distance);
+        }
+        if (visible.empty()) continue;
+        const GpuMesh* mesh = group.lodMesh != nullptr && group.lodDistance > 0.0f
+                                      && nearest > group.lodDistance
+                                  ? group.lodMesh
+                                  : group.mesh;
+        applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
+                      nullptr);
+        InstancedRendererEXT instanced(device_, mesh->part());
+        instanced.setFallbackEnabled(true);
+        instanced.setInstances(visible);
+        instanced.draw(*effect_);
+    }
+
+    // The glass, over the top. It reflects the sky here rather than a probe --
+    // a probe capturing probes would be a second bake -- which for a pane seen
+    // in another pane's reflection is exactly right.
+    for (const SceneItem& item : items_)
+    {
+        if (!item.material->isBlended() || !visibleFrom(item)) continue;
+        applyMaterial(*item.material, item.world, view, projection, settings, nullptr);
+        item.mesh->draw(device_);
+    }
+    device_.setBlendStateProperty(BlendState::Opaque);
+}
+
+void SceneRenderer::captureProbe(ReflectionProbe& probe, RenderTarget2D& target, int size,
+                                 const RenderSettings& settings)
+{
+    // Half brightness into the 8-bit target, so a sunlit facade at 1.6 and a
+    // horizon at 1.3 both fit under 1.0 and only the sun disc clips. The
+    // effect's sRGB encode on the way out and the decode below are what keep
+    // the dark half of the range -- asphalt at 0.05 -- in more than a dozen
+    // steps. Both are undone when the texel is written into the cube.
+    lightScale_     = 0.5f;
+    capturingProbe_ = true;
+
+    // Shadows for the capture: the cascades are re-fitted to a camera looking
+    // straight down at the probe from 55 m, whose frustum covers the block
+    // around it. Every surface in the street then falls in the same one or two
+    // cascades whichever face is being drawn, because the receiver selects a
+    // cascade by depth along the *fitting* camera, not the drawing one -- and
+    // that is what makes one shadow pass serve six faces. The sunlit side of
+    // the street and the shaded side are the whole point of a reflection.
+    if (shadows_ != nullptr && settings.shadows)
+    {
+        DirectionalLightEXT light;
+        light.Direction = sky_.lightDirection();
+        light.Color     = sky_.sunColour();
+        const Vector3 above = probe.position + Vector3(0.0f, 55.0f, 0.0f);
+        const Matrix fitView = Matrix::CreateLookAt(above, probe.position, Vector3(0.0f, 0.0f, -1.0f));
+        const Matrix fitProjection =
+            Matrix::CreatePerspectiveFieldOfView(MathHelper::ToRadians(100.0f), 1.0f, 1.0f, 72.0f);
+        shadows_->update(light, fitView, fitProjection);
+        device_.setRasterizerStateProperty(RasterizerState::CullCounterClockwise);
+        device_.setDepthStencilStateProperty(DepthStencilState::Default);
+        device_.setBlendStateProperty(BlendState::Opaque);
+        for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
+        {
+            shadows_->begin(cascade);
+            drawCasters(probe.position, 80.0f, std::min(settings.propShadowDistance, 60.0f));
+            shadows_->end();
+        }
+    }
+
+    probe.environment = std::make_unique<TextureCube>(device_, size, false, SurfaceFormat::Color);
+    const std::size_t count = static_cast<std::size_t>(size) * static_cast<std::size_t>(size);
+    std::vector<Color> captured(count, Color::Black);
+    std::vector<Color> face(count, Color::Black);
+    const float cubeScale = sky_.environmentScale();
+
+    for (int f = 0; f < 6; ++f)
+    {
+        const CubeMapFace which = static_cast<CubeMapFace>(f);
+        Vector3 forward, up;
+        ProbeFaceBasis(which, forward, up);
+        const Matrix view = Matrix::CreateLookAt(probe.position, probe.position + forward, up);
+        const Matrix projection =
+            Matrix::CreatePerspectiveFieldOfView(MathHelper::PiOver2, 1.0f, 0.10f, 340.0f);
+
+        device_.SetRenderTarget(&target);
+        device_.Clear(Color::Black, 1.0f);
+        drawProbeFace(probe.position, view, projection, size, settings);
+        target.GetData(captured.data(), static_cast<int>(count));
+
+        for (int y = 0; y < size; ++y)
+            for (int x = 0; x < size; ++x)
+            {
+                const Color& pixel = captured[static_cast<std::size_t>(y) * size
+                                              + static_cast<std::size_t>(x)];
+                // Mirrored in x: see ProbeFaceBasis.
+                const std::size_t at = static_cast<std::size_t>(y) * size
+                                       + static_cast<std::size_t>(size - 1 - x);
+                const float r = DecodeSrgb(pixel.getRProperty()) / lightScale_;
+                const float g = DecodeSrgb(pixel.getGProperty()) / lightScale_;
+                const float b = DecodeSrgb(pixel.getBProperty()) / lightScale_;
+                face[at] = Color(static_cast<int>(EncodeCube(r, cubeScale)),
+                                 static_cast<int>(EncodeCube(g, cubeScale)),
+                                 static_cast<int>(EncodeCube(b, cubeScale)), 255);
+            }
+        probe.environment->SetData(which, face.data(), static_cast<int>(count));
+    }
+
+    lightScale_     = 1.0f;
+    capturingProbe_ = false;
+}
+
+void SceneRenderer::bakeReflectionProbes(std::vector<Vector3> positions,
+                                         const RenderSettings& settings)
+{
+    probePositions_ = std::move(positions);
+    probes_.clear();
+    boundProbe_       = nullptr;
+    environmentBound_ = false;
+    for (SceneItem& item : items_) item.probe = nullptr;
+
+    if (!settings.reflectionProbes || probePositions_.empty()) return;
+    if (effect_ == nullptr) return;
+    if (!sky_.hasImageBasedLighting() || !device_.SupportsImageBasedLightingEXT())
+    {
+        limitations_.emplace_back("no image based lighting, so no local reflection probes");
+        return;
+    }
+    if (!device_.SupportsCapability(CNA::GraphicsCapability::ThreeD)) return;
+
+    Stopwatch watch = Stopwatch::StartNew();
+    const int size = std::clamp(settings.probeFaceSize, 16, 128);
+
+    std::unique_ptr<RenderTarget2D> target;
+    try
+    {
+        target = std::make_unique<RenderTarget2D>(device_, size, size, false, SurfaceFormat::Color,
+                                                  DepthFormat::Depth24);
+    }
+    catch (const std::exception& failure)
+    {
+        limitations_.emplace_back(std::string("no render target for reflection probes: ")
+                                  + failure.what());
+        return;
+    }
+
+    // The static list has to be in draw order before the first capture, and
+    // cull() only sorts it on the first frame.
+    if (!sceneSorted_)
+    {
+        std::stable_sort(items_.begin(), items_.end(),
+                         [](const SceneItem& a, const SceneItem& b) {
+                             return a.material < b.material;
+                         });
+        sceneSorted_ = true;
+    }
+
+    EnvironmentProcessor processor(device_);
+    // Fewer samples than the sky's convolution: a probe face is a quarter the
+    // size and there are thirty of them, and the reflection of a parked car
+    // does not need the sky's smoothness.
+    const int prefilterSamples = size >= 64 ? 32 : 24;
+    for (const Vector3& position : probePositions_)
+    {
+        auto probe = std::make_unique<ReflectionProbe>();
+        probe->position = position;
+        try
+        {
+            captureProbe(*probe, *target, size, settings);
+            probe->prefiltered = processor.generatePrefilteredSpecular(
+                probe->environment.get(), size, probe->prefilteredMips, prefilterSamples);
+            if (settings.probeIrradiance)
+                probe->irradiance = processor.generateIrradiance(probe->environment.get(), 16, 24);
+        }
+        catch (const std::exception& failure)
+        {
+            CNA::Logger::Warn(std::string("cna-street: reflection probe failed: ") + failure.what());
+            lightScale_     = 1.0f;
+            capturingProbe_ = false;
+            continue;
+        }
+        probes_.push_back(std::move(probe));
+    }
+    device_.SetRenderTarget(nullptr);
+
+    for (SceneItem& item : items_) item.probe = nearestProbe(BoxCentre(item.worldBounds));
+
+    probeBakeSeconds_ = Milliseconds(watch) / 1000.0f;
+    CNA::Logger::Info("cna-street: " + std::to_string(probes_.size()) + " reflection probes at "
+                      + std::to_string(size) + " px baked in "
+                      + std::to_string(probeBakeSeconds_) + " s");
+}
+
+void SceneRenderer::rebakeReflectionProbes(const RenderSettings& settings)
+{
+    if (probePositions_.empty()) return;
+    bakeReflectionProbes(probePositions_, settings);
+}
+
+void SceneRenderer::dumpReflectionProbes(const std::string& directory) const
+{
+    if (probes_.empty())
+    {
+        CNA::Logger::Warn("cna-street: no reflection probes to dump");
+        return;
+    }
+    std::filesystem::create_directories(directory);
+    int index = 0;
+    for (const auto& probe : probes_)
+    {
+        if (probe->environment == nullptr) continue;
+        const int size = probe->environment->getSizeProperty();
+        const std::size_t count = static_cast<std::size_t>(size) * static_cast<std::size_t>(size);
+        std::vector<Color> face(count);
+        // Six faces side by side, +X -X +Y -Y +Z -Z, in the order the cube
+        // stores them.
+        std::vector<std::uint8_t> strip(count * 6u * 4u, 0);
+        for (int f = 0; f < 6; ++f)
+        {
+            probe->environment->GetData(static_cast<CubeMapFace>(f), face.data(),
+                                        static_cast<int>(count));
+            for (int y = 0; y < size; ++y)
+                for (int x = 0; x < size; ++x)
+                {
+                    const Color& c = face[static_cast<std::size_t>(y) * size
+                                          + static_cast<std::size_t>(x)];
+                    const std::size_t at = (static_cast<std::size_t>(y) * size * 6u
+                                            + static_cast<std::size_t>(f) * size
+                                            + static_cast<std::size_t>(x))
+                                           * 4u;
+                    strip[at + 0] = static_cast<std::uint8_t>(c.getRProperty());
+                    strip[at + 1] = static_cast<std::uint8_t>(c.getGProperty());
+                    strip[at + 2] = static_cast<std::uint8_t>(c.getBProperty());
+                    strip[at + 3] = 255;
+                }
+        }
+        char name[32];
+        std::snprintf(name, sizeof(name), "probe-%02d.png", index++);
+        Texture2D image = Texture2D::CreateFromPixels(device_, size * 6, size, strip);
+        image.SaveAsPng((std::filesystem::path(directory) / name).string());
+    }
+    CNA::Logger::Info("cna-street: wrote " + std::to_string(index) + " probe strips to " + directory);
 }
 
 void SceneRenderer::render(const Camera& camera, const RenderSettings& settings, float timeSeconds)

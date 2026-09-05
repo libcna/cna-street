@@ -47,6 +47,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             hdr = false;  bloom = false;  ssao = false;  fxaa = false;
             heightFog = true;  lightShafts = false;  ssr = false;  depthOfField = false;
             clouds = true;
+            reflectionProbes = false;
             propCullDistance = 105.0f;
             pedestrianCullDistance = 70.0f;  pedestrianDetailDistance = 12.0f;
             break;
@@ -56,6 +57,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             shadowDistance = 120.0f; propShadowDistance = 52.0f;
             hdr = true;   bloom = true;   ssao = false;  fxaa = true;
             heightFog = true;  lightShafts = false;  ssr = false;  depthOfField = false;
+            reflectionProbes = true;  probeFaceSize = 32;  probeSpacing = 32.0f;
             propCullDistance = 160.0f;
             pedestrianCullDistance = 100.0f;  pedestrianDetailDistance = 16.0f;
             break;
@@ -65,6 +67,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             shadowDistance = 175.0f; propShadowDistance = 74.0f;
             hdr = true;   bloom = true;   ssao = true;   fxaa = true;
             heightFog = true;  lightShafts = true;  ssr = false;  depthOfField = false;
+            reflectionProbes = true;  probeFaceSize = 64;  probeSpacing = 24.0f;
             propCullDistance = 215.0f;
             pedestrianCullDistance = 130.0f;  pedestrianDetailDistance = 20.0f;
             break;
@@ -75,6 +78,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             hdr = true;   bloom = true;   ssao = true;   fxaa = true;
             heightFog = true;  lightShafts = true;  ssr = true;   depthOfField = false;
             ssaoIntensity = 0.85f;
+            reflectionProbes = true;  probeFaceSize = 96;  probeSpacing = 18.0f;
             propCullDistance = 320.0f;
             pedestrianCullDistance = 185.0f;  pedestrianDetailDistance = 28.0f;
             break;
@@ -128,6 +132,8 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"heightFog", &s.heightFog}, {"fogDensity", &s.fogDensity},
         {"fogFalloff", &s.fogFalloff},
         {"lightShafts", &s.lightShafts}, {"ssr", &s.ssr}, {"depthOfField", &s.depthOfField},
+        {"reflectionProbes", &s.reflectionProbes}, {"probeIrradiance", &s.probeIrradiance},
+        {"probeSpacing", &s.probeSpacing}, {"probeFaceSize", &s.probeFaceSize},
 
         {"traffic", &s.traffic}, {"pedestrians", &s.pedestrians},
         {"vegetation", &s.vegetation}, {"streetFurniture", &s.streetFurniture},

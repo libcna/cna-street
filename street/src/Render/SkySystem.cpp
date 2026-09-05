@@ -63,6 +63,7 @@ uniform float uTime;
 uniform float uCloudCoverage;
 uniform float uCloudsEnabled;
 uniform float uFlipV;
+uniform float uEncodeSrgb;
 
 // --- value noise, matching the CPU generator's shape ----------------------
 float hash12(vec2 p) {
@@ -176,6 +177,12 @@ void main() {
     vec3 ground = mix(haze, vec3(0.10, 0.098, 0.095) * uIntensity, 0.55);
     sky = mix(sky, ground, below);
 
+    if (uEncodeSrgb > 0.5) {
+        // Into an 8-bit capture, the way PbrEffect writes its own output there:
+        // the probe reader decodes both with one curve.
+        vec3 c = clamp(sky, 0.0, 1.0);
+        sky = mix(c * 12.92, 1.055 * pow(c, vec3(1.0 / 2.4)) - 0.055, step(0.0031308, c));
+    }
     FragColor = vec4(sky, 1.0);
 }
 )";
@@ -197,9 +204,9 @@ Matrix RotationOnly(const Matrix& view)
     return rotation;
 }
 
-/// World direction for a texel of a cube face, following the standard cube map
-/// convention CNA's `TextureCube` uses.
-Vector3 CubeDirection(CubeMapFace face, float u, float v)
+}  // namespace
+
+Vector3 SkySystem::cubeDirection(CubeMapFace face, float u, float v)
 {
     const float a = u * 2.0f - 1.0f;
     const float b = v * 2.0f - 1.0f;
@@ -214,6 +221,8 @@ Vector3 CubeDirection(CubeMapFace face, float u, float v)
     }
     return Vector3::Up;
 }
+
+namespace {
 
 /// Quantises one channel of the environment cube.
 ///
@@ -426,7 +435,7 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
             {
                 const float u = (static_cast<float>(x) + 0.5f) / static_cast<float>(kFaceSize);
                 const float v = (static_cast<float>(y) + 0.5f) / static_cast<float>(kFaceSize);
-                Vector3 direction = CubeDirection(which, u, v);
+                Vector3 direction = SkySystem::cubeDirection(which, u, v);
 
                 Vector3 radiance;
                 if (direction.Y >= 0.0f)
@@ -534,7 +543,7 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
 }
 
 void SkySystem::draw(const Matrix& view, const Matrix& projection, int width, int height,
-                     float timeSeconds)
+                     float timeSeconds, float intensityScale, bool encodeSrgb)
 {
     if (!supported_ || effect_ == nullptr || fullscreen_ == nullptr) return;
     if (width <= 0 || height <= 0) return;
@@ -545,11 +554,12 @@ void SkySystem::draw(const Matrix& view, const Matrix& projection, int width, in
     const Vector3 travel = lightDirection();
     effect_->SetUniformVec3("uSunDirection", travel.X, travel.Y, travel.Z);
     effect_->SetUniformFloat("uTurbidity", turbidity_);
-    effect_->SetUniformFloat("uIntensity", skyIntensity_);
+    effect_->SetUniformFloat("uIntensity", skyIntensity_ * intensityScale);
     effect_->SetUniformFloat("uTime", timeSeconds * cloudSpeed_ * 60.0f);
     effect_->SetUniformFloat("uCloudCoverage", cloudCoverage_);
     effect_->SetUniformFloat("uCloudsEnabled", cloudsEnabled_ ? 1.0f : 0.0f);
     effect_->SetUniformFloat("uFlipV", flipV_ ? 1.0f : 0.0f);
+    effect_->SetUniformFloat("uEncodeSrgb", encodeSrgb ? 1.0f : 0.0f);
 
     fullscreen_->drawOverCurrentTarget(white_.get(), effect_.get(), width, height);
 }

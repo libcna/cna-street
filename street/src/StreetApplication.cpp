@@ -110,6 +110,8 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --exposure <v>                    exposure multiplier\n"
                 "  --shadow-debug                    tint each shadow cascade\n"
                 "  --no-shadows --no-bloom --no-ssao --no-fog --no-clouds --no-ibl\n"
+                "  --no-probes                       sky-only reflections, no local probes\n"
+                "  --dump-probes <dir>               write each reflection probe as a face strip\n"
                 "  --no-traffic --no-pedestrians --no-vegetation --no-overlay\n"
                 "  --sun <elevation> <azimuth>       sun position in degrees\n"
                 "  --night                           civil twilight, street lights on\n"
@@ -164,6 +166,8 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--cascades")      { const char* v = next(i); if (v) settings_.shadowCascades = std::atoi(v); }
         else if (arg == "--shadow-bias")   { const char* v = next(i); if (v) settings_.shadowDepthBias = static_cast<float>(std::atof(v)); }
         else if (arg == "--dump-shadow")  { const char* v = next(i); if (v) shadowDumpPath_ = v; }
+        else if (arg == "--dump-probes")  { const char* v = next(i); if (v) probeDumpPath_ = v; }
+        else if (arg == "--no-probes")      settings_.reflectionProbes = false;
         else if (arg == "--no-shadows")     settings_.shadows = false;
         else if (arg == "--no-bloom")       settings_.bloom = false;
         else if (arg == "--no-ssao")        settings_.ssao = false;
@@ -368,6 +372,7 @@ void StreetApplication::handleHotkeys(const KeyboardState& keyboard, const Keybo
     {
         settings_.clouds = !settings_.clouds;
         renderer_->sky().updateSun(settings_);
+        probesStale_ = true;
     }
     if (Pressed(keyboard, previous, Keys::F9))
     {
@@ -398,6 +403,14 @@ void StreetApplication::handleHotkeys(const KeyboardState& keyboard, const Keybo
         sunMoved = true;
     }
     if (sunMoved) renderer_->sky().updateSun(settings_);
+    // The probes are pictures of the street under the sun that was; they follow
+    // it when it stops moving, not while it is being dragged.
+    if (sunMoved) probesStale_ = true;
+    else if (probesStale_)
+    {
+        probesStale_ = false;
+        renderer_->rebakeReflectionProbes(settings_);
+    }
 }
 
 void StreetApplication::Update(GameTime& gameTime)
@@ -467,6 +480,11 @@ void StreetApplication::Draw(const GameTime& gameTime)
     {
         renderer_->dumpShadowAtlas(shadowDumpPath_);
         shadowDumpPath_.clear();
+    }
+    if (!probeDumpPath_.empty())
+    {
+        renderer_->dumpReflectionProbes(probeDumpPath_);
+        probeDumpPath_.clear();
     }
     if (!screenshotPath_.empty() && framesDrawn_ >= 3)
     {

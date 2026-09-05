@@ -17,7 +17,9 @@
 namespace Microsoft::Xna::Framework::Graphics {
     class GraphicsDevice;
     class PbrEffect;
+    class RenderTarget2D;
     class SkinnedPbrEffect;
+    class TextureCube;
 }
 
 namespace CNA::Graphics {
@@ -52,6 +54,30 @@ struct SkinnedItem
     const std::vector<Microsoft::Xna::Framework::Matrix>* bones = nullptr;
 };
 
+/**
+ * @brief The street as seen from one point, in the forms `PbrEffect` samples.
+ *
+ * The sky cube lights every surface in the scene as though it stood on an
+ * empty plain under an open sky. Most of what a car door or a shop window
+ * actually reflects is the street: the facade opposite, the kerb, the parked
+ * cars, a strip of sky between the eaves. A probe is that view, captured once
+ * at scene build by rendering the static scene six ways from a point on the
+ * carriageway, convolved by `EnvironmentProcessor` exactly as the sky is, and
+ * handed to every draw near it through `ImageBasedLightEXT` -- the same field
+ * the sky arrives through, so the effect never knows the difference.
+ *
+ * Its texels are stored at the sky cube's own scale, so the one `Intensity`
+ * on the bundle is right whichever cube fills each slot.
+ */
+struct ReflectionProbe
+{
+    Microsoft::Xna::Framework::Vector3 position;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> environment;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> prefiltered;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> irradiance;
+    int prefilteredMips = 5;
+};
+
 /// One piece of static geometry in the world.
 struct SceneItem
 {
@@ -68,6 +94,8 @@ struct SceneItem
     /// Written into the shadow map and nowhere else. The stand-in a skinned
     /// character casts with, because CNA's cascade caster has no bone palette.
     bool shadowOnly = false;
+    /// The local environment this item reflects, or null for the sky's.
+    const ReflectionProbe* probe = nullptr;
 };
 
 /// A set of copies of one mesh, drawn with one instanced call.
@@ -176,6 +204,25 @@ public:
     /// map from a correct one that is being sampled wrongly, and worth keeping.
     void dumpShadowAtlas(const std::string& path) const;
 
+    // --- reflection probes --------------------------------------------------
+    /// Captures the registered static scene from each of @p positions and
+    /// assigns every registered item the nearest one. Call once the static
+    /// scene is complete and before the first frame; costs a few seconds.
+    /// Does nothing, and clears any earlier set, when the settings turn probes
+    /// off or the renderer has no image-based lighting to feed them into.
+    void bakeReflectionProbes(std::vector<Microsoft::Xna::Framework::Vector3> positions,
+                              const RenderSettings& settings);
+    /// Captures the same positions again -- after the sun has moved.
+    void rebakeReflectionProbes(const RenderSettings& settings);
+    [[nodiscard]] const ReflectionProbe* nearestProbe(
+        const Microsoft::Xna::Framework::Vector3& at) const;
+    [[nodiscard]] std::size_t probeCount() const { return probes_.size(); }
+    /// How long the last bake took, for the overlay and the log.
+    [[nodiscard]] float probeBakeSeconds() const { return probeBakeSeconds_; }
+    /// Writes each probe's environment cube as a strip of six faces, so a
+    /// capture that came out mirrored or upside down can be seen to be.
+    void dumpReflectionProbes(const std::string& directory) const;
+
     /// What the scene costs, broken down by the name each batch was registered
     /// under, heaviest first. A frame time says the scene got slower; this says
     /// which part of it did, which is the difference between tuning and
@@ -207,8 +254,25 @@ private:
     void drawPrepass(const Camera& camera, const RenderSettings& settings);
     void cull(const Camera& camera, const RenderSettings& settings);
     void applyMaterial(const Material& material, const Microsoft::Xna::Framework::Matrix& world,
-                       const Camera& camera, const RenderSettings& settings);
+                       const Microsoft::Xna::Framework::Matrix& view,
+                       const Microsoft::Xna::Framework::Matrix& projection,
+                       const RenderSettings& settings, const ReflectionProbe* probe);
     void applyLighting(const RenderSettings& settings);
+    /// Binds @p probe's cubes -- or the sky's, for null -- as the effect's
+    /// image-based light, skipping the upload when they are already bound.
+    void applyEnvironment(const ReflectionProbe* probe, const RenderSettings& settings);
+    /// Everything that casts, written into the cascade currently open, seen
+    /// from @p eye. Shared by the frame's shadow pass and the probe capture.
+    void drawCasters(const Microsoft::Xna::Framework::Vector3& eye, float split,
+                     float propShadowLimit);
+    /// One face of a probe: the sky, then the static scene, from @p view.
+    void drawProbeFace(const Microsoft::Xna::Framework::Vector3& eye,
+                       const Microsoft::Xna::Framework::Matrix& view,
+                       const Microsoft::Xna::Framework::Matrix& projection, int size,
+                       const RenderSettings& settings);
+    void captureProbe(ReflectionProbe& probe,
+                      Microsoft::Xna::Framework::Graphics::RenderTarget2D& target, int size,
+                      const RenderSettings& settings);
 
     Microsoft::Xna::Framework::Graphics::GraphicsDevice& device_;
     MaterialLibrary& materials_;
@@ -233,6 +297,18 @@ private:
     std::vector<std::size_t> visibleDynamic_;
     std::vector<std::vector<Microsoft::Xna::Framework::Matrix>> visibleGroupTransforms_;
     std::vector<const GpuMesh*> visibleGroupMesh_;
+
+    std::vector<std::unique_ptr<ReflectionProbe>> probes_;
+    std::vector<Microsoft::Xna::Framework::Vector3> probePositions_;
+    float probeBakeSeconds_ = 0.0f;
+    /// Which environment the effect currently carries, so a run of draws
+    /// sharing a probe uploads it once. Reset whenever the lighting is.
+    const ReflectionProbe* boundProbe_ = nullptr;
+    bool environmentBound_ = false;
+    /// Multiplies the sun, the ambient and the sky while a probe is being
+    /// captured into an 8-bit target, and 1 for the frame. See captureProbe.
+    float lightScale_ = 1.0f;
+    bool  capturingProbe_ = false;
 
     int  width_  = 1280;
     int  height_ = 720;

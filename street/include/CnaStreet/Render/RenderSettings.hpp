@@ -88,11 +88,11 @@ struct RenderSettings
     /// hemisphere ambient term, which is also what a renderer without IBL gets.
     bool  imageBasedLighting  = true;
     /// Multiplies the whole image-based ambient term. 1.0 is the physically
-    /// consistent value -- the sky really is that bright next to the sun -- and
-    /// it is exposed because a street canyon's real ambient is *less* than an
-    /// open hemisphere's, and this is the one number that says by how much
-    /// without lying about the sky itself.
-    float iblIntensity        = 0.86f;
+    /// consistent value -- the sky really is that bright next to the sun. It
+    /// used to sit at 0.86 to stand in for the sky a street canyon cannot
+    /// see; the reflection probes now capture that canyon, walls and all, so
+    /// the stand-in would count the same occlusion twice.
+    float iblIntensity        = 1.0f;
     float skyTurbidity        = 2.9f;
     float skyIntensity        = 1.0f;
     bool  clouds = true;
@@ -117,6 +117,27 @@ struct RenderSettings
     bool  lightShafts = true;
     bool  ssr = false;
     bool  depthOfField = false;
+
+    // --- reflections ---
+    /// Local environment capture. The street is rendered into a small cube
+    /// map from a row of points along each carriageway at scene build, and
+    /// every draw near one of them reads its image-based lighting from that
+    /// cube instead of from the sky's. A car then reflects the building it is
+    /// parked outside and a shop window reflects the street in front of it,
+    /// which is the single cue the sky-only environment could never supply:
+    /// under a sky cube alone a dark car is a dark shape.
+    bool  reflectionProbes = true;
+    /// Whether a probe's own irradiance replaces the sky's for the diffuse
+    /// ambient term as well. A street canyon sees a third of the sky the
+    /// open hemisphere does and is lit the rest of the way by the sunlit
+    /// facade opposite; the probe has both, the sky cube has neither.
+    bool  probeIrradiance = true;
+    /// Distance between probes along a carriageway, in metres.
+    float probeSpacing = 24.0f;
+    /// Edge length of one captured cube face, in pixels. 64 resolves a car
+    /// parked across the street as a car; 32 as a coloured smear, which is
+    /// still what a glossy panel reflects at a glance.
+    int   probeFaceSize = 64;
 
     // --- content ---
     bool traffic = true;

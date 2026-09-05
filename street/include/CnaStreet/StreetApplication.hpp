@@ -110,6 +110,10 @@ private:
     int         captureSettle_   = 0;
     std::string screenshotPath_;
     std::string shadowDumpPath_;
+    std::string probeDumpPath_;
+    /// The sun moved this session and the reflection probes have not followed
+    /// it yet. Re-baked on the first frame the sun holds still.
+    bool probesStale_ = false;
     std::string settingsPath_;
     /// Where `--content` points, or empty for `<assets>/content`.
     std::string contentDirectory_;

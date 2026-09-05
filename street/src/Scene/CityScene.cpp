@@ -163,6 +163,12 @@ void CityScene::build(const RenderSettings& settings)
                       + std::to_string(buildStats_.staticBatches) + " batches, "
                       + std::to_string(buildStats_.triangles) + " triangles, "
                       + std::to_string(buildStats_.meshBytes / (1024u * 1024u)) + " MiB");
+
+    // Everything static is registered; capture what it looks like from the
+    // carriageway, so the things that move through it have a street to reflect.
+    // Timed and logged on its own, after the build it depends on.
+    CNA::Logger::Info("cna-street: capturing reflection probes");
+    renderer_.bakeReflectionProbes(probePositions(settings), settings);
 }
 
 void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
@@ -171,17 +177,18 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
     // to stand on so the horizon is not empty, and close the view down each arm
     // with more city, because a street that ends in sky at 130 m is a set.
     //
-    // These are blocks, not buildings: no windows, no reveals, no roofs beyond a
-    // parapet. They are 200 m away and behind everything, and detail there would
-    // be geometry nobody can resolve.
+    // Two grades of it. The blocks that continue the two streets past the
+    // modelled frontage are *near* context -- the first of them starts 136 m
+    // from the junction and a viewer at the far end of the modelled street is
+    // standing next to it -- and they carry real window openings, a shopfront
+    // strip, a plinth and a cornice, because at forty metres a painted window
+    // is a sticker and a recessed one is a window. The scatter of blocks on the
+    // skyline beyond is 240 m away and stays painted.
     const Material* ground = &materials_.get(MaterialId::AsphaltWorn);
     const Material* grass  = &materials_.get(MaterialId::Grass);
 
     // The ground plane, in cells so it culls, and set a little below the road so
     // it can never win a depth fight with it.
-    // Small cells, and green is the exception. At 92 m a cell is a field, and a
-    // third of them green turned the district's surroundings into a chequerboard
-    // of meadows visible from any camera above the roofline.
     constexpr float kReach = 460.0f;
     constexpr float kStep  = 38.0f;
     for (float x = -kReach; x < kReach; x += kStep)
@@ -630,6 +637,41 @@ void CityScene::submitPeople(const RenderSettings& settings)
         if (distance < settings.propShadowDistance)
             submitProp(character.shadowProxy, world, nullptr, true);
     }
+}
+
+std::vector<Vector3> CityScene::probePositions(const RenderSettings& settings) const
+{
+    // Where the reflective things are. Parked cars stand in the two parking
+    // lanes at x = +/-4.4 and the shop glass is five metres behind them at the
+    // building line, so a row of probes over each parking lane -- at the eye
+    // height of the surfaces that read them, a car's flank and a pane at
+    // shoulder height -- serves both: a car reflects the facade it is parked
+    // outside and a window reflects the cars parked in front of it. The side
+    // street gets a row over each travel lane, and the junction one in the
+    // middle. Everything on the far footway picks the row on its own side.
+    std::vector<Vector3> positions;
+    const float spacing = std::max(8.0f, settings.probeSpacing);
+    const float eye = 1.55f;
+    const float mainX = M::kMainCarriagewayWidth * 0.5f - M::kParkingLaneWidth * 0.5f;
+    const float sideZ = M::kSideCarriagewayWidth * 0.25f;
+    positions.emplace_back(0.0f, eye, 0.0f);
+    for (float z = spacing * 0.5f; z < M::kMainStreetHalfLength - 2.0f; z += spacing)
+        for (const float sign : {-1.0f, 1.0f})
+        {
+            if (sign * z > -M::kSideStreetHalfWidth - 1.0f
+                && sign * z < M::kSideStreetHalfWidth + 1.0f)
+                continue;
+            positions.emplace_back(-mainX, eye, sign * z);
+            positions.emplace_back(mainX, eye, sign * z);
+        }
+    for (float x = M::kMainStreetHalfWidth + spacing * 0.5f; x < M::kSideStreetHalfLength - 2.0f;
+         x += spacing)
+        for (const float sign : {-1.0f, 1.0f})
+        {
+            positions.emplace_back(sign * x, eye, -sideZ);
+            positions.emplace_back(sign * x, eye, sideZ);
+        }
+    return positions;
 }
 
 float CityScene::groundHeight(float x, float z) const

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include "Microsoft/Xna/Framework/Graphics/CubeMapFace.hpp"
 #include "Microsoft/Xna/Framework/Matrix.hpp"
 #include "Microsoft/Xna/Framework/Vector3.hpp"
 
@@ -59,9 +60,22 @@ public:
 
     /// Draws the sky over the whole target. Must run before the scene geometry
     /// with depth writes off.
+    ///
+    /// @p intensityScale multiplies the whole sky, and @p encodeSrgb writes it
+    /// sRGB-encoded rather than linear. Both exist for the reflection-probe
+    /// capture, which renders into an 8-bit target: the scale keeps a horizon
+    /// brighter than 1.0 inside the range, and the encode is how a dark road
+    /// keeps more than four distinguishable shades in it. The main frame passes
+    /// neither.
     void draw(const Microsoft::Xna::Framework::Matrix& view,
               const Microsoft::Xna::Framework::Matrix& projection, int width, int height,
-              float timeSeconds);
+              float timeSeconds, float intensityScale = 1.0f, bool encodeSrgb = false);
+
+    /// World direction of a cube-map texel, in the face layout `TextureCube`
+    /// and `EnvironmentProcessor` use. Public because the reflection probes
+    /// have to write their captures into the same layout.
+    [[nodiscard]] static Microsoft::Xna::Framework::Vector3 cubeDirection(
+        Microsoft::Xna::Framework::Graphics::CubeMapFace face, float u, float v);
 
     /// Whether the sky's screen-space Y has to be flipped. See the note in the
     /// fragment program: it depends on the texture-coordinate origin the

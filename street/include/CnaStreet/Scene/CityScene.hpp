@@ -144,6 +144,10 @@ private:
     void lightTheStreet(const RenderSettings& settings);
     /// Advances every pedestrian's animation and submits the crowd.
     void submitPeople(const RenderSettings& settings);
+    /// Where the renderer captures its reflection probes: a row over each
+    /// parking lane and each side-street lane, at the pitch the settings ask.
+    [[nodiscard]] std::vector<Microsoft::Xna::Framework::Vector3> probePositions(
+        const RenderSettings& settings) const;
 
     Microsoft::Xna::Framework::Graphics::GraphicsDevice& device_;
     SceneRenderer&  renderer_;
