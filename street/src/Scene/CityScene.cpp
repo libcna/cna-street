@@ -122,14 +122,6 @@ void CityScene::build(const RenderSettings& settings)
     CNA::Logger::Info("cna-street: dressing the windows");
     buildShopDisplays(settings);
 
-    CNA::Logger::Info("cna-street: closing the skyline");
-    {
-        GeometryCollector collector;
-        Rng rng = Rng::derive(settings.seed, "context");
-        buildContext(collector, rng);
-        publish(collector, 0.0f, 0.0f);
-    }
-
     if (settings.streetFurniture)
     {
         CNA::Logger::Info("cna-street: placing street furniture");
@@ -155,6 +147,17 @@ void CityScene::build(const RenderSettings& settings)
     CNA::Logger::Info("cna-street: traffic and people");
     buildTrafficAndPeople(settings);
 
+    // After the trees and the vehicles, because the district beyond the
+    // frontage borrows both: the same far trees at the same pitch, and the
+    // same distant car bodies parked along its kerbs.
+    CNA::Logger::Info("cna-street: closing the skyline");
+    {
+        GeometryCollector collector;
+        Rng rng = Rng::derive(settings.seed, "context");
+        buildContext(collector, rng, settings);
+        publish(collector, 0.0f, 0.0f);
+    }
+
     buildViewpoints();
 
     buildStats_.buildSeconds = static_cast<float>(watch.getElapsedTicksProperty()) / 1.0e7f;
@@ -171,7 +174,8 @@ void CityScene::build(const RenderSettings& settings)
     renderer_.bakeReflectionProbes(probePositions(settings), settings);
 }
 
-void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
+void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
+                             const RenderSettings& settings)
 {
     // Everything outside the modelled block. Two jobs: give the street a ground
     // to stand on so the horizon is not empty, and close the view down each arm
@@ -196,10 +200,6 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
         {
             const float x1 = std::min(x + kStep, kReach);
             const float z1 = std::min(z + kStep, kReach);
-            // Laid under the street rather than around it: leaving a hole where
-            // the modelled block sits shows the sky's below-horizon haze through
-            // every gap between a building and the kerb.
-            //
             // Varied at 38 m and batched at 152 m. The variation has to be fine
             // or the surroundings read as a chequerboard of fields from any
             // camera above the roofline; the batching has to be coarse or the
@@ -208,15 +208,10 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
             constexpr float kBatch = 152.0f;
             const int coarseX = static_cast<int>(std::floor((x + x1) * 0.5f / kBatch));
             const int coarseZ = static_cast<int>(std::floor((z + z1) * 0.5f / kBatch));
-            // Offset clear of the keys setRegion() derives for the blocks
-            // in this same collector, so a collision cannot quietly merge a
-            // ground cell with a building.
             collector.setRegionKey(1000000 + coarseX * 64 + coarseZ);
             // Mostly the hard surface a dense district actually is, with the
-            // occasional green cell for a park or a courtyard. Fourteen per cent
-            // green over a 38 m cell was a chequerboard of meadows from any
-            // camera above the roofline; six per cent, correlated so green cells
-            // touch, reads as two or three parks.
+            // occasional green cell for a park or a courtyard, correlated so
+            // green cells touch and read as two or three parks.
             const float greenNoise = Noise::fbm((x + kReach) * 0.011f, (z + kReach) * 0.011f, 64,
                                                 2, 2.0f, 0.5f, 7717u);
             const Material* surface = greenNoise > 0.72f ? grass : ground;
@@ -226,48 +221,93 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
                             Vector3(x1, -0.04f, z));
         }
 
-    // The blocks that continue the street wall past the modelled plots, and the
-    // ones that close each arm.
-    //
-    // They carry a *façade* rather than a wall material: one tiling image of a
-    // whole storey, with openings, sills, frames and glass that is variously
-    // dark, curtained or catching the sky. Painted rather than modelled because
-    // at two hundred metres a real reveal is a sub-pixel -- but the difference
-    // between having windows and not having them is the whole picture, and the
-    // blank massing this replaces was the loudest thing in every aerial shot.
+    // --- the streets continue --------------------------------------------
+    // Carriageway at road level, a footway at kerb height each side, and the
+    // kerb face between them, out to where the far block closes the view. The
+    // modelled highway stops at 130 m; without this the street beyond it was a
+    // flat plane the buildings stood on, with no kerb line to carry the eye.
+    const Material* asphalt = &materials_.get(MaterialId::AsphaltMain);
+    const Material* paving  = &materials_.get(MaterialId::ConcretePaving);
+    const Material* kerb    = &materials_.get(MaterialId::GraniteKerb);
+    auto street = [&](bool alongZ, float from, float to, float halfRoad, float line) {
+        const float sign = to > from ? 1.0f : -1.0f;
+        for (float s0 = from; sign * (to - s0) > 0.5f; s0 += sign * GeometryCollector::kCellSize)
+        {
+            const float s1 = sign > 0.0f ? std::min(s0 + GeometryCollector::kCellSize, to)
+                                         : std::max(s0 - GeometryCollector::kCellSize, to);
+            const float a = std::min(s0, s1), b = std::max(s0, s1);
+            collector.setRegion(alongZ ? 0.0f : (a + b) * 0.5f, alongZ ? (a + b) * 0.5f : 0.0f);
+            MeshBuilder& road = collector.builder(asphalt);
+            road.setTileSize(5.0f);
+            MeshBuilder& slab = collector.builder(paving);
+            slab.setTileSize(4.0f);
+            MeshBuilder& stone = collector.builder(kerb);
+            stone.setTileSize(1.0f, 0.35f);
+            const float y = M::kCurbHeight;
+            if (alongZ)
+            {
+                road.addQuad(Vector3(-halfRoad, 0.0f, a), Vector3(-halfRoad, 0.0f, b),
+                             Vector3(halfRoad, 0.0f, b), Vector3(halfRoad, 0.0f, a));
+                for (const float side : {-1.0f, 1.0f})
+                {
+                    const float x0 = side * halfRoad, x1 = side * line;
+                    slab.addQuadFacing(Vector3(x0, y, a), Vector3(x0, y, b), Vector3(x1, y, b),
+                                       Vector3(x1, y, a), Vector3::Up);
+                    stone.addQuadFacing(Vector3(x0, 0.0f, a), Vector3(x0, 0.0f, b),
+                                        Vector3(x0, y, b), Vector3(x0, y, a),
+                                        Vector3(-side, 0.0f, 0.0f));
+                }
+            }
+            else
+            {
+                road.addQuad(Vector3(a, 0.0f, -halfRoad), Vector3(a, 0.0f, halfRoad),
+                             Vector3(b, 0.0f, halfRoad), Vector3(b, 0.0f, -halfRoad));
+                for (const float side : {-1.0f, 1.0f})
+                {
+                    const float z0 = side * halfRoad, z1 = side * line;
+                    slab.addQuadFacing(Vector3(a, y, z0), Vector3(b, y, z0), Vector3(b, y, z1),
+                                       Vector3(a, y, z1), Vector3::Up);
+                    stone.addQuadFacing(Vector3(a, 0.0f, z0), Vector3(b, 0.0f, z0),
+                                        Vector3(b, y, z0), Vector3(a, y, z0),
+                                        Vector3(0.0f, 0.0f, -side));
+                }
+            }
+        }
+    };
+    const float mainHalfRoad = M::kMainCarriagewayWidth * 0.5f;
+    const float sideHalfRoad = M::kSideCarriagewayWidth * 0.5f;
+    for (const float sign : {-1.0f, 1.0f})
+    {
+        street(true, sign * M::kMainStreetHalfLength, sign * 322.0f, mainHalfRoad,
+               M::kMainStreetHalfWidth);
+        street(false, sign * M::kSideStreetHalfLength, sign * 203.0f, sideHalfRoad,
+               M::kSideStreetHalfWidth);
+    }
+
+    // --- the blocks --------------------------------------------------------
     const MaterialId walls[] = {MaterialId::ContextFacade0, MaterialId::ContextFacade1,
                                 MaterialId::ContextFacade2, MaterialId::ContextFacade3,
                                 MaterialId::ContextFacade4, MaterialId::ContextFacade5};
+    const MaterialId renders[] = {MaterialId::RenderCream, MaterialId::RenderOchre,
+                                  MaterialId::RenderSage, MaterialId::RenderGrey,
+                                  MaterialId::RenderTerracotta, MaterialId::BrickRed,
+                                  MaterialId::BrickBuff, MaterialId::RenderWhite};
 
-    auto block = [&](float cx, float cz, float halfX, float halfZ, float height) {
-        collector.setRegion(cx, cz);
-        const Material* material = &materials_.get(walls[rng.index(std::size(walls))]);
-        MeshBuilder& builder = collector.builder(material);
-        // One tile is one storey. Setting it to anything else is what makes a
-        // painted façade read as wallpaper: the windows come out the wrong size
-        // for the building and the eye finds it instantly.
-        const float storey = rng.range(3.05f, 3.55f);
-        builder.setTileSize(storey * 1.35f, storey);
-        // Aligned so a tile boundary lands on the ground rather than wherever
-        // the world origin happens to fall, which otherwise cuts the ground
-        // floor of every block off at a different height.
-        builder.setUvOffset(Vector2(0.0f, 0.16f));
-        builder.addBox(Vector3(cx - halfX, 0.0f, cz - halfZ),
-                       Vector3(cx + halfX, height, cz + halfZ), BoxFaces::allButBottom());
-        builder.setUvOffset(Vector2::Zero);
-
-        // A roof, and one of two kinds. A district of flat roofs seen from
-        // above is a district of grey rectangles; the pitched ones are what
-        // give a roofscape its texture.
+    // A roof for a block: pitched with stacks, or flat with plant. A district
+    // of flat roofs seen from above is a district of grey rectangles; the
+    // pitched ones are what give a roofscape its texture.
+    auto roof = [&](float cx, float cz, float halfX, float halfZ, float height,
+                    const Material* gableMaterial, float storey) {
         if (rng.chance(0.45f))
         {
-            // Pitched, ridged along the block's long axis.
             MeshBuilder& tiles = collector.builder(&materials_.get(MaterialId::RoofTile));
             tiles.setTileSize(1.4f);
             const bool alongX = halfX >= halfZ;
             const float rise = std::min(alongX ? halfZ : halfX, 4.2f) * 0.85f;
             const float x0 = cx - halfX - 0.25f, x1 = cx + halfX + 0.25f;
             const float z0 = cz - halfZ - 0.25f, z1 = cz + halfZ + 0.25f;
+            MeshBuilder& gable = collector.builder(gableMaterial);
+            gable.setTileSize(storey * 1.35f, storey);
             if (alongX)
             {
                 const float mz = (z0 + z1) * 0.5f;
@@ -277,8 +317,6 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
                 tiles.addQuadFacing(Vector3(x0, height, z1), Vector3(x1, height, z1),
                                     Vector3(x1, height + rise, mz), Vector3(x0, height + rise, mz),
                                     Vector3::Up);
-                MeshBuilder& gable = collector.builder(material);
-                gable.setTileSize(storey * 1.35f, storey);
                 gable.addTriangle(Vector3(x0, height, z0), Vector3(x0, height, z1),
                                   Vector3(x0, height + rise, mz));
                 gable.addTriangle(Vector3(x1, height, z1), Vector3(x1, height, z0),
@@ -293,8 +331,6 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
                 tiles.addQuadFacing(Vector3(x1, height, z0), Vector3(x1, height, z1),
                                     Vector3(mx, height + rise, z1), Vector3(mx, height + rise, z0),
                                     Vector3::Up);
-                MeshBuilder& gable = collector.builder(material);
-                gable.setTileSize(storey * 1.35f, storey);
                 gable.addTriangle(Vector3(x0, height, z0), Vector3(x1, height, z0),
                                   Vector3(mx, height + rise, z0));
                 gable.addTriangle(Vector3(x1, height, z1), Vector3(x0, height, z1),
@@ -315,9 +351,9 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
         }
         else
         {
-            MeshBuilder& roof = collector.builder(&materials_.get(MaterialId::RoofFelt));
-            roof.setTileSize(4.0f);
-            roof.addBox(Vector3(cx - halfX - 0.1f, height, cz - halfZ - 0.1f),
+            MeshBuilder& felt = collector.builder(&materials_.get(MaterialId::RoofFelt));
+            felt.setTileSize(4.0f);
+            felt.addBox(Vector3(cx - halfX - 0.1f, height, cz - halfZ - 0.1f),
                         Vector3(cx + halfX + 0.1f, height + 0.9f, cz + halfZ + 0.1f),
                         BoxFaces::allButBottom());
             // Roof furniture: plant, a lift overrun, a couple of vents. Flat
@@ -340,34 +376,261 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
         }
     };
 
-    // Down both arms of the main street, past the modelled frontage.
+    // A far block: a box carrying a tiling image of a storey.
+    auto paintedBlock = [&](float cx, float cz, float halfX, float halfZ, float height) {
+        collector.setRegion(cx, cz);
+        const Material* material = &materials_.get(walls[rng.index(std::size(walls))]);
+        MeshBuilder& builder = collector.builder(material);
+        // One tile is one storey. Setting it to anything else is what makes a
+        // painted façade read as wallpaper: the windows come out the wrong size
+        // for the building and the eye finds it instantly.
+        const float storey = rng.range(3.05f, 3.55f);
+        builder.setTileSize(storey * 1.35f, storey);
+        // Aligned so a tile boundary lands on the ground rather than wherever
+        // the world origin happens to fall.
+        builder.setUvOffset(Vector2(0.0f, 0.16f));
+        builder.addBox(Vector3(cx - halfX, 0.0f, cz - halfZ),
+                       Vector3(cx + halfX, height, cz + halfZ), BoxFaces::allButBottom());
+        builder.setUvOffset(Vector2::Zero);
+        roof(cx, cz, halfX, halfZ, height, material, storey);
+    };
+
+    // A near block: a rendered or brick box with real openings on the face that
+    // fronts the street. Every window is a recess with reveals, a dark room
+    // behind it and a pane in front, a shopfront runs along the ground floor
+    // under a fascia, and a plinth and a cornice close the elevation top and
+    // bottom. About six quads a window, which over the forty blocks that line
+    // the two streets is twenty thousand triangles: less than one modelled
+    // plot on the street itself.
+    auto windowedBlock = [&](float cx, float cz, float halfX, float halfZ, float height,
+                             const Vector3& streetNormal) {
+        collector.setRegion(cx, cz);
+        const Material* wallMaterial = &materials_.get(renders[rng.index(std::size(renders))]);
+        const Material* trim = &materials_.get(rng.chance(0.5f) ? MaterialId::RenderWhite
+                                                                : MaterialId::Ashlar);
+        const Material* frameMaterial = &materials_.get(rng.chance(0.7f) ? MaterialId::FrameWhite
+                                                                         : MaterialId::FrameDark);
+        const Material* glass    = &materials_.get(MaterialId::Glazing);
+        const Material* interior = &materials_.get(MaterialId::Interior);
+        const Material* shopGlass = &materials_.get(MaterialId::ShopGlazing);
+        const Material* screen   = &materials_.get(MaterialId::ShopScreen);
+        const Material* fascia   = &materials_.get(MaterialId::ShopFascia);
+
+        // The storey grid the elevation is set out on.
+        const float groundFloor = 4.0f;
+        const float storeyH = 3.15f;
+        const int storeys = std::max(1, static_cast<int>((height - groundFloor) / storeyH));
+        const float eaves = groundFloor + static_cast<float>(storeys) * storeyH;
+
+        // The mass, minus its street face, which is built as panels around the
+        // openings below.
+        const Vector3 lo(cx - halfX, 0.0f, cz - halfZ);
+        const Vector3 hi(cx + halfX, eaves, cz + halfZ);
+        MeshBuilder& wall = collector.builder(wallMaterial);
+        wall.setTileSize(2.0f);
+        BoxFaces faces = BoxFaces::allButBottom();
+        if (streetNormal.X > 0.5f) faces.posX = false;
+        if (streetNormal.X < -0.5f) faces.negX = false;
+        if (streetNormal.Z > 0.5f) faces.posZ = false;
+        if (streetNormal.Z < -0.5f) faces.negZ = false;
+        wall.addBox(lo, hi, faces);
+
+        // A facade frame on the street face: u along it, v up, depth outward.
+        FacadeFrame frame;
+        frame.up = Vector3::Up;
+        frame.out = streetNormal;
+        frame.right = Vector3::Cross(frame.up, frame.out);
+        const bool alongZ = std::fabs(streetNormal.X) > 0.5f;
+        frame.width = alongZ ? halfZ * 2.0f : halfX * 2.0f;
+        frame.height = eaves;
+        // The frame's origin is the left end of the face seen from the street.
+        const Vector3 faceCentre(cx + streetNormal.X * halfX, 0.0f, cz + streetNormal.Z * halfZ);
+        frame.origin = faceCentre - frame.right * (frame.width * 0.5f);
+        const auto at = [&](float u, float v, float d) { return frame.at(u, v, d); };
+
+        // Plinth and cornice.
+        MeshBuilder& trimBuilder = collector.builder(trim);
+        trimBuilder.setTileSize(1.0f);
+        trimBuilder.addQuadFacing(at(0.0f, 0.0f, 0.06f), at(frame.width, 0.0f, 0.06f),
+                                  at(frame.width, 0.6f, 0.06f), at(0.0f, 0.6f, 0.06f), frame.out);
+        trimBuilder.addQuadFacing(at(0.0f, eaves - 0.35f, 0.30f), at(frame.width, eaves - 0.35f, 0.30f),
+                                  at(frame.width, eaves, 0.30f), at(0.0f, eaves, 0.30f), frame.out);
+        trimBuilder.addQuadFacing(at(0.0f, eaves - 0.35f, 0.0f), at(frame.width, eaves - 0.35f, 0.0f),
+                                  at(frame.width, eaves - 0.35f, 0.30f), at(0.0f, eaves - 0.35f, 0.30f),
+                                  frame.up * -1.0f);
+        trimBuilder.addQuadFacing(at(0.0f, eaves, 0.0f), at(frame.width, eaves, 0.0f),
+                                  at(frame.width, eaves, 0.30f), at(0.0f, eaves, 0.30f), frame.up);
+
+        // The ground floor: a shopfront on most, a plain wall with a door on the rest.
+        const bool shops = rng.chance(0.7f);
+        std::vector<Opening> openings;
+        if (shops)
+        {
+            const float sill = 0.5f, head = groundFloor - 0.75f;
+            openings.push_back(Opening{0.6f, 0.0f, frame.width - 0.6f, head + 0.05f});
+            // A dark room behind the glass: a recessed panel two metres back
+            // reads as an interior at this distance and costs one quad.
+            MeshBuilder& dark = collector.builder(screen);
+            dark.setTileSize(1.0f);
+            dark.addQuadFacing(at(0.6f, 0.0f, -1.8f), at(frame.width - 0.6f, 0.0f, -1.8f),
+                               at(frame.width - 0.6f, head, -1.8f), at(0.6f, head, -1.8f), frame.out);
+            for (const float u : {0.6f, frame.width - 0.6f})
+                dark.addQuadFacing(at(u, 0.0f, -1.8f), at(u, 0.0f, 0.0f), at(u, head, 0.0f),
+                                   at(u, head, -1.8f), frame.right * (u < 1.0f ? 1.0f : -1.0f));
+            dark.addQuadFacing(at(0.6f, head, -1.8f), at(frame.width - 0.6f, head, -1.8f),
+                               at(frame.width - 0.6f, head, 0.0f), at(0.6f, head, 0.0f),
+                               frame.up * -1.0f);
+            MeshBuilder& pane = collector.builder(shopGlass);
+            pane.setTileSize(2.4f);
+            pane.addQuadFacing(at(0.6f, sill, -0.12f), at(frame.width - 0.6f, sill, -0.12f),
+                               at(frame.width - 0.6f, head, -0.12f), at(0.6f, head, -0.12f), frame.out);
+            MeshBuilder& riser = collector.builder(trim);
+            riser.addQuadFacing(at(0.6f, 0.0f, -0.06f), at(frame.width - 0.6f, 0.0f, -0.06f),
+                                at(frame.width - 0.6f, sill, -0.06f), at(0.6f, sill, -0.06f), frame.out);
+            MeshBuilder& board = collector.builder(fascia);
+            board.setTileSize(1.5f);
+            board.addQuadFacing(at(0.4f, head + 0.05f, 0.10f), at(frame.width - 0.4f, head + 0.05f, 0.10f),
+                                at(frame.width - 0.4f, groundFloor - 0.10f, 0.10f),
+                                at(0.4f, groundFloor - 0.10f, 0.10f), frame.out);
+            board.addQuadFacing(at(0.4f, groundFloor - 0.10f, 0.0f),
+                                at(frame.width - 0.4f, groundFloor - 0.10f, 0.0f),
+                                at(frame.width - 0.4f, groundFloor - 0.10f, 0.10f),
+                                at(0.4f, groundFloor - 0.10f, 0.10f), frame.up);
+            // Mullions.
+            MeshBuilder& mullion = collector.builder(frameMaterial);
+            mullion.setTileSize(0.5f);
+            const int bays = std::max(1, static_cast<int>((frame.width - 1.2f) / 1.6f));
+            for (int i = 0; i <= bays; ++i)
+            {
+                const float u = 0.6f + static_cast<float>(i) * (frame.width - 1.2f)
+                                           / static_cast<float>(bays);
+                mullion.addQuadFacing(at(u - 0.035f, sill, -0.06f), at(u + 0.035f, sill, -0.06f),
+                                      at(u + 0.035f, head, -0.06f), at(u - 0.035f, head, -0.06f),
+                                      frame.out);
+            }
+        }
+
+        // The upper storeys: recessed windows on a regular bay grid.
+        const float pitch = 2.9f;
+        const int bays = std::max(1, static_cast<int>(std::round((frame.width - 0.8f) / pitch)));
+        const float bayPitch = frame.width / static_cast<float>(bays);
+        const float ww = std::min(1.15f, bayPitch - 1.2f), wh = 1.55f, reveal = 0.14f;
+        MeshBuilder& sash = collector.builder(frameMaterial);
+        sash.setTileSize(0.5f);
+        MeshBuilder& panes = collector.builder(glass);
+        panes.setTileSize(1.4f);
+        MeshBuilder& rooms = collector.builder(interior);
+        rooms.setUvMode(Geometry::UvMode::Explicit);
+        for (int storey = 0; storey < storeys; ++storey)
+        {
+            const float v0 = groundFloor + static_cast<float>(storey) * storeyH + 0.95f;
+            const float v1 = v0 + wh;
+            for (int bay = 0; bay < bays; ++bay)
+            {
+                const float u0 = (static_cast<float>(bay) + 0.5f) * bayPitch - ww * 0.5f;
+                const float u1 = u0 + ww;
+                openings.push_back(Opening{u0, v0, u1, v1});
+                // Reveals: the four sides of the recess, in the wall's material.
+                wall.addQuad(at(u0, v0, 0.0f), at(u0, v0, -reveal), at(u0, v1, -reveal), at(u0, v1, 0.0f));
+                wall.addQuad(at(u1, v0, -reveal), at(u1, v0, 0.0f), at(u1, v1, 0.0f), at(u1, v1, -reveal));
+                wall.addQuad(at(u0, v1, 0.0f), at(u0, v1, -reveal), at(u1, v1, -reveal), at(u1, v1, 0.0f));
+                wall.addQuad(at(u0, v0, -reveal), at(u0, v0, 0.0f), at(u1, v0, 0.0f), at(u1, v0, -reveal));
+                // The room, one atlas cell, and the pane in front of it.
+                const int cell = rng.intRange(0, 15);
+                const std::size_t first = rooms.vertexCount();
+                rooms.addQuadFacingUv(at(u0 + 0.05f, v0 + 0.05f, -reveal + 0.01f),
+                                      at(u1 - 0.05f, v0 + 0.05f, -reveal + 0.01f),
+                                      at(u1 - 0.05f, v1 - 0.05f, -reveal + 0.01f),
+                                      at(u0 + 0.05f, v1 - 0.05f, -reveal + 0.01f), frame.out);
+                rooms.offsetUv(first, Vector2(0.25f, 0.25f),
+                               Vector2(static_cast<float>(cell % 4) * 0.25f,
+                                       static_cast<float>(cell / 4) * 0.25f));
+                panes.addQuadFacing(at(u0 + 0.03f, v0 + 0.03f, -reveal + 0.05f),
+                                    at(u1 - 0.03f, v0 + 0.03f, -reveal + 0.05f),
+                                    at(u1 - 0.03f, v1 - 0.03f, -reveal + 0.05f),
+                                    at(u0 + 0.03f, v1 - 0.03f, -reveal + 0.05f), frame.out);
+                // Frame: a cross, and the sill under it.
+                const float gd = -reveal + 0.04f;
+                sash.addQuadFacing(at(u0 + ww * 0.5f - 0.03f, v0, gd), at(u0 + ww * 0.5f + 0.03f, v0, gd),
+                                   at(u0 + ww * 0.5f + 0.03f, v1, gd), at(u0 + ww * 0.5f - 0.03f, v1, gd),
+                                   frame.out);
+                sash.addQuadFacing(at(u0, v0 + wh * 0.7f - 0.03f, gd), at(u1, v0 + wh * 0.7f - 0.03f, gd),
+                                   at(u1, v0 + wh * 0.7f + 0.03f, gd), at(u0, v0 + wh * 0.7f + 0.03f, gd),
+                                   frame.out);
+                trimBuilder.addQuadFacing(at(u0 - 0.05f, v0 - 0.07f, 0.0f), at(u1 + 0.05f, v0 - 0.07f, 0.0f),
+                                          at(u1 + 0.05f, v0 - 0.07f, 0.05f), at(u0 - 0.05f, v0 - 0.07f, 0.05f),
+                                          frame.up);
+                trimBuilder.addQuadFacing(at(u0 - 0.05f, v0 - 0.07f, 0.05f), at(u1 + 0.05f, v0 - 0.07f, 0.05f),
+                                          at(u1 + 0.05f, v0, 0.05f), at(u0 - 0.05f, v0, 0.05f), frame.out);
+            }
+        }
+
+        // The wall itself, around the openings: a scanline decomposition, the
+        // same one BuildingBuilder uses, in miniature.
+        std::vector<float> levels{0.6f, eaves - 0.35f};
+        for (const Opening& o : openings) { levels.push_back(o.v0); levels.push_back(o.v1); }
+        std::sort(levels.begin(), levels.end());
+        levels.erase(std::unique(levels.begin(), levels.end(),
+                                 [](float a, float b) { return std::fabs(a - b) < 1e-3f; }),
+                     levels.end());
+        for (std::size_t band = 0; band + 1 < levels.size(); ++band)
+        {
+            const float v0 = levels[band], v1 = levels[band + 1];
+            if (v1 - v0 < 1e-3f) continue;
+            std::vector<std::pair<float, float>> spans;
+            for (const Opening& o : openings)
+                if (o.v0 <= v0 + 1e-3f && o.v1 >= v1 - 1e-3f) spans.emplace_back(o.u0, o.u1);
+            std::sort(spans.begin(), spans.end());
+            float cursor = 0.0f;
+            for (const auto& span : spans)
+            {
+                if (span.first > cursor + 1e-3f)
+                    wall.addQuadFacing(at(cursor, v0, 0.0f), at(span.first, v0, 0.0f),
+                                       at(span.first, v1, 0.0f), at(cursor, v1, 0.0f), frame.out);
+                cursor = std::max(cursor, span.second);
+            }
+            if (cursor < frame.width - 1e-3f)
+                wall.addQuadFacing(at(cursor, v0, 0.0f), at(frame.width, v0, 0.0f),
+                                   at(frame.width, v1, 0.0f), at(cursor, v1, 0.0f), frame.out);
+        }
+
+        roof(cx, cz, halfX, halfZ, eaves, wallMaterial, storeyH);
+    };
+
+    // Down both arms of the main street, past the modelled frontage. Every
+    // third gap between blocks is a cross street rather than a passage, so the
+    // district beyond has a grid in it and not a row of boxes.
     for (const float sign : {-1.0f, 1.0f})
     {
         float z = M::kMainStreetHalfLength + 6.0f;
-        while (z < 330.0f)
+        int count = 0;
+        while (z < 316.0f)
         {
             const float depth = rng.range(16.0f, 30.0f);
             for (const float side : {-1.0f, 1.0f})
-                block(side * (M::kMainStreetHalfWidth + 11.0f), sign * (z + depth * 0.5f), 11.0f,
-                      depth * 0.5f, rng.range(13.0f, 26.0f));
-            z += depth + rng.range(2.0f, 7.0f);
+                windowedBlock(side * (M::kMainStreetHalfWidth + 11.0f), sign * (z + depth * 0.5f),
+                              11.0f, depth * 0.5f, rng.range(13.0f, 24.0f),
+                              Vector3(-side, 0.0f, 0.0f));
+            z += depth + ((count++ % 3 == 2) ? rng.range(12.0f, 16.0f) : rng.range(1.5f, 4.0f));
         }
         // The block that closes the view down the street.
-        block(0.0f, sign * 345.0f, 46.0f, 22.0f, rng.range(18.0f, 30.0f));
+        paintedBlock(0.0f, sign * 345.0f, 46.0f, 22.0f, rng.range(18.0f, 30.0f));
     }
     // And down the side street.
     for (const float sign : {-1.0f, 1.0f})
     {
         float x = M::kSideStreetHalfLength + 5.0f;
-        while (x < 210.0f)
+        int count = 0;
+        while (x < 198.0f)
         {
             const float depth = rng.range(15.0f, 26.0f);
             for (const float side : {-1.0f, 1.0f})
-                block(sign * (x + depth * 0.5f), side * (M::kSideStreetHalfWidth + 10.0f),
-                      depth * 0.5f, 10.0f, rng.range(11.0f, 21.0f));
-            x += depth + rng.range(2.0f, 6.0f);
+                windowedBlock(sign * (x + depth * 0.5f), side * (M::kSideStreetHalfWidth + 10.0f),
+                              depth * 0.5f, 10.0f, rng.range(11.0f, 20.0f),
+                              Vector3(0.0f, 0.0f, -side));
+            x += depth + ((count++ % 3 == 2) ? rng.range(10.0f, 14.0f) : rng.range(1.5f, 4.0f));
         }
-        block(sign * 224.0f, 0.0f, 20.0f, 40.0f, rng.range(15.0f, 26.0f));
+        paintedBlock(sign * 224.0f, 0.0f, 20.0f, 40.0f, rng.range(15.0f, 26.0f));
     }
 
     // A far skyline: a scatter of taller blocks well beyond the district, which
@@ -378,7 +641,48 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng)
         const float radius = rng.range(240.0f, 430.0f);
         const float cx = std::cos(angle) * radius;
         const float cz = std::sin(angle) * radius * 1.35f;
-        block(cx, cz, rng.range(9.0f, 26.0f), rng.range(9.0f, 26.0f), rng.range(12.0f, 44.0f));
+        paintedBlock(cx, cz, rng.range(9.0f, 26.0f), rng.range(9.0f, 26.0f), rng.range(12.0f, 44.0f));
+    }
+
+    // --- what stands in the far street ------------------------------------
+    // The same trees at the same pitch and the same parked cars, so the street
+    // does not stop being a street where the modelling stops. Both are the far
+    // levels of detail, instanced, and cast no shadow: at 140 m and beyond a
+    // shadow is a texel.
+    if (settings.vegetation && !farTrees_.empty())
+    {
+        std::vector<std::vector<Matrix>> treeAt(farTrees_.size());
+        const float treeX = M::kMainCarriagewayWidth * 0.5f + 0.85f;
+        for (const float sign : {-1.0f, 1.0f})
+            for (float z = M::kMainStreetHalfLength + 8.0f; z < 312.0f; z += 12.0f)
+            {
+                if (!rng.chance(0.80f)) continue;
+                for (const float side : {-1.0f, 1.0f})
+                    treeAt[rng.index(farTrees_.size())].push_back(
+                        Place(side * treeX, M::kCurbHeight, sign * z,
+                              rng.range(0.0f, MathHelper::TwoPi)));
+            }
+        for (std::size_t i = 0; i < farTrees_.size(); ++i)
+            placeProp(farTrees_[i], treeAt[i], "context-tree", 0.0f, 0.0f, false);
+    }
+    if (settings.traffic && !vehicleMeshes_.empty())
+    {
+        std::vector<std::vector<Matrix>> carAt(vehicleMeshes_.size());
+        const float bayX = M::kMainCarriagewayWidth * 0.5f - M::kParkingLaneWidth * 0.5f;
+        for (const float sign : {-1.0f, 1.0f})
+            for (float z = M::kMainStreetHalfLength + 4.0f; z < 316.0f; z += M::kParkingBayLength + 0.6f)
+            {
+                for (const float side : {-1.0f, 1.0f})
+                {
+                    if (!rng.chance(0.62f)) continue;
+                    // Parked with the traffic on its side of the road.
+                    const float yaw = side > 0.0f ? 0.0f : MathHelper::Pi;
+                    carAt[rng.index(vehicleMeshes_.size())].push_back(
+                        Place(side * bayX, 0.0f, sign * (z + rng.signed_(0.4f)), yaw));
+                }
+            }
+        for (std::size_t i = 0; i < vehicleMeshes_.size(); ++i)
+            placeProp(vehicleMeshes_[i].distantBody, carAt[i], "context-car", 0.0f, 0.0f, false);
     }
 }
 
@@ -1037,6 +1341,7 @@ void CityScene::buildVegetation(Rng& rng, const RenderSettings& settings)
             props.tree(c, own, species, height, false);
         }));
     }
+    farTrees_ = distantTrees;
     const PropMesh scruff = makeProp("ground-scruff", [&](GeometryCollector& c) {
         props.groundScruff(c, rng, 0.72f, 7);
     });

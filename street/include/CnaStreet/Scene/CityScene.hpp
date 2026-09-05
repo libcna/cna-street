@@ -97,7 +97,7 @@ private:
     /// Uploads one mesh and keeps it alive.
     const GpuMesh* upload(const Geometry::MeshData& data, const std::string& name);
 
-    void buildContext(GeometryCollector& collector, Rng& rng);
+    void buildContext(GeometryCollector& collector, Rng& rng, const RenderSettings& settings);
     void buildViewpoints();
 
     /// A prop built once and placed many times: one GPU mesh per material it
@@ -192,6 +192,10 @@ private:
         std::vector<WheelPlacement> wheels;
     };
     std::vector<VehicleMesh> vehicleMeshes_;
+    /// The far level of detail of each street tree, kept for the district
+    /// beyond the modelled frontage, which plants the same trees at the same
+    /// pitch and never gets close enough to want the near one.
+    std::vector<PropMesh> farTrees_;
     /// One skinned figure per appearance variant: its parts, the skeleton the
     /// clips run on, and a rigid stand-in for the shadow pass.
     struct CharacterMesh
