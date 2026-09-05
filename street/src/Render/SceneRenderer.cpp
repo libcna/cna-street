@@ -672,6 +672,42 @@ void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
     effect.Apply();
 }
 
+SceneRenderer::CascadeVolume SceneRenderer::cascadeVolume(const Camera& camera, float nearSplit,
+                                                          float farSplit) const
+{
+    // The bounding sphere of one slice of the camera frustum, which is what a
+    // cascade is fitted to. Its eight corners, their centroid, the furthest of
+    // them: the same construction the cascade fit uses, so the sphere and the
+    // shadow map cover the same ground.
+    const Vector3 eye = camera.position();
+    const Vector3 forward = camera.forward();
+    const Vector3 right = camera.right();
+    const Vector3 up = camera.up();
+    const float tanHalf = std::tan(camera.verticalFov() * 0.5f);
+    Vector3 sum = Vector3::Zero;
+    Vector3 corners[8];
+    int count = 0;
+    for (const float depth : {nearSplit, farSplit})
+    {
+        const float half = depth * tanHalf;
+        const float wide = half * camera.aspect();
+        for (const float sx : {-1.0f, 1.0f})
+            for (const float sy : {-1.0f, 1.0f})
+            {
+                corners[count] = eye + forward * depth + right * (wide * sx) + up * (half * sy);
+                sum = sum + corners[count];
+                ++count;
+            }
+    }
+    CascadeVolume volume;
+    volume.eye = eye;
+    volume.split = farSplit;
+    volume.centre = sum * (1.0f / static_cast<float>(count));
+    for (int i = 0; i < count; ++i)
+        volume.radius = std::max(volume.radius, Vector3::Distance(volume.centre, corners[i]));
+    return volume;
+}
+
 void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& settings)
 {
     stats_.drewShadows = false;
@@ -713,29 +749,51 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
     device_.setDepthStencilStateProperty(DepthStencilState::Default);
     device_.setBlendStateProperty(BlendState::Opaque);
 
+    float near = settings.nearPlane;
     for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
     {
+        const float far = shadows_->getSplitDistance(cascade);
         shadows_->begin(cascade);
-        // Each cascade covers a distance band; anything past its split is drawn
-        // by a coarser cascade and would only cost fill here.
-        drawCasters(eye, shadows_->getSplitDistance(cascade), propShadowLimit);
+        drawCasters(cascadeVolume(camera, near, far), propShadowLimit);
         shadows_->end();
+        near = far;
     }
 
     stats_.drewShadows = stats_.shadowDrawCalls > 0;
 }
 
-void SceneRenderer::drawCasters(const Vector3& eye, float split, float propShadowLimit)
+void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLimit)
 {
     ShaderEffect* caster = shadows_->getCasterEffect();
     if (caster == nullptr) return;
 
+    // Everything a cascade could cast into it, and nothing else. A cascade
+    // covers *a slice of the camera frustum*, not a disc around the camera,
+    // and the difference is most of the pass: the far cascade's slice starts
+    // forty-six metres ahead, so the dense hundred metres of street behind
+    // and beside the camera -- every bollard, every window frame, every
+    // parked car -- was being rasterised into it four times over to cast
+    // nothing. @ref volume is that slice as a sphere, grown by how far a
+    // caster outside it can still reach into it with the sun where it is.
+    // How far outside the slice a caster can still throw a shadow into it is
+    // a property of the caster, not a constant: the sun on this street stands
+    // about fifty degrees up, so a shadow is about as long as the thing
+    // casting it. Three times its own radius covers a building leaning its
+    // shadow into the slice and does not let a bollard nine metres behind the
+    // camera into the near cascade, which a fixed margin did -- and that made
+    // the pass *bigger*, because the near cascade used to be clamped to its
+    // own seven metres.
+    const auto reaches = [&volume](const Vector3& centre, float radius) {
+        return Vector3::Distance(volume.centre, centre) <= volume.radius + radius * 3.0f;
+    };
+
     for (const SceneItem& item : items_)
     {
         if (!item.material->castsShadow) continue;
-        const float distance = DistanceToBox(eye, item.worldBounds);
-        if (distance > split + item.worldSphere.Radius) continue;
-        if (item.shadowDistance > 0.0f && distance > item.shadowDistance) continue;
+        if (!reaches(item.worldSphere.Center, item.worldSphere.Radius)) continue;
+        const float away = DistanceToBox(volume.eye, item.worldBounds);
+        if (away > volume.split + item.worldSphere.Radius) continue;
+        if (item.shadowDistance > 0.0f && away > item.shadowDistance) continue;
         caster->SetUniformMat4("uWorld", &item.world.M11);
         item.mesh->draw(device_);
         ++stats_.shadowDrawCalls;
@@ -744,8 +802,10 @@ void SceneRenderer::drawCasters(const Vector3& eye, float split, float propShado
     for (const SceneItem& item : dynamic_)
     {
         if (!item.material->castsShadow) continue;
-        const float distance = DistanceToBox(eye, item.worldBounds);
-        if (distance > split + item.worldSphere.Radius) continue;
+        if (!reaches(item.worldSphere.Center, item.worldSphere.Radius)) continue;
+        if (DistanceToBox(volume.eye, item.worldBounds)
+            > volume.split + item.worldSphere.Radius)
+            continue;
         caster->SetUniformMat4("uWorld", &item.world.M11);
         item.mesh->draw(device_);
         ++stats_.shadowDrawCalls;
@@ -762,11 +822,12 @@ void SceneRenderer::drawCasters(const Vector3& eye, float split, float propShado
         if (!group.castsShadow || !group.material->castsShadow) continue;
         const float limit = std::min(group.shadowDistance > 0.0f ? group.shadowDistance
                                                                  : propShadowLimit,
-                                     split);
+                                     volume.split);
         for (std::size_t i = 0; i < group.transforms.size(); ++i)
         {
             const BoundingSphere& sphere = group.spheres[i];
-            if (Vector3::Distance(eye, sphere.Center) - sphere.Radius > limit) continue;
+            if (Vector3::Distance(volume.eye, sphere.Center) - sphere.Radius > limit) continue;
+            if (!reaches(sphere.Center, sphere.Radius)) continue;
             caster->SetUniformMat4("uWorld", &group.transforms[i].M11);
             group.mesh->draw(device_);
             ++stats_.shadowDrawCalls;
@@ -1166,7 +1227,14 @@ void SceneRenderer::captureProbe(ReflectionProbe& probe, RenderTarget2D& target,
         for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
         {
             shadows_->begin(cascade);
-            drawCasters(probe.position, 80.0f, std::min(settings.propShadowDistance, 60.0f));
+            // A probe sees six ways from one point, so its casters are a
+            // sphere about that point rather than a frustum slice.
+            CascadeVolume around;
+            around.eye = probe.position;
+            around.centre = probe.position;
+            around.radius = 80.0f;
+            around.split = 80.0f;
+            drawCasters(around, std::min(settings.propShadowDistance, 60.0f));
             shadows_->end();
         }
     }

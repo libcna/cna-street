@@ -322,6 +322,11 @@ private:
     /// beyond the modelled frontage, which plants the same trees at the same
     /// pitch and never gets close enough to want the near one.
     std::vector<PropMesh> farTrees_;
+    /// The far copy of each scanned species, and the scale it is planted at,
+    /// so the district beyond the modelled frontage plants the same trees the
+    /// street does rather than a different generation of them.
+    std::vector<PropMesh> farHeroTrees_;
+    std::vector<float>    farHeroScale_;
     /// Where the street trees stand, so a viewpoint can be aimed at one rather
     /// than at where one was expected to be.
     std::vector<Microsoft::Xna::Framework::Vector3> treePositions_;
