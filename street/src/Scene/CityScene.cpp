@@ -943,7 +943,7 @@ void CityScene::submitPeople(const RenderSettings& settings)
     }
 }
 
-std::vector<Vector3> CityScene::probePositions(const RenderSettings& settings) const
+std::vector<Vector3> CityScene::probePositions(const RenderSettings& settings)
 {
     // Where the reflective things are. Parked cars stand in the two parking
     // lanes at x = +/-4.4 and the shop glass is five metres behind them at the

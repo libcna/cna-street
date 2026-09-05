@@ -86,6 +86,13 @@ public:
     };
     [[nodiscard]] const BuildStats& buildStats() const { return buildStats_; }
 
+    /// Where the renderer captures its reflection probes: a row over each
+    /// parking lane and each side-street lane, at the pitch the settings ask.
+    /// Static, because it reads the street's dimensions and the settings and
+    /// nothing else -- which is also what lets a test check it without a device.
+    [[nodiscard]] static std::vector<Microsoft::Xna::Framework::Vector3> probePositions(
+        const RenderSettings& settings);
+
     /// Height of the walkable surface, for the walking camera.
     [[nodiscard]] float groundHeight(float x, float z) const;
     /// Whether a point is inside something solid.
@@ -144,10 +151,6 @@ private:
     void lightTheStreet(const RenderSettings& settings);
     /// Advances every pedestrian's animation and submits the crowd.
     void submitPeople(const RenderSettings& settings);
-    /// Where the renderer captures its reflection probes: a row over each
-    /// parking lane and each side-street lane, at the pitch the settings ask.
-    [[nodiscard]] std::vector<Microsoft::Xna::Framework::Vector3> probePositions(
-        const RenderSettings& settings) const;
 
     Microsoft::Xna::Framework::Graphics::GraphicsDevice& device_;
     SceneRenderer&  renderer_;

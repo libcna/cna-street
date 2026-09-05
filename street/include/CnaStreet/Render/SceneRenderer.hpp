@@ -7,6 +7,7 @@
 
 #include "Microsoft/Xna/Framework/BoundingBox.hpp"
 #include "Microsoft/Xna/Framework/BoundingSphere.hpp"
+#include "Microsoft/Xna/Framework/Graphics/CubeMapFace.hpp"
 #include "Microsoft/Xna/Framework/Matrix.hpp"
 
 #include <cstddef>
@@ -222,6 +223,14 @@ public:
     /// Writes each probe's environment cube as a strip of six faces, so a
     /// capture that came out mirrored or upside down can be seen to be.
     void dumpReflectionProbes(const std::string& directory) const;
+    /// The camera that looks out of one cube face during a capture: its
+    /// forward axis and its up. Public so a test can pin the convention
+    /// against `SkySystem::cubeDirection`, because a face captured mirrored
+    /// or upside down is not an error anything reports -- it is a reflection
+    /// of the wrong side of the street.
+    static void probeFaceBasis(Microsoft::Xna::Framework::Graphics::CubeMapFace face,
+                               Microsoft::Xna::Framework::Vector3& forward,
+                               Microsoft::Xna::Framework::Vector3& up);
 
     /// What the scene costs, broken down by the name each batch was registered
     /// under, heaviest first. A frame time says the scene got slower; this says

@@ -158,7 +158,9 @@ std::uint8_t EncodeCube(float linear, float scale)
 /// texel rows do in `SkySystem::cubeDirection`. The columns come out mirrored
 /// -- a cube map is addressed from inside the cube, a camera image from
 /// outside -- and the capture flips them when it copies the face in.
-void ProbeFaceBasis(CubeMapFace face, Vector3& forward, Vector3& up)
+}  // namespace
+
+void SceneRenderer::probeFaceBasis(CubeMapFace face, Vector3& forward, Vector3& up)
 {
     switch (face)
     {
@@ -172,8 +174,6 @@ void ProbeFaceBasis(CubeMapFace face, Vector3& forward, Vector3& up)
     forward = Vector3(0.0f, 0.0f, 1.0f);
     up      = Vector3(0.0f, 1.0f, 0.0f);
 }
-
-}  // namespace
 
 SceneRenderer::SceneRenderer(GraphicsDevice& device, MaterialLibrary& materials)
     : device_(device), materials_(materials), sky_(device)
@@ -1181,7 +1181,7 @@ void SceneRenderer::captureProbe(ReflectionProbe& probe, RenderTarget2D& target,
     {
         const CubeMapFace which = static_cast<CubeMapFace>(f);
         Vector3 forward, up;
-        ProbeFaceBasis(which, forward, up);
+        probeFaceBasis(which, forward, up);
         const Matrix view = Matrix::CreateLookAt(probe.position, probe.position + forward, up);
         const Matrix projection =
             Matrix::CreatePerspectiveFieldOfView(MathHelper::PiOver2, 1.0f, 0.10f, 340.0f);
