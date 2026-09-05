@@ -1739,7 +1739,7 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
     "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
    ],
@@ -1780,7 +1780,7 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
     "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
    ],
@@ -1821,7 +1821,7 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
     "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
    ],
@@ -1862,7 +1862,7 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
     "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
    ],
@@ -1903,7 +1903,7 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
     "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
    ],
@@ -1944,7 +1944,7 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
     "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
    ],
@@ -1985,7 +1985,7 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
     "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
    ],
@@ -2026,9 +2026,10 @@
    ],
    "transformations": [
     "the licence, author and source recorded above are the ones Sketchfab embedded in the file's asset.extras; the Objaverse mirror redistributes the file under that licence",
-    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, textures capped at 1k",
+    "normalised by scripts/blender-vehicles.py in Blender: backdrop and shadow planes dropped, the hierarchy flattened, the model turned to face +Z, scaled uniformly to the real car's length, stood on y = 0, joined into one mesh per material, the four wheels split off into nodes of their own (wheel_fl .. wheel_rr) centred on their axles so the scene can roll and steer them, textures capped at 1k (2k for the two cars parked nearest the close viewpoints)",
     "exported as two GLBs: a near level of detail and a decimated far one, with glass BLEND, everything else OPAQUE, and every KHR_materials_* extension stripped for CNA's importer",
-    "compiled to .cnb by cna_tool_gltf_to_cnb during the content build"
+    "compiled to .cnb by cna_tool_gltf_to_cnb during the content build",
+    "turned through 180 degrees as well: the file faces the other way from the other seven, which showed the first time it drove"
    ],
    "role": "A 2000s Mini Cooper S (R53), weathered, modelled by the author in 3ds Max. Parked in a hero bay of the main street in place of a generated car.",
    "derived": [

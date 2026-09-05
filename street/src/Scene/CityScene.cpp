@@ -121,7 +121,9 @@ void CityScene::build(const RenderSettings& settings)
         BuildingBuilder buildings(materials_, layout_);
         heroPlot_ = chooseHeroPlot();
         heroProps_.clear();
-        if (heroPlot_ >= 0) buildings.setHeroShop(heroPlot_, &heroProps_);
+        // Every shop may ask for scanned props; the hero plot asks for the
+        // most, and -1 means no plot is the hero.
+        buildings.setHeroShop(heroPlot_, &heroProps_);
         const std::vector<Plot>& plots = layout_.plots();
         for (std::size_t i = 0; i < plots.size(); ++i)
             buildings.build(plots[i], static_cast<int>(i), collector, interiors, rng, anchors_,
@@ -908,14 +910,40 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
             // A parked loft a hero model stands in for is registered as a
             // static prop instead, so it is in the reflection probes too.
             if (v < vehicleReplaced_.size() && vehicleReplaced_[v]) continue;
-            const int variant = std::clamp(vehicle.variant, 0,
-                                           static_cast<int>(vehicleMeshes_.size()) - 1);
-            const VehicleMesh& mesh = vehicleMeshes_[static_cast<std::size_t>(variant)];
             const Matrix world = vehicle.transform(traffic_.lanes());
             const Vector2 at   = vehicle.groundPosition(traffic_.lanes());
             const float distance = std::sqrt((at.X - eye.X) * (at.X - eye.X)
                                              + (at.Y - eye.Z) * (at.Y - eye.Z));
             if (distance > settings.propCullDistance) continue;
+
+            // A moving vehicle drawn as an authored car: the body, and four
+            // wheels rolled from the odometer at their own radius and steered
+            // on the front axle. Past the switch the far copy carries its
+            // wheels welded on, as the lofts' does.
+            if (v < heroForVehicle_.size() && heroForVehicle_[v] >= 0)
+            {
+                const HeroVehicleMesh& hero =
+                    heroVehicleMeshes_[static_cast<std::size_t>(heroForVehicle_[v])];
+                if (distance >= 45.0f && !hero.far.empty())
+                {
+                    submitProp(hero.far, world);
+                    continue;
+                }
+                submitProp(hero.body, world);
+                const float rolled = vehicle.odometer / hero.wheelRadius;
+                for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
+                {
+                    Matrix local = Matrix::CreateRotationX(rolled);
+                    if (wheel.steered && vehicle.steerAngle != 0.0f)
+                        local = local * Matrix::CreateRotationY(vehicle.steerAngle);
+                    submitProp(wheel.mesh, local * Matrix::CreateTranslation(wheel.centre) * world);
+                }
+                continue;
+            }
+
+            const int variant = std::clamp(vehicle.variant, 0,
+                                           static_cast<int>(vehicleMeshes_.size()) - 1);
+            const VehicleMesh& mesh = vehicleMeshes_[static_cast<std::size_t>(variant)];
 
             // One switch for the whole vehicle. Below 38 m the body is the full
             // mesh with its shut lines, mirrors and interior; past it the same
@@ -994,9 +1022,18 @@ void CityScene::submitPeople(const RenderSettings& settings)
         // ground speed and the feet do not slide. Someone waiting at a kerb runs
         // the idle clip on their own offset, which is what stops a queue of
         // pedestrians breathing in unison.
+        // Which of the character's gaits and stances this person uses, and
+        // the clip's own length as the clock's unit, so a brisk walk and an
+        // easy one each play at the pace their stride was built for.
+        const auto clipNamed = [&](const char* const* names, int style) -> const Graphics::AnimationClip& {
+            const auto found = character.skinning.AnimationClips.find(names[std::clamp(style, 0, 2)]);
+            return found != character.skinning.AnimationClips.end()
+                       ? found->second
+                       : character.skinning.AnimationClips.at(names[0]);
+        };
         if (person.waiting)
         {
-            const auto& clip = character.skinning.AnimationClips.at("idle");
+            const auto& clip = clipNamed(CharacterFactory::Clips::kIdleNames, person.idleStyle);
             if (player.getCurrentClipProperty() != &clip) player.StartClip(clip);
             player.Update(System::TimeSpan::FromTicks(static_cast<std::int64_t>(
                               static_cast<double>(person.waitTime
@@ -1006,11 +1043,11 @@ void CityScene::submitPeople(const RenderSettings& settings)
         }
         else
         {
-            const auto& clip = character.skinning.AnimationClips.at("walk");
+            const auto& clip = clipNamed(CharacterFactory::Clips::kWalkNames, person.walkStyle);
             if (player.getCurrentClipProperty() != &clip) player.StartClip(clip);
             const float cycles = PedestrianSystem::cyclesWalked(person);
             player.Update(System::TimeSpan::FromTicks(static_cast<std::int64_t>(
-                              static_cast<double>(cycles * 1.06f) * 1.0e7)),
+                              static_cast<double>(cycles) * static_cast<double>(clip.Duration.getTicksProperty()))),
                           false, true);
         }
 
@@ -1204,7 +1241,25 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
             props.utilityCabinet(c, rng);
         }));
     const PropMesh bollard = makeProp("bollard", [&](GeometryCollector& c) { props.bollard(c); });
-    const PropMesh bin     = makeProp("litter-bin", [&](GeometryCollector& c) { props.litterBin(c); });
+    // The litter bin: the scanned steel can where the content has it,
+    // stood on its base and cut to a street bin's height, and the generated
+    // one otherwise. The generated bin was the one object in the footway
+    // viewpoint that was a plain grey cylinder among scans.
+    PropMesh bin = importedProp("ph-trash-can");
+    if (!bin.empty())
+    {
+        const Vector3 size = bin.bounds.Max - bin.bounds.Min;
+        const float fit = 0.95f / std::max(size.Y, 0.05f);
+        const Matrix stand = Matrix::CreateTranslation(-(bin.bounds.Min.X + bin.bounds.Max.X) * 0.5f,
+                                                       -bin.bounds.Min.Y,
+                                                       -(bin.bounds.Min.Z + bin.bounds.Max.Z) * 0.5f)
+                             * Matrix::CreateScale(fit);
+        for (PropMesh::Part& part : bin.parts) part.local = part.local * stand;
+        bin.bounds = BoundingBox(Vector3(-size.X * 0.5f * fit, 0.0f, -size.Z * 0.5f * fit),
+                                 Vector3(size.X * 0.5f * fit, size.Y * fit, size.Z * 0.5f * fit));
+    }
+    else
+        bin = makeProp("litter-bin", [&](GeometryCollector& c) { props.litterBin(c); });
     // A refuse sack beside one bin in three, on collection day.
     const PropMesh sack = importedProp("ph-trash-bag");
     const PropMesh bikeStand = makeProp("bike-stand", [&](GeometryCollector& c) {
@@ -2402,36 +2457,84 @@ void CityScene::buildDressing(Rng& rng, const RenderSettings& settings)
 void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
 {
     vehicleReplaced_.assign(traffic_.vehicles().size(), false);
-    heroVehicles_ = 0;
+    heroForVehicle_.assign(traffic_.vehicles().size(), -1);
+    heroVehicles_  = 0;
+    movingHeroes_  = 0;
+    heroVehicleMeshes_.clear();
 
     // Eight authored cars under CC-BY, each normalised by
     // scripts/blender-vehicles.py to face +Z on y = 0 at its real length, with
-    // a far level of detail beside it. The mix is a continental street's: two
-    // superminis, a hatchback, two saloons, an estate, a small car and a van.
-    static const char* const kHeroCars[] = {
-        "car-opel-astra-gtc", "car-fiat-punto-gt",  "car-renault-logan",
-        "car-vaz-2104",       "car-honda-civic-ek", "car-small-price-car",
-        "car-mini-cooper-s",  "car-mercedes-sprinter",
+    // its wheels split into nodes of their own and a far level of detail
+    // beside it. The mix is a continental street's: two superminis, a
+    // hatchback, two saloons, an estate, a small car and a van. The class
+    // beside each is the loft it stands in for on the move, so a van is
+    // drawn where the simulation put a van.
+    struct Source { const char* asset; VehicleType nearest; };
+    static const Source kHeroCars[] = {
+        {"car-opel-astra-gtc", VehicleType::Hatchback},  {"car-fiat-punto-gt", VehicleType::CityCar},
+        {"car-renault-logan", VehicleType::Saloon},      {"car-vaz-2104", VehicleType::Estate},
+        {"car-honda-civic-ek", VehicleType::Hatchback},  {"car-small-price-car", VehicleType::Saloon},
+        {"car-mini-cooper-s", VehicleType::CityCar},     {"car-mercedes-sprinter", VehicleType::Van},
     };
-    struct Hero
+    static const char* const kWheelNodes[] = {"wheel_fl", "wheel_fr", "wheel_rl", "wheel_rr"};
+    for (const Source& source : kHeroCars)
     {
-        PropMesh near, far;
-        float length = 4.4f;
-        std::vector<Matrix> at;
-        std::string name;
-    };
-    std::vector<Hero> heroes;
-    for (const char* asset : kHeroCars)
-    {
-        Hero hero;
-        hero.near = importedProp(asset);
-        if (hero.near.empty()) continue;
-        hero.far    = importedProp(std::string(asset) + "-far");
-        hero.length = hero.near.bounds.Max.Z - hero.near.bounds.Min.Z;
-        hero.name   = asset;
-        heroes.push_back(std::move(hero));
+        HeroVehicleMesh hero;
+        hero.name    = source.asset;
+        hero.nearest = source.nearest;
+        hero.whole   = importedProp(source.asset);
+        if (hero.whole.empty()) continue;
+        hero.far    = importedProp(std::string(source.asset) + "-far");
+        hero.length = hero.whole.bounds.Max.Z - hero.whole.bounds.Min.Z;
+        // The body is every node that is not a wheel; a file from before the
+        // wheels were split has one node and no wheels, and is parked only.
+        hero.body = importedProp(source.asset, Matrix::getIdentityProperty(),
+                                 [](const std::string& node) {
+            return node.rfind("wheel_", 0) != 0;
+        });
+        float radius = 0.0f;
+        for (const char* wheelNode : kWheelNodes)
+        {
+            // The importer names a part after its node with the primitive's
+            // index appended -- "wheel_fl_0", "wheel_fl_1" -- so a prefix is
+            // the match.
+            PropMesh mesh = importedProp(source.asset, Matrix::getIdentityProperty(),
+                                         [&](const std::string& node) {
+                return node.rfind(wheelNode, 0) == 0;
+            });
+            if (mesh.empty()) break;
+            HeroVehicleMesh::Wheel wheel;
+            // The node's translation is the axle; the mesh is centred on it,
+            // so with the placement stripped the part turns about its own
+            // origin and the scene puts it back where the axle is.
+            wheel.centre = mesh.parts.front().local.getTranslationProperty();
+            Vector3 lo(1e30f, 1e30f, 1e30f), hi(-1e30f, -1e30f, -1e30f);
+            for (PropMesh::Part& part : mesh.parts)
+            {
+                part.local = Matrix::getIdentityProperty();
+                Grow(lo, hi, part.mesh->bounds());
+            }
+            mesh.bounds  = BoundingBox(lo, hi);
+            wheel.mesh   = std::move(mesh);
+            radius       = std::max(radius, (hi.Y - lo.Y) * 0.5f);
+            hero.wheels.push_back(std::move(wheel));
+        }
+        if (hero.wheels.size() == 4)
+        {
+            // The front pair steers: the two nearer the nose.
+            float noseZ = -1e30f;
+            for (const HeroVehicleMesh::Wheel& wheel : hero.wheels) noseZ = std::max(noseZ, wheel.centre.Z);
+            for (HeroVehicleMesh::Wheel& wheel : hero.wheels) wheel.steered = wheel.centre.Z > noseZ - 0.6f;
+            hero.wheelRadius = std::max(radius, 0.2f);
+        }
+        else
+        {
+            hero.wheels.clear();
+        }
+        heroVehicleMeshes_.push_back(std::move(hero));
     }
-    if (heroes.empty()) return;
+    if (heroVehicleMeshes_.empty()) return;
+    std::vector<HeroVehicleMesh>& heroes = heroVehicleMeshes_;
 
     // The bays the showcase viewpoints look at: both parking lanes of the
     // main street north of the junction, from the crossing to the far end of
@@ -2461,6 +2564,7 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
     for (std::size_t i = deck.size(); i > 1; --i)
         std::swap(deck[i - 1], deck[rng.index(i)]);
 
+    std::vector<std::vector<Matrix>> parkedAt(heroes.size());
     std::size_t dealt = 0;
     std::size_t lastOnSide[2] = {SIZE_MAX, SIZE_MAX};
     for (const std::size_t index : bays)
@@ -2489,22 +2593,76 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         }
         if (pick == SIZE_MAX) continue;
         lastOnSide[side] = pick;
-        heroes[pick].at.push_back(vehicle.transform(traffic_.lanes()));
+        parkedAt[pick].push_back(vehicle.transform(traffic_.lanes()));
         vehicleReplaced_[index] = true;
         ++heroVehicles_;
     }
 
     const float cull  = settings.propCullDistance;
     const float shade = settings.propShadowDistance;
-    for (Hero& hero : heroes)
+    for (std::size_t h = 0; h < heroes.size(); ++h)
     {
-        if (hero.at.empty()) continue;
-        placeProp(hero.near, hero.at, "hero-" + hero.name, cull * 0.75f, shade,
-                  /*castsShadow=*/true, hero.far.empty() ? nullptr : &hero.far, 45.0f);
+        if (parkedAt[h].empty()) continue;
+        placeProp(heroes[h].whole, parkedAt[h], "hero-" + heroes[h].name, cull * 0.75f, shade,
+                  /*castsShadow=*/true, heroes[h].far.empty() ? nullptr : &heroes[h].far, 45.0f);
     }
+
+    // --- the moving traffic --------------------------------------------------
+    // Every moving loft is drawn as an authored car of the nearest class: a
+    // van where the simulation put a van, a small car where it put a small
+    // car, and a hatchback or a saloon for the classes the eight do not
+    // cover. Dealt in a seeded order per class so the same model does not
+    // follow itself down a lane, and the simulation is told the model's
+    // length so the queue at the lights is spaced for the car that is drawn.
+    std::vector<std::vector<std::size_t>> byClass(static_cast<std::size_t>(VehicleType::Count));
+    for (std::size_t h = 0; h < heroes.size(); ++h)
+        if (heroes[h].drivable())
+            byClass[static_cast<std::size_t>(heroes[h].nearest)].push_back(h);
+    auto candidatesFor = [&](VehicleType type) -> const std::vector<std::size_t>& {
+        static const std::vector<std::size_t> none;
+        if (!byClass[static_cast<std::size_t>(type)].empty()) return byClass[static_cast<std::size_t>(type)];
+        // The classes the eight do not cover borrow the nearest that they do.
+        static const VehicleType kFallback[] = {VehicleType::Hatchback, VehicleType::Saloon,
+                                                VehicleType::CityCar, VehicleType::Estate};
+        for (const VehicleType fallback : kFallback)
+            if (!byClass[static_cast<std::size_t>(fallback)].empty())
+                return byClass[static_cast<std::size_t>(fallback)];
+        return none;
+    };
+    std::vector<std::size_t> dealtPerClass(static_cast<std::size_t>(VehicleType::Count), 0);
+    int lastOnLane[8];
+    std::fill(std::begin(lastOnLane), std::end(lastOnLane), -1);
+    for (std::size_t v = 0; v < fleet.size(); ++v)
+    {
+        const Vehicle& vehicle = fleet[v];
+        if (vehicle.parked) continue;
+        const std::vector<std::size_t>& candidates = candidatesFor(vehicle.type);
+        if (candidates.empty()) continue;
+        std::size_t& cursor = dealtPerClass[static_cast<std::size_t>(vehicle.type)];
+        int pick = -1;
+        for (std::size_t attempt = 0; attempt < candidates.size(); ++attempt)
+        {
+            const int candidate = static_cast<int>(candidates[(cursor + attempt) % candidates.size()]);
+            const int lane = std::clamp(vehicle.lane, 0, 7);
+            if (candidate == lastOnLane[lane] && candidates.size() > 1) continue;
+            pick = candidate;
+            cursor += attempt + 1 + rng.index(2);
+            lastOnLane[lane] = candidate;
+            break;
+        }
+        if (pick < 0) continue;
+        heroForVehicle_[v] = pick;
+        traffic_.setVehicleLength(v, heroes[static_cast<std::size_t>(pick)].length);
+        ++movingHeroes_;
+    }
+
+    int drivable = 0;
+    for (const HeroVehicleMesh& hero : heroes) drivable += hero.drivable() ? 1 : 0;
     CNA::Logger::Info("cna-street: " + std::to_string(heroVehicles_) + " hero vehicles over "
                       + std::to_string(heroes.size()) + " models parked in "
-                      + std::to_string(bays.size()) + " hero bays");
+                      + std::to_string(bays.size()) + " hero bays; " + std::to_string(movingHeroes_)
+                      + " of " + std::to_string(traffic_.movingCount()) + " moving vehicles drawn as "
+                      + std::to_string(drivable) + " drivable models");
 }
 
 int CityScene::chooseHeroPlot() const
@@ -2566,9 +2724,9 @@ void CityScene::buildHeroShop(const RenderSettings& settings)
         placeProp(prop, at, "hero-shop-" + asset, cull, settings.propShadowDistance * 0.4f);
         placed += static_cast<int>(at.size());
     }
-    CNA::Logger::Info("cna-street: hero shop on plot " + std::to_string(heroPlot_) + " -- "
-                      + std::to_string(placed) + " of " + std::to_string(heroProps_.size())
-                      + " props stood");
+    CNA::Logger::Info("cna-street: shop props -- " + std::to_string(placed) + " of "
+                      + std::to_string(heroProps_.size()) + " stood, the hero cafe on plot "
+                      + std::to_string(heroPlot_));
 }
 
 void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
@@ -2761,8 +2919,7 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
             entry->skinning.InverseBindPose   = person->skeleton.inverseBindPose();
             const CharacterFactory::Clips clips =
                 CharacterFactory::clips(person->skeleton, person->height, 1.06f);
-            entry->skinning.AnimationClips["walk"] = clips.walk;
-            entry->skinning.AnimationClips["idle"] = clips.idle;
+            clips.install(entry->skinning.AnimationClips);
             // The rigid stand-in for the shadow pass, from the far copy in its
             // bind pose; see CNA-F14 below.
             entry->shadowProxy = makeProp(std::string(personName) + "-shadow",
@@ -2833,8 +2990,7 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         entry->skinning.InverseBindPose   = full.skeleton.inverseBindPose();
         const CharacterFactory::Clips clips =
             CharacterFactory::clips(full.skeleton, look.height, 1.06f);
-        entry->skinning.AnimationClips["walk"] = clips.walk;
-        entry->skinning.AnimationClips["idle"] = clips.idle;
+        clips.install(entry->skinning.AnimationClips);
 
         // A rigid stand-in for the shadow pass. CNA's cascade caster takes its
         // world matrix from a uniform and knows nothing about bones, so a

@@ -56,6 +56,12 @@ struct Vehicle
     /// most obvious animation error there is, and both directions of the error
     /// have a name.
     float wheelAngle = 0.0f;
+    /// Distance driven, in metres, never wrapped. An authored car's wheels
+    /// are not the loft's size, and rolling them from `wheelAngle` -- which
+    /// is scaled by the loft's radius and wraps at one turn of *that* wheel
+    /// -- would make them jump once a revolution. A wheel of any radius
+    /// rolls from this without a seam.
+    float odometer = 0.0f;
     /// Front-wheel steer, in radians, positive to the right.
     float steerAngle = 0.0f;
     /// Decelerating hard enough that a driver would be on the brake.
@@ -118,6 +124,11 @@ public:
 
     [[nodiscard]] const std::vector<Lane>& lanes() const { return lanes_; }
     [[nodiscard]] const std::vector<Vehicle>& vehicles() const { return vehicles_; }
+    /// Gives one vehicle the length of the model that is drawn for it. The
+    /// following distance, the queue at a red light and the footprint a
+    /// pedestrian walks round all read this, so a 5.9 m van drawn over a
+    /// 4.3 m loft would otherwise queue through the car ahead of it.
+    void setVehicleLength(std::size_t index, float length);
     [[nodiscard]] int movingCount() const { return movingCount_; }
     [[nodiscard]] int parkedCount() const { return parkedCount_; }
 

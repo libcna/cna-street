@@ -116,6 +116,11 @@ VehicleType TrafficSystem::typeForVariant(int variant)
     return kMix[static_cast<std::size_t>(std::clamp(variant, 0, kVariantCount - 1))];
 }
 
+void TrafficSystem::setVehicleLength(std::size_t index, float length)
+{
+    if (index < vehicles_.size() && length > 1.0f) vehicles_[index].length = length;
+}
+
 void TrafficSystem::buildLanes()
 {
     lanes_.clear();
@@ -377,6 +382,7 @@ void TrafficSystem::update(float deltaSeconds, const TrafficSignalController& si
                           || (vehicle.speed < 0.4f && clearance < 30.0f);
 
         const float travelled = vehicle.speed * dt;
+        vehicle.odometer += travelled;
         const float radius = VehicleFactory::dimensionsFor(vehicle.type).wheelRadius;
         vehicle.wheelAngle += travelled / std::max(radius, 0.05f);
         if (vehicle.wheelAngle > MathHelper::TwoPi) vehicle.wheelAngle -= MathHelper::TwoPi;

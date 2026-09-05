@@ -245,6 +245,36 @@ private:
     /// hero model stands in for, so `submit` leaves it out.
     std::vector<bool> vehicleReplaced_;
     int heroVehicles_ = 0;
+    /// An authored car, as the scene drives it: the whole model for a parked
+    /// copy, the body alone and four wheels for a moving one -- each wheel
+    /// exported by scripts/blender-vehicles.py as its own node, centred on
+    /// its axle, so it can be rolled and steered the way the lofts' are --
+    /// and the far copy with the wheels welded on.
+    struct HeroVehicleMesh
+    {
+        struct Wheel
+        {
+            PropMesh mesh;
+            Microsoft::Xna::Framework::Vector3 centre{0.0f, 0.0f, 0.0f};
+            bool steered = false;
+        };
+        std::string name;
+        PropMesh whole;
+        PropMesh body;
+        PropMesh far;
+        std::vector<Wheel> wheels;
+        float wheelRadius = 0.32f;
+        float length = 4.4f;
+        VehicleType nearest = VehicleType::Hatchback;
+        /// Only a model whose wheels came out of the file separately can be
+        /// driven; one that did not stays parked.
+        [[nodiscard]] bool drivable() const { return wheels.size() == 4 && !body.empty(); }
+    };
+    std::vector<HeroVehicleMesh> heroVehicleMeshes_;
+    /// One entry per vehicle in `traffic_`: which authored model a moving
+    /// vehicle is drawn as, or -1 for the loft.
+    std::vector<int> heroForVehicle_;
+    int movingHeroes_ = 0;
     /// The far level of detail of each street tree, kept for the district
     /// beyond the modelled frontage, which plants the same trees at the same
     /// pitch and never gets close enough to want the near one.

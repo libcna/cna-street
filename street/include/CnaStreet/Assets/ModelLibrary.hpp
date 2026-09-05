@@ -141,6 +141,10 @@ public:
 
     [[nodiscard]] std::size_t loadedCount() const { return loaded_; }
     [[nodiscard]] std::size_t triangleCount() const { return triangles_; }
+    /// How many material maps arrived with one mip level rather than a
+    /// chain, over every model loaded. Zero when the content build compiled
+    /// them all; see docs/cna-findings.md GLTF-206.
+    [[nodiscard]] int singleLevelMaps() const { return singleLevelMaps_; }
     [[nodiscard]] const std::vector<std::string>& failures() const { return failures_; }
 
 private:
@@ -160,6 +164,7 @@ private:
     std::vector<std::string> failures_;
     std::size_t loaded_ = 0;
     std::size_t triangles_ = 0;
+    int singleLevelMaps_ = 0;
 };
 
 }  // namespace CnaStreet

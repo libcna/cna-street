@@ -201,18 +201,29 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
     ++loaded_;
     // Which maps actually arrived, because a part whose textures failed to
     // load draws as flat white and nothing else reports it.
-    int textured = 0, normalMapped = 0;
+    // And whether they arrived with a mip chain: the content build compiles
+    // every model image under its own name so they do, and an image that
+    // came in loose instead carries one level and shimmers from a few
+    // metres (docs/cna-findings.md GLTF-206). Counted per material rather
+    // than per image, which is enough to see a build that missed them.
+    int textured = 0, normalMapped = 0, singleLevel = 0;
     for (const Part& part : result->parts)
     {
         if (part.material->albedo != nullptr) ++textured;
         if (part.material->normal != nullptr) ++normalMapped;
+        for (const Texture2D* map : {part.material->albedo, part.material->normal,
+                                     part.material->orm, part.material->emissive})
+            if (map != nullptr && map->getLevelCountProperty() <= 1) ++singleLevel;
     }
+    singleLevelMaps_ += singleLevel;
     CNA::Logger::Info("cna-street: imported '" + asset + "' -- "
                       + std::to_string(result->parts.size()) + " part(s), "
                       + std::to_string(result->triangleCount()) + " triangles, "
                       + std::to_string(result->height()) + " m tall as authored, "
                       + std::to_string(textured) + " textured, " + std::to_string(normalMapped)
-                      + " normal-mapped");
+                      + " normal-mapped"
+                      + (singleLevel > 0 ? ", " + std::to_string(singleLevel) + " map(s) without a mip chain"
+                                         : std::string(", every map with a mip chain")));
     return result;
 }
 

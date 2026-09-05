@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <vector>
 
 using namespace CnaStreet;
 using Microsoft::Xna::Framework::Matrix;
@@ -279,6 +280,35 @@ int main()
             CHECK_NEAR(world.M31, lane.direction.X, 1e-3);
             CHECK_NEAR(world.M33, lane.direction.Y, 1e-3);
         }
+    }
+
+    CASE("the odometer counts every metre driven and never wraps; a length can be set");
+    {
+        TrafficSystem traffic;
+        traffic.build(9u, 12, 8);
+        TrafficSignalController signals;
+        std::vector<float> last(traffic.vehicles().size(), 0.0f);
+        for (int i = 0; i < 2400; ++i)
+        {
+            traffic.update(1.0f / 60.0f, signals);
+            for (std::size_t v = 0; v < traffic.vehicles().size(); ++v)
+            {
+                const Vehicle& vehicle = traffic.vehicles()[v];
+                CHECK(vehicle.odometer >= last[v] - 1e-5f);
+                last[v] = vehicle.odometer;
+                if (vehicle.parked) CHECK(vehicle.odometer == 0.0f);
+            }
+        }
+        bool someoneDrove = false;
+        for (const Vehicle& vehicle : traffic.vehicles())
+            if (!vehicle.parked && vehicle.odometer > 50.0f) someoneDrove = true;
+        CHECK(someoneDrove);
+        // An authored van drawn over a loft tells the simulation its length.
+        traffic.setVehicleLength(0, 5.91f);
+        CHECK_NEAR(traffic.vehicles()[0].length, 5.91, 1e-4);
+        traffic.setVehicleLength(0, 0.5f);   // nonsense is ignored
+        CHECK_NEAR(traffic.vehicles()[0].length, 5.91, 1e-4);
+        traffic.setVehicleLength(9999, 4.0f); // as is an index off the end
     }
 
     TEST_MAIN("traffic-system");
