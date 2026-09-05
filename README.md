@@ -143,7 +143,13 @@ projecting surround round each window, the balconies stand on brackets, every
 shop door is set a third of a metre back into a reveal with a stone threshold
 and a pull handle, and the walls carry what walls carry: meter cabinets,
 vents, conduit runs with their saddles, scanned security cameras over the
-shop doors and scanned condenser units beside the upper windows.
+shop doors and scanned condenser units beside the upper windows. The upper
+windows are two metres tall, as the rooms behind them were built for, and
+each shows something: a net curtain across the pane or drawn to the sides,
+a roller blind part way down, a room with the light off; a keystone stands
+proud of every head on the rendered and ashlar blocks, half of those blocks
+carry folding shutters beside their windows -- one in eight closed -- and
+half have quoins up their corners.
 
 **Beyond the frontage.** The two streets continue past the modelled plots
 with their kerbs, footways and carriageways, lined by blocks that carry real
@@ -162,18 +168,29 @@ never the same model in two neighbouring bays. They are static, so the
 reflection probes hold them and the shop windows reflect them. The loft each
 one replaces stays in the simulation and is not drawn.
 
-**The moving parts.** Twelve vehicles over six classes — city car, hatchback,
-saloon, estate, crossover, van — lofted from monotone-cubic profile curves
-rather than assembled from boxes, with wheel arches cut into the body, separate
+**The moving parts.** The traffic is the same eight authored cars, driven:
+`scripts/blender-vehicles.py` finds each model's four tyres, splits the
+wheels off into nodes of their own centred on their axles, and the scene
+rolls them from the odometer at their own radius and steers the front pair
+through the junction. Behind them stand twelve lofted vehicles over six
+classes — city car, hatchback, saloon, estate, crossover, van — lofted from
+monotone-cubic profile curves rather than assembled from boxes, with wheel arches cut into the body, separate
 wheels that roll and steer, tyres with shoulders, five-spoke alloys, tinted
 glazing, mirrors, bumpers, a grille with slats and a badge, wrap-around lamp
 clusters with chromed reflectors, number plates, a roof aerial and an interior
 with seats and a steering wheel. Bicycles lean on the stands. They follow the vehicle ahead, brake for a red light with
-their brake lamps lit, and turn through the junction on a Bézier.
+their brake lamps lit, and turn through the junction on a Bézier. They are the fallback for a tree
+without the derived cars, and the simulation the authored cars are driven by.
 
 Fifty-odd people over eight variants, each one mesh per material on a
-nineteen-bone skeleton and animated on the GPU by `SkinnedPbrEffect` from walk
-and idle clips built in code. The eight are built from MakeHuman's CC0 base
+nineteen-bone skeleton and animated on the GPU by `SkinnedPbrEffect` from
+three walks and three ways of standing built in code: an ordinary pace, a
+brisk one with a longer stride and more arm, an easy one with less; and a
+wait that shifts its weight and looks about, one that reads a phone, one
+with the hands together. Each person is dealt a gait and a stance, a stride
+scaled to their height, a place on the footway rather than its centre line,
+and turns a corner over half a second; one in six walks with the person in
+front. The eight are built from MakeHuman's CC0 base
 mesh and system wardrobe -- skins, clothes, shoes, hair, eyes -- by
 `scripts/blender-people.py` with MPFB in Blender, posed with the arms down,
 their authored weights folded from MakeHuman's 137 bones onto this project's
@@ -209,10 +226,11 @@ densest.
 
 `docs/visual-overhaul/` holds the first overhaul's before-and-after set,
 `docs/visual-overhaul-2/` the second pass's, `docs/visual-overhaul-3/` the
-third's, and `docs/visual-overhaul-4/` the fourth's: authored cars, authored
-people, three tree species, architectural depth and the hero cafe, each
-viewpoint before beside after, the night set, flagship frames at 1920 × 1080,
-and what it cost.
+third's, `docs/visual-overhaul-4/` the fourth's, and
+`docs/visual-overhaul-5/` the fifth's: the authored cars driven, three gaits,
+dressed windows and shutters, the cafe composed further, mip chains for every
+imported image and supersampled stills, each viewpoint before beside after,
+flagship frames at 1920 × 1080, and what it cost.
 
 ## Building
 
@@ -329,6 +347,7 @@ The command line, in full, is `--help`. The ones that matter:
 | `--camera x,y,z,yaw,pitch` | Start at an explicit camera, in radians |
 | `--screenshot <file.png>` | Write one frame and exit |
 | `--capture <dir>` | Write every named viewpoint into `<dir>` and exit |
+| `--supersample <n>` | Render a still at *n* times the size and box-filter it down, in linear light: the flagship frames are shot at 2 |
 | `--frames <n>` | Render *n* frames and exit |
 | `--sun <elev> <azimuth>` | Move the sun, in degrees |
 | `--no-shadows`, `--no-ssao`, `--no-bloom`, `--no-fog`, `--no-clouds`, `--no-ibl` | Turn one thing off |
@@ -717,7 +736,7 @@ generated trees, the lofted cars and the generated figures stand in.
 ctest --test-dir build --output-on-failure
 ```
 
-Twelve suites over the parts of the street that can be checked without a device:
+Thirteen suites over the parts of the street that can be checked without a device:
 the signal controller, the traffic model, the walk graph, mesh building, the
 layout, the settings parser, the camera frustum, the mip-chain generation the
 content pipeline depends on, the shapes and surfaces the first visual overhaul
@@ -804,18 +823,18 @@ them again. The overlay's headline is an *exponential* average and its
 breakdown is one frame's stage times: right for flying a camera around, wrong
 for tuning — it once read 214 ms on a frame that took 778.
 
-| | Before the second pass (`27f92a8`) | Before the third (`83dc8e1`) | Before the fourth (`c31ae23`) | Now |
-| --- | --- | --- | --- | --- |
-| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes | 12 s, then 7 s of probes | 17 s, then 8 s of probes |
-| Static batches | 1 187 | 1 586 | 1 634 | 1 655 |
-| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas | the same, fourteen of them scans at 1024 px, plus twenty scanned models' own | the same, plus forty-four scanned models', eight cars' at 1k and eight people's with mip chains |
-| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 | 42, 74 + one covered car, 78 | 42, 74 of which 8 are authored, 78 over 8 authored people |
-| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 | 1 564 | 1 700 |
-| Shadow draw calls | 2 840 | 3 115 | 3 303 | 3 563 |
-| Triangles drawn | 560 k | 603 k | 1 695 k, of which the hero trees are most | 5 150 k, of which the trees are most |
-| Frame, 1024×576 | 34–45 ms median | 41–51 ms median | 47–59 ms median, interleaved with 52–64 for `83dc8e1` on a busy machine | 59–62 ms median against 47 for `c31ae23` |
-| Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 | 76 ms |
-| Frame, `--night` | 34 ms | 47 ms | unchanged by this pass | 56 ms |
+| | Before the second pass (`27f92a8`) | Before the third (`83dc8e1`) | Before the fourth (`c31ae23`) | Before the fifth (`c171cec`) | Now |
+| --- | --- | --- | --- | --- | --- |
+| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes | 12 s, then 7 s of probes | 17 s, then 8 s of probes | 27 s on a loaded machine, then 10 s of probes |
+| Static batches | 1 187 | 1 586 | 1 634 | 1 655 | 1 721 |
+| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas | the same, fourteen of them scans at 1024 px, plus twenty scanned models' own | the same, plus forty-four scanned models', eight cars' at 1k and eight people's with mip chains | the same, every imported image now compiled with a mip chain, two cars' paint at 2k |
+| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 | 42, 74 + one covered car, 78 | 42, 74 of which 8 are authored, 78 over 8 authored people | 42, 74 all drawn as the 8 authored models, 78 over 8 people in 3 gaits |
+| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 | 1 564 | 1 700 | 1 750–1 780 |
+| Shadow draw calls | 2 840 | 3 115 | 3 303 | 3 563 | 3 525 |
+| Triangles drawn | 560 k | 603 k | 1 695 k, of which the hero trees are most | 5 150 k, of which the trees are most | 5 620 k |
+| Frame, 1024×576 | 34–45 ms median | 41–51 ms median | 47–59 ms median, interleaved with 52–64 for `83dc8e1` on a busy machine | 59–62 ms median against 47 for `c31ae23` | 71–77 ms median against 72–86 for `c171cec`, both on a machine running other builds |
+| Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 | 76 ms | not re-measured |
+| Frame, `--night` | 34 ms | 47 ms | unchanged by this pass | 56 ms | not re-measured |
 
 Those are from a 16-core machine that was busy with other work while it
 measured, hence the ranges; the first overhaul's table, from four cores, is in
@@ -857,6 +876,16 @@ milliseconds are the opaque pass and four the shadow pass.
 `docs/visual-overhaul-4/performance.md` has the runs and where the triangles
 went.
 
+Against `c171cec`, the commit before the fifth pass, three runs each from the
+same build directory on a machine running other work throughout (load
+average eight to fourteen): **within noise** -- 73 / 86 / 78 ms before
+against 76 / 74 / 79 after at 1024 × 576 -- for every moving car drawn as
+an authored model, the dressed facades and the cafe. The first cut of the
+pass measured 92 ms; the props inside shops no longer cast shadows and a
+moving car switches to its welded far copy at thirty-two metres, which took
+it back. `docs/visual-overhaul-5/performance.md` has the runs, and a profile
+on the machine's own GPU, where the frame is the shadow pass's draw calls.
+
 Against `83dc8e1`, the commit before the third pass, three interleaved pairs
 at 1024 × 576 came out 52.0 / 63.8 / 55.4 ms before against 47.2 / 52.1 /
 58.6 ms after, and one pair at 1920 × 1080 59.5 against 63.8: within noise,
@@ -891,9 +920,10 @@ materials, and alpha masking instead of blending everywhere except glass.
 * **No audio.** CNA's audio module is there and works; the demo has nothing to
   play through it, and a synthesised city ambience would be a worse thing than
   silence.
-* **The moving traffic is still lofts.** The eight authored cars are parked;
-  a car driving past the camera is the generated one, because a moving car
-  needs wheels that turn and the authored models do not separate theirs.
+* **The moving traffic has no brake lights.** The authored cars carry their
+  lamps in their textures, so a driven one shows no lit lens when it brakes;
+  the loft it stands in for did. A per-part emissive override for the parts
+  named as lamps is the next step.
 * **The people's faces are painted.** MakeHuman's skins hold at four metres,
   which is where a street is seen from, and at two metres a painted face is a
   painted face.
@@ -903,10 +933,12 @@ materials, and alpha masking instead of blending everywhere except glass.
   the MPFB extension the manifest fetches; without Blender the generated
   trees, the lofted cars and the generated figures stand in, which is the
   fallback and not a failure.
-* **Scanned props and the cars carry one mip level** (GLTF-206), which is
-  why they are fetched or capped at 1k rather than 2k or 4k: a texture would
-  otherwise shimmer from a few metres. The people's textures do not, because
-  they go through the catalogue's compiler.
+* **An imported model's own images carry one mip level** (GLTF-206). The
+  content build now compiles every image a model refers to under its own
+  full name with a chain, which `ContentManager` finds before the loose
+  file, so nothing in the compiled set shimmers; a tree running the models
+  straight from their `.glb` files does, and the props are still fetched at
+  1k for it.
 * **An imported single-sided part draws inside out** under CNA's default cull
   (CNA-F15). The derived cars and people carry reversed winding for it, and
   any other single-sided import will need the same.
@@ -951,7 +983,8 @@ scripts/validate-assets.py  the licence gate, also a CTest test
 scripts/manifest-tool.py    reads the manifest for the build and the fetch
 scripts/prepare-surfaces.py turns scanned PBR sets into catalogue surfaces
 scripts/blender-tree-lod.py cuts a tree's levels of detail, in Blender
-scripts/blender-vehicles.py normalises a downloaded car into two levels of detail, in Blender
+scripts/blender-vehicles.py normalises a downloaded car into two levels of detail with its wheels split off, in Blender
+scripts/model-textures.py   lists a compiled model's images with the colour space their mip chains are averaged in
 scripts/blender-people.py   builds the people from MakeHuman with MPFB, in Blender
 scripts/blender-vehicle-preview.py
                             renders a model's orientation views, for checking a download
@@ -973,6 +1006,7 @@ docs/visual-overhaul/       the first visual overhaul: audit, comparisons, repor
 docs/visual-overhaul-2/     the second pass: before and after, night, report
 docs/visual-overhaul-3/     the third pass: scans, props, trees, light
 docs/visual-overhaul-4/     the fourth pass: authored cars, people, trees, depth, the hero cafe
+docs/visual-overhaul-5/     the fifth pass: the cars driven, gaits, dressed facades, coherence
 plan.md                     what is done, what is next
 ```
 
