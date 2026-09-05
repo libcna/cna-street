@@ -8,6 +8,7 @@
 
 #include "Microsoft/Xna/Framework/Graphics/AnimationPlayer.hpp"
 
+#include <unordered_map>
 #include <string>
 #include <vector>
 
@@ -101,11 +102,30 @@ public:
     [[nodiscard]] CharacterLook look(Rng& rng, int variant) const;
 
     /// The clips a pedestrian plays. Built against a skeleton of the shape
-    /// @ref build produces, so a clip and a rig always match.
+    /// @ref build produces, so a clip and a rig always match. Three walks
+    /// and three ways of standing, so that a crowd of eight figures does
+    /// not carry eight copies of one gait: `walk` is an ordinary pace,
+    /// `walk-brisk` a longer stride with more arm, `walk-easy` a shorter,
+    /// slower one with less; `idle` shifts its weight and looks about,
+    /// `idle-phone` reads a phone, `idle-hands` stands with the hands
+    /// together in front.
     struct Clips
     {
         Microsoft::Xna::Framework::Graphics::AnimationClip walk;
+        Microsoft::Xna::Framework::Graphics::AnimationClip walkBrisk;
+        Microsoft::Xna::Framework::Graphics::AnimationClip walkEasy;
         Microsoft::Xna::Framework::Graphics::AnimationClip idle;
+        Microsoft::Xna::Framework::Graphics::AnimationClip idlePhone;
+        Microsoft::Xna::Framework::Graphics::AnimationClip idleHands;
+        /// The names the clips are installed under, in the order above.
+        static constexpr const char* kWalkNames[3] = {"walk", "walk-brisk", "walk-easy"};
+        static constexpr const char* kIdleNames[3] = {"idle", "idle-phone", "idle-hands"};
+        /// How much longer or shorter a style's stride is than the plain
+        /// walk's, which is how the scene keeps the feet on the ground:
+        /// the clip's clock is distance walked over the stride.
+        static constexpr float kStrideScale[3] = {1.0f, 1.10f, 0.90f};
+        /// Installs every clip under its name.
+        void install(std::unordered_map<std::string, Microsoft::Xna::Framework::Graphics::AnimationClip>& into) const;
     };
     /// @p strideSeconds is one complete cycle: two steps.
     [[nodiscard]] static Clips clips(const Geometry::Skeleton& skeleton, float height,

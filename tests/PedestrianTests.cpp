@@ -240,5 +240,91 @@ int main()
         }
     }
 
+    CASE("everyone has a gait, a stance, a stride for their height and a place on the footway");
+    {
+        PedestrianSystem people;
+        people.build(layout, crossings, 12u, 60);
+        for (const Pedestrian& person : people.people())
+        {
+            CHECK(person.walkStyle >= 0 && person.walkStyle <= 2);
+            CHECK(person.idleStyle >= 0 && person.idleStyle <= 2);
+            CHECK(person.stride > 1.05f && person.stride < 2.0f);
+            CHECK(person.lateral >= -0.36f && person.lateral <= 0.76f);
+            CHECK(std::isfinite(person.facing));
+        }
+        // A taller person of the same gait takes a longer stride.
+        for (const Pedestrian& a : people.people())
+            for (const Pedestrian& b : people.people())
+                if (a.walkStyle == b.walkStyle && a.height > b.height + 0.05f)
+                    CHECK(a.stride > b.stride);
+        // And the crowd is not all one gait.
+        std::set<int> gaits;
+        for (const Pedestrian& person : people.people()) gaits.insert(person.walkStyle);
+        CHECK(gaits.size() == 3);
+    }
+
+    CASE("a companion keeps to its leader, beside it, and waits with it");
+    {
+        PedestrianSystem people;
+        people.build(layout, crossings, 12u, 60);
+        TrafficSignalController signals;
+        int companions = 0;
+        for (int i = 0; i < 4000; ++i)
+        {
+            people.update(1.0f / 60.0f, signals);
+            for (const Pedestrian& person : people.people())
+            {
+                if (person.companion < 0) continue;
+                const Pedestrian& leader =
+                    people.people()[static_cast<std::size_t>(person.companion)];
+                CHECK(person.edge == leader.edge);
+                CHECK(person.reversed == leader.reversed);
+                CHECK(person.waiting == leader.waiting);
+                const Vector2 a = person.position(people.nodes(), people.edges());
+                const Vector2 b = leader.position(people.nodes(), people.edges());
+                const float dx = a.X - b.X, dz = a.Y - b.Y;
+                CHECK_MSG(std::sqrt(dx * dx + dz * dz) < 1.5f, "a companion has lost its leader");
+                CHECK(std::fabs(person.lateral - leader.lateral) > 0.5f);
+                CHECK(person.lateral >= -0.36f && person.lateral <= 0.76f);
+                if (i == 0) ++companions;
+            }
+        }
+        CHECK(companions >= 6);
+    }
+
+    CASE("a body turns toward the way it is going, and gets there");
+    {
+        PedestrianSystem people;
+        people.build(layout, crossings, 12u, 60);
+        TrafficSignalController signals;
+        for (int i = 0; i < 3000; ++i) people.update(1.0f / 60.0f, signals);
+        int turning = 0;
+        for (const Pedestrian& person : people.people())
+        {
+            const float target = person.heading(people.nodes(), people.edges());
+            const float off = std::fabs(std::remainder(person.facing - target, 6.2831853f));
+            if (off > 0.05f) ++turning;
+            // Half a second turns a right angle, so nobody is ever more than
+            // one node's worth of turn behind.
+            CHECK(off < 3.2f);
+        }
+        // Most people have been on their edge for longer than a turn takes.
+        CHECK(turning < static_cast<int>(people.people().size()) / 4);
+    }
+
+    CASE("the lineup stands eight and freezes eight mid-stride");
+    {
+        PedestrianSystem people;
+        people.buildLineup(layout, crossings, 12u);
+        CHECK(people.people().size() == 16);
+        for (std::size_t i = 0; i < people.people().size(); ++i)
+        {
+            const Pedestrian& person = people.people()[i];
+            CHECK(person.pinned);
+            CHECK(person.waiting == (i < 8));
+            if (i >= 8) CHECK(person.phase >= 0.0f && person.phase < person.stride);
+        }
+    }
+
     TEST_MAIN("pedestrians");
 }

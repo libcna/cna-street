@@ -26,15 +26,39 @@ float Distance(const Vector2& a, const Vector2& b)
 
 }  // namespace
 
+/// The side of an edge the buildings are on: away from the street the edge
+/// runs beside. The graph is axis-aligned, so an edge along z is a main
+/// street footway and its buildings are outward in x, and an edge along x
+/// is a side street footway or a crossing of the main street with its
+/// "buildings" outward in z -- for a crossing that is simply along the
+/// zebra, which is where the spread belongs.
+Vector2 BuildingSideOf(const WalkNode& a, const WalkNode& b)
+{
+    const float dx = b.position.X - a.position.X, dz = b.position.Y - a.position.Y;
+    const Vector2 mid((a.position.X + b.position.X) * 0.5f, (a.position.Y + b.position.Y) * 0.5f);
+    if (std::fabs(dz) > std::fabs(dx)) return Vector2(mid.X < 0.0f ? -1.0f : 1.0f, 0.0f);
+    return Vector2(0.0f, mid.Y < 0.0f ? -1.0f : 1.0f);
+}
+
 Vector2 Pedestrian::position(const std::vector<WalkNode>& nodes,
                              const std::vector<WalkEdge>& edges) const
 {
     if (pinned) return pinnedAt;
     const WalkEdge& e = edges[static_cast<std::size_t>(edge)];
-    const Vector2& a = nodes[static_cast<std::size_t>(reversed ? e.to : e.from)].position;
-    const Vector2& b = nodes[static_cast<std::size_t>(reversed ? e.from : e.to)].position;
+    const WalkNode& na = nodes[static_cast<std::size_t>(reversed ? e.to : e.from)];
+    const WalkNode& nb = nodes[static_cast<std::size_t>(reversed ? e.from : e.to)];
+    const Vector2& a = na.position;
+    const Vector2& b = nb.position;
     const float t = e.length > 1e-4f ? std::clamp(distance / e.length, 0.0f, 1.0f) : 0.0f;
-    return Vector2(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t);
+    const Vector2 side = BuildingSideOf(na, nb);
+    const float spread = e.crossing ? lateral * 0.6f : lateral;
+    return Vector2(a.X + (b.X - a.X) * t + side.X * spread, a.Y + (b.Y - a.Y) * t + side.Y * spread);
+}
+
+Vector2 PedestrianSystem::buildingSide(const WalkEdge& edge) const
+{
+    return BuildingSideOf(nodes_[static_cast<std::size_t>(edge.from)],
+                          nodes_[static_cast<std::size_t>(edge.to)]);
 }
 
 float Pedestrian::heading(const std::vector<WalkNode>& nodes,
@@ -190,6 +214,11 @@ void PedestrianSystem::build(const CityLayout& layout, const std::vector<Crossin
                              std::uint32_t seed, int count)
 {
     rng_ = Rng::derive(seed, "pedestrians");
+    // The gaits, stances and spacing draw from a stream of their own, so
+    // that adding them left every person where the earlier passes' seed
+    // had put them -- which is what keeps a viewpoint aimed at a person
+    // aimed at a person.
+    Rng manner = Rng::derive(seed, "pedestrian-manner");
     people_.clear();
     buildGraph(layout, crossings);
     if (edges_.empty()) return;
@@ -211,6 +240,39 @@ void PedestrianSystem::build(const CityLayout& layout, const std::vector<Crossin
         person.height   = rng_.range(M::kPersonHeightMin, M::kPersonHeightMax);
         person.variant  = rng_.intRange(0, kVariantCount - 1);
         person.phase    = rng_.range(0.0f, 10.0f);
+        // A gait and a way of standing, and a pace to go with the gait: the
+        // brisk walkers are the quicker ones. The stride follows the height
+        // and the gait, so the animation's clock -- distance over stride --
+        // keeps the feet on the ground for all of them.
+        person.walkStyle = manner.intRange(0, 2);
+        person.idleStyle = manner.intRange(0, 2);
+        static const float kPace[3]   = {1.0f, 1.12f, 0.88f};
+        static const float kStride[3] = {1.0f, 1.10f, 0.90f};
+        person.speed  *= kPace[person.walkStyle];
+        person.stride  = kStrideLength * std::pow(person.height / 1.75f, 0.6f)
+                         * kStride[person.walkStyle];
+        person.lateral = manner.range(-0.35f, 0.75f);
+        person.facing  = person.heading(nodes_, edges_);
+        // One person in six walks with the one before: same edge, same way,
+        // same pace, a step behind and to the side, and they wait together.
+        if (i % 6 == 5 && !people_.empty())
+        {
+            const Pedestrian& leader = people_.back();
+            person.companion = static_cast<int>(people_.size()) - 1;
+            person.edge      = leader.edge;
+            person.reversed  = leader.reversed;
+            person.speed     = leader.speed;
+            person.walkStyle = leader.walkStyle;
+            person.stride    = kStrideLength * std::pow(person.height / 1.75f, 0.6f)
+                               * kStride[person.walkStyle];
+            person.distance  = std::max(0.0f, leader.distance - 0.3f);
+            // Beside the leader on whichever side has the room, and never
+            // off the footway's walking band.
+            person.lateral   = std::clamp(leader.lateral > 0.2f ? leader.lateral - 0.62f
+                                                                : leader.lateral + 0.62f,
+                                          -0.35f, 0.75f);
+            person.facing    = leader.facing;
+        }
         people_.push_back(person);
     }
 }
@@ -225,6 +287,28 @@ void PedestrianSystem::update(float deltaSeconds, const TrafficSignalController&
     for (Pedestrian& person : people_)
     {
         const WalkEdge& edge = edges_[static_cast<std::size_t>(person.edge)];
+
+        // The body turns toward the way it is going over about half a second.
+        {
+            const float target = person.heading(nodes_, edges_);
+            const float delta  = std::remainder(target - person.facing, MathHelper::TwoPi);
+            const float step   = std::clamp(delta, -3.6f * dt, 3.6f * dt);
+            person.facing = std::remainder(person.facing + step, MathHelper::TwoPi);
+        }
+
+        // A companion follows its leader rather than the graph.
+        if (person.companion >= 0 && person.companion < static_cast<int>(people_.size()))
+        {
+            const Pedestrian& leader = people_[static_cast<std::size_t>(person.companion)];
+            person.edge     = leader.edge;
+            person.reversed = leader.reversed;
+            person.waiting  = leader.waiting;
+            person.waitTime = leader.waitTime + 1.3f;
+            person.distance = std::max(0.0f, leader.distance - 0.3f);
+            if (person.waiting) ++waitingCount_;
+            else person.phase += person.speed * dt;
+            continue;
+        }
 
         if (person.waiting)
         {
@@ -276,7 +360,8 @@ void PedestrianSystem::update(float deltaSeconds, const TrafficSignalController&
 Matrix PedestrianSystem::transform(const Pedestrian& person, float groundHeight) const
 {
     const Vector2 at = person.position(nodes_, edges_);
-    return Geometry::Place(at.X, groundHeight, at.Y, person.heading(nodes_, edges_));
+    return Geometry::Place(at.X, groundHeight, at.Y,
+                           person.pinned ? person.pinnedHeading : person.facing);
 }
 
 Vector2 PedestrianSystem::lineupPlace(int index)
@@ -288,25 +373,39 @@ Vector2 PedestrianSystem::lineupPlace(int index)
 void PedestrianSystem::buildLineup(const CityLayout& layout,
                                    const std::vector<Crossing>& crossings, std::uint32_t seed)
 {
-    build(layout, crossings, seed, kVariantCount);
+    // Sixteen: one of each variant standing, cycling through the three
+    // stances, then one of each frozen at successive eighths of the walk
+    // cycle -- the only sane way to look at a gait, since a person who
+    // walks off before the shutter opens cannot be looked at, and a knee
+    // that bends the wrong way is obvious in a row of eight and invisible
+    // in a crowd.
+    build(layout, crossings, seed, kVariantCount * 2);
     lineup_ = true;
     for (int i = 0; i < static_cast<int>(people_.size()); ++i)
     {
         Pedestrian& person = people_[static_cast<std::size_t>(i)];
+        const bool walking   = i >= kVariantCount;
         person.variant       = i % kVariantCount;
-        person.waiting       = true;
+        person.waiting       = !walking;
         person.waitTime      = static_cast<float>(i) * 0.31f;
-        person.phase         = static_cast<float>(i) * 0.19f;
         person.speed         = 0.0f;
         person.pinned        = true;
         person.pinnedAt      = lineupPlace(i);
         person.pinnedHeading = MathHelper::PiOver2;
+        person.idleStyle     = i % 3;
+        person.walkStyle     = walking ? (i - kVariantCount) % 3 : 0;
+        person.stride        = kStrideLength;
+        person.phase         = walking ? kStrideLength * static_cast<float>(i - kVariantCount)
+                                             / static_cast<float>(kVariantCount)
+                                       : static_cast<float>(i) * 0.19f;
+        person.companion     = -1;
+        person.lateral       = 0.0f;
     }
 }
 
 float PedestrianSystem::cyclesWalked(const Pedestrian& person)
 {
-    return person.phase / kStrideLength;
+    return person.phase / std::max(person.stride, 0.5f);
 }
 
 }  // namespace CnaStreet

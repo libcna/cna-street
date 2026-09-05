@@ -20,6 +20,9 @@ cna_street_test(realism_tests RealismTests.cpp)
 # The character format the people are written in: passes with a note where no
 # people have been generated.
 cna_street_test(character_format_tests CharacterFormatTests.cpp)
+# The walk and idle clips: a knee bends one way, an arm swings against its
+# leg, the legs are half a cycle apart, and the three walks are three walks.
+cna_street_test(gait_tests GaitTests.cpp)
 
 # The licence gate as a test, where Python is available: every fetched asset
 # declared, every declared licence on the allow-list, every digest matching.

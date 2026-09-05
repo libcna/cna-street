@@ -11,6 +11,8 @@
 #include <cmath>
 #include <cstdint>
 #include <functional>
+#include <initializer_list>
+#include <utility>
 #include <string>
 #include <vector>
 
@@ -621,114 +623,284 @@ Quaternion PitchQ(float radians) { return Quaternion::CreateFromAxisAngle(Vector
 
 }  // namespace
 
+namespace {
+
+/// A curve through keypoints over one cycle, sampled with a cosine ease
+/// between them, and periodic: the last key is the first. This is how a
+/// gait is described -- a knee is flexed so much at heel strike, so much at
+/// mid-swing -- rather than as a sine, which has one shape and a walk has
+/// several.
+class GaitCurve
+{
+public:
+    GaitCurve(std::initializer_list<std::pair<float, float>> keys) : keys_(keys) {}
+    [[nodiscard]] float at(float t) const
+    {
+        t -= std::floor(t);
+        for (std::size_t i = 0; i + 1 < keys_.size(); ++i)
+        {
+            const auto& [t0, v0] = keys_[i];
+            const auto& [t1, v1] = keys_[i + 1];
+            if (t >= t0 && t <= t1)
+            {
+                const float u = t1 > t0 ? (t - t0) / (t1 - t0) : 0.0f;
+                const float e = 0.5f - 0.5f * std::cos(u * MathHelper::Pi);
+                return v0 + (v1 - v0) * e;
+            }
+        }
+        return keys_.back().second;
+    }
+
+private:
+    std::vector<std::pair<float, float>> keys_;
+};
+
+Quaternion YawQ(float radians) { return Quaternion::CreateFromAxisAngle(Vector3::Up, radians); }
+/// About +Z, the figure's own forward, rather than XNA's `Forward`, which is
+/// -Z: a positive roll carries a hanging limb's far end toward +X, the
+/// figure's left.
+Quaternion RollQ(float radians) { return Quaternion::CreateFromAxisAngle(Vector3(0.0f, 0.0f, 1.0f), radians); }
+
+/// One walk cycle. `t` runs 0..1 from the right heel strike to the next;
+/// the left leg is the same half a cycle later. Signs follow the skeleton:
+/// a positive pitch swings a bone's far end backward, so the thigh pitches
+/// negative to come forward, the shin positive to bend the knee (the foot
+/// goes back), the foot positive to point the toes down; a positive yaw
+/// turns to the left.
+struct WalkStyle
+{
+    float stride = 1.0f;    ///< thigh swing, as a factor of the plain walk's
+    float arm    = 0.28f;   ///< upper-arm swing amplitude, radians
+    float lean   = 0.04f;   ///< forward lean of the trunk, radians
+    float bob    = 1.0f;    ///< vertical bob, as a factor
+    float lag    = 0.03f;   ///< how far the arms trail the legs, in cycles
+};
+
+AnimationClip WalkClip(const Skeleton& skeleton, float height, float cycle, const WalkStyle& style)
+{
+    constexpr int kKeys = 24;
+    AnimationClip walk;
+    walk.Duration = Seconds(cycle);
+    const auto bone = [&](const char* base, const char* suffix) {
+        return skeleton.find(std::string(base) + suffix);
+    };
+
+    // The thigh goes forward to heel strike, back through stance to toe-off
+    // at six tenths of the cycle, and forward again through swing. The knee
+    // is nearly straight at heel strike, takes the weight with a little
+    // flex, straightens at mid-stance, and bends sixty degrees at mid-swing
+    // to clear the ground. The ankle lands toes-up, flattens, and pushes
+    // off toes-down.
+    const GaitCurve thigh{{0.00f, 0.40f}, {0.30f, 0.05f}, {0.60f, -0.24f}, {0.85f, 0.30f},
+                          {1.00f, 0.40f}};
+    const GaitCurve knee{{0.00f, 0.10f}, {0.15f, 0.30f}, {0.42f, 0.08f}, {0.60f, 0.50f},
+                         {0.74f, 1.00f}, {0.90f, 0.30f}, {1.00f, 0.10f}};
+    const GaitCurve ankle{{0.00f, -0.14f}, {0.12f, 0.06f}, {0.40f, 0.00f}, {0.60f, 0.42f},
+                          {0.75f, 0.10f}, {0.90f, -0.16f}, {1.00f, -0.14f}};
+    // The arms swing against the legs and trail them a little, and the
+    // elbow bends most when the arm is forward.
+    const GaitCurve arm{{0.00f, 1.0f}, {0.50f, -1.0f}, {1.00f, 1.0f}};
+    const GaitCurve elbow{{0.00f, 0.0f}, {0.50f, 1.0f}, {1.00f, 0.0f}};
+
+    for (int side = 0; side < 2; ++side)
+    {
+        const char* suffix = side == 0 ? ".R" : ".L";
+        const float offset = side == 0 ? 0.0f : 0.5f;
+        walk.Tracks.push_back(Track(skeleton, bone(BoneName::kThigh, suffix), cycle, kKeys,
+                                    [&](float t) { return PitchQ(-thigh.at(t + offset) * style.stride); }));
+        walk.Tracks.push_back(Track(skeleton, bone(BoneName::kShin, suffix), cycle, kKeys,
+                                    [&](float t) { return PitchQ(knee.at(t + offset) * (0.85f + 0.15f * style.stride)); }));
+        walk.Tracks.push_back(Track(skeleton, bone(BoneName::kFoot, suffix), cycle, kKeys,
+                                    [&](float t) { return PitchQ(ankle.at(t + offset)); }));
+
+        // The arm on this side swings with the other leg: the right arm is
+        // back when the right leg is forward. A hand's breadth of abduction
+        // keeps the swinging arm off the hip, and it is the right arm that
+        // rolls negative because the right is the figure's -X.
+        const float abduct = side == 0 ? -0.09f : 0.09f;
+        walk.Tracks.push_back(Track(skeleton, bone(BoneName::kUpperArm, suffix), cycle, kKeys,
+                                    [&](float t) {
+            const float swing = arm.at(t + offset - style.lag);
+            return RollQ(abduct) * PitchQ(0.04f + swing * style.arm);
+        }));
+        walk.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, suffix), cycle, kKeys,
+                                    [&](float t) {
+            return PitchQ(-0.20f - elbow.at(t + offset - style.lag) * (0.12f + style.arm * 0.45f));
+        }));
+    }
+
+    // The pelvis: two rises per cycle, highest at mid-stance; a sway onto the
+    // supporting leg once per cycle; a yaw that carries the swinging hip
+    // forward and a roll that drops the swinging side. The right is -X.
+    {
+        const int pelvis = skeleton.find(BoneName::kPelvis);
+        const Vector3 pelvisRest = pelvis >= 0 ? skeleton[pelvis].head : Vector3::Zero;
+        walk.Tracks.push_back(Track(skeleton, pelvis, cycle, kKeys,
+            [&](float t) {
+                return YawQ(0.06f * std::cos(t * MathHelper::TwoPi))
+                       * RollQ(std::sin(t * MathHelper::TwoPi) * 0.04f);
+            },
+            [&](float t) {
+                const float rise = std::fabs(std::cos(t * MathHelper::TwoPi)) * height * 0.013f
+                                   - height * 0.0075f;
+                return pelvisRest
+                       + Vector3(-0.016f * std::sin(t * MathHelper::TwoPi), rise * style.bob, 0.0f);
+            }));
+        // The trunk counter-rotates and leans into the walk; the head turns
+        // back against the trunk so it stays pointed where the person is
+        // going, which is what a head does.
+        walk.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kChest), cycle, kKeys, [&](float t) {
+            return YawQ(-0.09f * std::cos(t * MathHelper::TwoPi)) * PitchQ(-style.lean);
+        }));
+        walk.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kNeck), cycle, kKeys, [&](float t) {
+            return YawQ(0.03f * std::cos(t * MathHelper::TwoPi)) * PitchQ(style.lean * 0.5f);
+        }));
+        walk.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kHead), cycle, kKeys, [&](float t) {
+            return YawQ(0.02f * std::cos(t * MathHelper::TwoPi)) * PitchQ(style.lean * 0.4f);
+        }));
+    }
+    return walk;
+}
+
+/// Standing still, three ways. Every one of them keeps moving a little:
+/// a person who is not moving at all is a mannequin, and a queue of them
+/// on one offset is a row of mannequins.
+enum class IdleKind { Look, Phone, Hands };
+
+AnimationClip IdleClip(const Skeleton& skeleton, float height, IdleKind kind)
+{
+    constexpr float kIdle = 6.0f;
+    constexpr int kKeys = 18;
+    AnimationClip idle;
+    idle.Duration = Seconds(kIdle);
+    const auto bone = [&](const char* base, const char* suffix) {
+        return skeleton.find(std::string(base) + suffix);
+    };
+    const auto slow = [](float t, float phase) { return std::sin(t * MathHelper::TwoPi + phase); };
+
+    // The weight on the right leg: the pelvis over the right foot, the
+    // left knee eased and the left foot a little forward, the trunk tilted
+    // back over the standing leg. And the breath.
+    {
+        const int pelvis = skeleton.find(BoneName::kPelvis);
+        const Vector3 rest = pelvis >= 0 ? skeleton[pelvis].head : Vector3::Zero;
+        idle.Tracks.push_back(Track(skeleton, pelvis, kIdle, kKeys,
+            [&](float t) { return RollQ(0.035f + 0.01f * slow(t, 0.0f)); },
+            [&](float t) {
+                return rest + Vector3(-0.030f + 0.006f * slow(t, 0.0f),
+                                      std::sin(t * MathHelper::TwoPi * 1.5f) * height * 0.002f, 0.0f);
+            }));
+    }
+    idle.Tracks.push_back(Track(skeleton, bone(BoneName::kThigh, ".L"), kIdle, kKeys,
+                                [&](float) { return PitchQ(-0.08f) * RollQ(0.05f); }));
+    idle.Tracks.push_back(Track(skeleton, bone(BoneName::kShin, ".L"), kIdle, kKeys,
+                                [&](float) { return PitchQ(0.14f); }));
+    idle.Tracks.push_back(Track(skeleton, bone(BoneName::kFoot, ".L"), kIdle, kKeys,
+                                [&](float) { return PitchQ(-0.06f); }));
+    idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kChest), kIdle, kKeys, [&](float t) {
+        const float lookYaw = kind == IdleKind::Look ? 0.10f * slow(t, 0.7f) : 0.03f * slow(t, 0.7f);
+        return YawQ(lookYaw) * RollQ(-0.03f) * PitchQ(kind == IdleKind::Phone ? -0.06f : 0.0f);
+    }));
+
+    switch (kind)
+    {
+        case IdleKind::Look:
+            // Looking about: the head turns through a good part of a right
+            // angle and back, slowly, and the arms hang with the elbows
+            // eased.
+            idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kNeck), kIdle, kKeys,
+                                        [&](float t) { return YawQ(0.12f * slow(t, 0.9f)); }));
+            idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kHead), kIdle, kKeys,
+                                        [&](float t) {
+                return YawQ(0.28f * slow(t, 0.9f)) * PitchQ(0.05f * slow(t * 0.5f, 2.0f));
+            }));
+            for (int side = 0; side < 2; ++side)
+            {
+                const char* suffix = side == 0 ? ".R" : ".L";
+                const float abduct = side == 0 ? -0.07f : 0.07f;
+                idle.Tracks.push_back(Track(skeleton, bone(BoneName::kUpperArm, suffix), kIdle, kKeys,
+                                            [&](float t) {
+                    return RollQ(abduct) * PitchQ(0.06f + 0.02f * slow(t, side == 0 ? 0.0f : 1.4f));
+                }));
+                idle.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, suffix), kIdle, kKeys,
+                                            [&](float) { return PitchQ(side == 0 ? -0.18f : -0.26f); }));
+            }
+            break;
+        case IdleKind::Phone:
+            // Reading a phone: the right hand up in front of the chest, the
+            // head bowed to it, the left arm hanging.
+            idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kNeck), kIdle, kKeys,
+                                        [&](float) { return PitchQ(0.20f); }));
+            idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kHead), kIdle, kKeys,
+                                        [&](float t) { return PitchQ(0.32f + 0.02f * slow(t, 0.4f)); }));
+            idle.Tracks.push_back(Track(skeleton, bone(BoneName::kUpperArm, ".R"), kIdle, kKeys,
+                                        [&](float t) {
+                return RollQ(0.12f) * PitchQ(-0.30f + 0.015f * slow(t, 0.4f));
+            }));
+            idle.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, ".R"), kIdle, kKeys,
+                                        [&](float) { return RollQ(0.30f) * PitchQ(-1.75f); }));
+            idle.Tracks.push_back(Track(skeleton, bone(BoneName::kHand, ".R"), kIdle, kKeys,
+                                        [&](float) { return PitchQ(-0.35f); }));
+            idle.Tracks.push_back(Track(skeleton, bone(BoneName::kUpperArm, ".L"), kIdle, kKeys,
+                                        [&](float t) { return RollQ(0.07f) * PitchQ(0.05f + 0.02f * slow(t, 1.4f)); }));
+            idle.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, ".L"), kIdle, kKeys,
+                                        [&](float) { return PitchQ(-0.20f); }));
+            break;
+        case IdleKind::Hands:
+            // Both hands together in front, the way people wait: the upper
+            // arms a little forward and turned in, the forearms across.
+            idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kNeck), kIdle, kKeys,
+                                        [&](float t) { return YawQ(0.06f * slow(t, 0.9f)); }));
+            idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kHead), kIdle, kKeys,
+                                        [&](float t) { return YawQ(0.16f * slow(t, 0.9f)) * PitchQ(0.06f); }));
+            for (int side = 0; side < 2; ++side)
+            {
+                const char* suffix = side == 0 ? ".R" : ".L";
+                const float in = side == 0 ? 0.16f : -0.16f;
+                idle.Tracks.push_back(Track(skeleton, bone(BoneName::kUpperArm, suffix), kIdle, kKeys,
+                                            [&](float t) {
+                    return RollQ(in) * PitchQ(-0.12f + 0.015f * slow(t, 0.4f));
+                }));
+                idle.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, suffix), kIdle, kKeys,
+                                            [&](float) { return RollQ(in * 2.2f) * PitchQ(-1.30f); }));
+            }
+            break;
+    }
+    return idle;
+}
+
+}  // namespace
+
+void CharacterFactory::Clips::install(std::unordered_map<std::string, AnimationClip>& into) const
+{
+    into[kWalkNames[0]] = walk;
+    into[kWalkNames[1]] = walkBrisk;
+    into[kWalkNames[2]] = walkEasy;
+    into[kIdleNames[0]] = idle;
+    into[kIdleNames[1]] = idlePhone;
+    into[kIdleNames[2]] = idleHands;
+}
+
 CharacterFactory::Clips CharacterFactory::clips(const Skeleton& skeleton, float height,
                                                  float strideSeconds)
 {
     Clips out;
     const float cycle = std::max(strideSeconds, 0.3f);
-    constexpr int kKeys = 12;
-
-    const auto bone = [&](const char* base, const char* suffix) {
-        return skeleton.find(std::string(base) + suffix);
-    };
-
-    // --- walk ---------------------------------------------------------------
-    // One sine through the cycle, two legs in opposite phase, arms opposite the
-    // leg on the same side. Everything else is a detail on top of that: the
-    // knee only bends backwards, the ankle rolls through the step, and the
-    // pelvis rises twice per cycle at the middle of each step.
-    out.walk.Duration = Seconds(cycle);
-    for (int side = 0; side < 2; ++side)
-    {
-        const char* suffix = side == 0 ? ".R" : ".L";
-        const float offset = side == 0 ? 0.0f : 0.5f;
-        const auto phase = [offset](float t) { return (t + offset) * MathHelper::TwoPi; };
-
-        out.walk.Tracks.push_back(Track(skeleton, bone(BoneName::kThigh, suffix), cycle, kKeys,
-                                        [&](float t) { return PitchQ(std::sin(phase(t)) * 0.44f); }));
-        out.walk.Tracks.push_back(
-            Track(skeleton, bone(BoneName::kShin, suffix), cycle, kKeys, [&](float t) {
-                // The knee bends when the leg is behind the body and straightens
-                // as it swings through. A knee that bends forward is the most
-                // recognisable animation error there is.
-                const float swing = std::sin(phase(t));
-                const float lift  = std::max(0.0f, -std::cos(phase(t)));
-                return PitchQ(-std::max(0.0f, -swing) * 0.55f - lift * 0.62f);
-            }));
-        out.walk.Tracks.push_back(
-            Track(skeleton, bone(BoneName::kFoot, suffix), cycle, kKeys, [&](float t) {
-                const float swing = std::sin(phase(t));
-                return PitchQ(0.10f + swing * 0.30f);
-            }));
-
-        const char* armSuffix = side == 0 ? ".L" : ".R";
-        out.walk.Tracks.push_back(
-            Track(skeleton, bone(BoneName::kUpperArm, armSuffix), cycle, kKeys,
-                  [&](float t) { return PitchQ(std::sin(phase(t)) * 0.30f); }));
-        out.walk.Tracks.push_back(
-            Track(skeleton, bone(BoneName::kForearm, armSuffix), cycle, kKeys, [&](float t) {
-                return PitchQ(-0.16f - std::max(0.0f, std::sin(phase(t))) * 0.34f);
-            }));
-    }
-    // The pelvis: two rises per cycle, and a roll onto the supporting leg.
-    {
-        const int pelvis = skeleton.find(BoneName::kPelvis);
-        const Vector3 pelvisRest = pelvis >= 0 ? skeleton[pelvis].head : Vector3::Zero;
-        BoneTrackEXT track;
-        track.BoneIndex = pelvis;
-        for (int i = 0; i <= kKeys; ++i)
-        {
-            const float t = static_cast<float>(i) / static_cast<float>(kKeys);
-            KeyframeEXT key;
-            key.Time = Seconds(cycle * t);
-            key.Translation = pelvisRest
-                              + Vector3(0.0f,
-                                        std::fabs(std::cos(t * MathHelper::TwoPi)) * height * 0.014f
-                                            - height * 0.008f,
-                                        0.0f);
-            key.Rotation = Quaternion::CreateFromAxisAngle(
-                Vector3::Forward, std::sin(t * MathHelper::TwoPi) * 0.045f);
-            track.Keys.push_back(key);
-        }
-        out.walk.Tracks.push_back(track);
-        // A little counter-rotation through the trunk, which is what stops a
-        // walk looking like a rigid body being carried along.
-        out.walk.Tracks.push_back(
-            Track(skeleton, skeleton.find(BoneName::kChest), cycle, kKeys, [](float t) {
-                return Quaternion::CreateFromAxisAngle(Vector3::Up,
-                                                       -std::sin(t * MathHelper::TwoPi) * 0.075f);
-            }));
-    }
-
-    // --- idle ---------------------------------------------------------------
-    // Standing is not standing still. A four-second sway with a breath in it,
-    // and the two people either side of a crossing on different offsets, which
-    // between them are the whole difference between a queue of waiting
-    // pedestrians and a row of statues.
-    constexpr float kIdle = 4.0f;
-    out.idle.Duration = Seconds(kIdle);
-    {
-        const int pelvis = skeleton.find(BoneName::kPelvis);
-        const Vector3 rest = pelvis >= 0 ? skeleton[pelvis].head : Vector3::Zero;
-        out.idle.Tracks.push_back(
-            Track(skeleton, pelvis, kIdle, 8, nullptr, [height, rest](float t) {
-                return rest
-                       + Vector3(0.0f, std::sin(t * MathHelper::TwoPi) * height * 0.0035f, 0.0f);
-            }));
-    }
-    out.idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kChest), kIdle, 8, [](float t) {
-        return Quaternion::CreateFromAxisAngle(Vector3::Up,
-                                               std::sin(t * MathHelper::TwoPi + 0.7f) * 0.030f);
-    }));
-    for (const char* suffix : {".R", ".L"})
-    {
-        out.idle.Tracks.push_back(Track(skeleton, bone(BoneName::kUpperArm, suffix), kIdle, 8, [](float t) {
-            return PitchQ(0.05f + std::sin(t * MathHelper::TwoPi) * 0.020f);
-        }));
-        out.idle.Tracks.push_back(
-            Track(skeleton, bone(BoneName::kForearm, suffix), kIdle, 8,
-                  [](float) { return PitchQ(-0.12f); }));
-    }
+    // Three gaits. The brisk one strides longer and swings more and
+    // carries a shade more lean; the easy one is shorter and quieter. The
+    // scene scales each person's stride by Clips::kStrideScale to match, so
+    // the feet keep to the ground in all three.
+    WalkStyle plain;
+    WalkStyle brisk;
+    brisk.stride = 1.10f; brisk.arm = 0.40f; brisk.lean = 0.07f; brisk.bob = 1.15f;
+    WalkStyle easy;
+    easy.stride = 0.90f; easy.arm = 0.17f; easy.lean = 0.02f; easy.bob = 0.85f; easy.lag = 0.05f;
+    out.walk      = WalkClip(skeleton, height, cycle, plain);
+    out.walkBrisk = WalkClip(skeleton, height, cycle, brisk);
+    out.walkEasy  = WalkClip(skeleton, height, cycle, easy);
+    out.idle      = IdleClip(skeleton, height, IdleKind::Look);
+    out.idlePhone = IdleClip(skeleton, height, IdleKind::Phone);
+    out.idleHands = IdleClip(skeleton, height, IdleKind::Hands);
     return out;
 }
 

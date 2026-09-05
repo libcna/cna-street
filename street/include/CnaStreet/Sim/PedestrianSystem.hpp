@@ -46,6 +46,25 @@ struct Pedestrian
     bool  waiting = false;
     float waitTime = 0.0f;
     bool  reversed = false;    ///< traversing the edge from `to` toward `from`
+    /// Which of the character's walks and which of its ways of standing
+    /// this person uses, so a crowd of eight figures does not carry eight
+    /// copies of one gait.
+    int   walkStyle = 0;
+    int   idleStyle = 0;
+    /// One stride, in metres: a tall person's is longer, a brisk walker's
+    /// longer again. The walk cycle's clock is distance over this.
+    float stride = 1.42f;
+    /// How far off the footway's walking line this person keeps, in metres,
+    /// positive toward the buildings. Nobody walks the centre line; a crowd
+    /// that does is a queue.
+    float lateral = 0.0f;
+    /// Where the body is pointed, smoothed toward the edge's heading: a
+    /// person turns a corner over half a second rather than snapping
+    /// through a right angle at a node.
+    float facing = 0.0f;
+    /// The person this one is walking with, or -1. A companion keeps to the
+    /// leader's edge, speed and pace, a step behind and to the side.
+    int   companion = -1;
     /// Development line-up only: stand here, facing this way, and do not move.
     bool  pinned = false;
     Microsoft::Xna::Framework::Vector2 pinnedAt{0.0f, 0.0f};
@@ -103,8 +122,12 @@ public:
     /// cycle advanced by wall-clock time instead slides on every slope and at
     /// every speed the simulation gives someone.
     [[nodiscard]] static float cyclesWalked(const Pedestrian& person);
-    /// One stride, in metres. A comfortable adult walking pace.
+    /// One stride, in metres, for a person of average height at an ordinary
+    /// pace; each person's own is scaled from it.
     static constexpr float kStrideLength = 1.42f;
+    /// The side of an edge the buildings are on: the unit direction a
+    /// positive `Pedestrian::lateral` moves along.
+    [[nodiscard]] Microsoft::Xna::Framework::Vector2 buildingSide(const WalkEdge& edge) const;
 
 private:
     int addNode(const Microsoft::Xna::Framework::Vector2& position);
