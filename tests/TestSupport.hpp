@@ -51,6 +51,11 @@ inline void checkNear(double actual, double expected, double tolerance, const ch
                  + std::to_string(expected) + " +/- " + std::to_string(tolerance));
 }
 
+/// A measurement the suite wants on the record even when it passes: how many
+/// people crowded onto one kerb, how close two of them came. A test that only
+/// says "pass" cannot say how much headroom the thing under test has.
+inline void note(const std::string& what) { std::printf("     note: %s\n", what.c_str()); }
+
 inline int summary(const char* suite)
 {
     std::printf("%s: %d checks, %d failures\n", suite, gChecks, gFailures);
@@ -65,4 +70,5 @@ inline int summary(const char* suite)
 #define CHECK_NEAR(actual, expected, tol) \
     ::CnaStreet::Test::checkNear((actual), (expected), (tol), __FILE__, __LINE__, \
                                  #actual " ~= " #expected)
+#define NOTE(what) ::CnaStreet::Test::note((what))
 #define TEST_MAIN(suite) return ::CnaStreet::Test::summary(suite)

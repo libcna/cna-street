@@ -127,9 +127,15 @@ public:
         /// Installs every clip under its name.
         void install(std::unordered_map<std::string, Microsoft::Xna::Framework::Graphics::AnimationClip>& into) const;
     };
-    /// @p strideSeconds is one complete cycle: two steps.
+    /// @p strideSeconds is one complete cycle: two steps. @p stance scales the
+    /// base of support the legs are brought in to: 1 is the ordinary walk,
+    /// above it a wider stride and below it a narrower one, so a crowd is not
+    /// eight people walking down one line. The correction itself is read off
+    /// @p skeleton -- the imported MakeHuman rigs stand in an A-pose with the
+    /// ankles a third of a metre apart, and nothing in a gait built only in
+    /// the sagittal plane ever brought them in.
     [[nodiscard]] static Clips clips(const Geometry::Skeleton& skeleton, float height,
-                                     float strideSeconds);
+                                     float strideSeconds, float stance = 1.0f);
 
 private:
     const MaterialLibrary& materials_;

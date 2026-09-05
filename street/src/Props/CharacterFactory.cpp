@@ -661,6 +661,60 @@ Quaternion YawQ(float radians) { return Quaternion::CreateFromAxisAngle(Vector3:
 /// figure's left.
 Quaternion RollQ(float radians) { return Quaternion::CreateFromAxisAngle(Vector3(0.0f, 0.0f, 1.0f), radians); }
 
+/// How far each thigh has to be brought in for the figure to walk on a
+/// credible base, in radians of roll at the hip, and the leg length it was
+/// measured over.
+///
+/// The imported people are MakeHuman figures, and MakeHuman's base mesh
+/// stands in an A-pose: the legs do not merely start at the hips, they
+/// *diverge* down their whole length. Read off the eight rigs, the hip
+/// joints are 16 to 23 cm apart and the ankle joints 29 to 42 cm apart --
+/// the femur angling out where a real one angles in. Nothing in the walk
+/// touched the frontal plane, so every one of them walked with its feet a
+/// third of a metre either side of its centre line, which is the wide,
+/// forced-apart stride somebody watching from the kerb called anatomically
+/// implausible. A real walk puts the feet 5 to 13 cm apart.
+///
+/// The correction is per figure and comes from that figure's own skeleton:
+/// bring each ankle in to a base scaled from its own hip width, never widen
+/// a rig that is already narrow, and leave the rest of the gait alone. So
+/// the tall man still walks wider than the small woman, which is true, and
+/// neither of them walks astride a kerbstone. @p stance scales the target
+/// so a crowd is not eight people walking one line.
+struct Adduction
+{
+    float roll[2] = {0.0f, 0.0f};   ///< [0] is .R, [1] is .L
+};
+
+Adduction AdductionFor(const Skeleton& skeleton, float stance)
+{
+    Adduction out;
+    for (int side = 0; side < 2; ++side)
+    {
+        const char* suffix = side == 0 ? ".R" : ".L";
+        const int hip  = skeleton.find(std::string(BoneName::kThigh) + suffix);
+        const int foot = skeleton.find(std::string(BoneName::kFoot) + suffix);
+        if (hip < 0 || foot < 0) continue;
+        const float hipX  = skeleton[hip].head.X;
+        const float footX = skeleton[foot].head.X;
+        const float leg   = skeleton[hip].head.Y - skeleton[foot].head.Y;
+        if (leg < 0.2f) continue;
+        // Half the base of support this figure should walk on: a fraction of
+        // its own hip half-width plus a couple of centimetres, which lands a
+        // 1.4 m woman on a 9 cm base and a 1.9 m man on a 12 cm one.
+        const float want = std::clamp((0.30f * std::fabs(hipX) + 0.022f) * stance, 0.02f, 0.10f);
+        const float target = footX >= 0.0f ? want : -want;
+        // Never push a leg outward: a rig whose feet are already under it
+        // keeps the stance its author gave it.
+        if (std::fabs(footX) <= std::fabs(target)) continue;
+        // A positive roll carries a hanging limb's far end toward +X, so the
+        // angle that moves the ankle from footX to target is their difference
+        // over the length of the leg.
+        out.roll[side] = std::clamp((target - footX) / leg, -0.36f, 0.36f);
+    }
+    return out;
+}
+
 /// One walk cycle. `t` runs 0..1 from the right heel strike to the next;
 /// the left leg is the same half a cycle later. Signs follow the skeleton:
 /// a positive pitch swings a bone's far end backward, so the thigh pitches
@@ -676,7 +730,8 @@ struct WalkStyle
     float lag    = 0.03f;   ///< how far the arms trail the legs, in cycles
 };
 
-AnimationClip WalkClip(const Skeleton& skeleton, float height, float cycle, const WalkStyle& style)
+AnimationClip WalkClip(const Skeleton& skeleton, float height, float cycle, const WalkStyle& style,
+                       float stance)
 {
     constexpr int kKeys = 24;
     AnimationClip walk;
@@ -684,6 +739,10 @@ AnimationClip WalkClip(const Skeleton& skeleton, float height, float cycle, cons
     const auto bone = [&](const char* base, const char* suffix) {
         return skeleton.find(std::string(base) + suffix);
     };
+    // What this rig needs at the hip to walk on a plausible base. See
+    // AdductionFor: on the imported figures it is five to ten degrees, on the
+    // generated ones two or three.
+    const Adduction adduct = AdductionFor(skeleton, stance);
 
     // The thigh goes forward to heel strike, back through stance to toe-off
     // at six tenths of the cycle, and forward again through swing. The knee
@@ -706,12 +765,19 @@ AnimationClip WalkClip(const Skeleton& skeleton, float height, float cycle, cons
     {
         const char* suffix = side == 0 ? ".R" : ".L";
         const float offset = side == 0 ? 0.0f : 0.5f;
+        // The whole leg is brought in at the hip and the sole rolled level
+        // again at the ankle, so the foot lands flat rather than on its
+        // outer edge. The swing is unchanged: the correction is in the
+        // frontal plane and the gait is in the sagittal one.
+        const float roll = adduct.roll[side];
         walk.Tracks.push_back(Track(skeleton, bone(BoneName::kThigh, suffix), cycle, kKeys,
-                                    [&](float t) { return PitchQ(-thigh.at(t + offset) * style.stride); }));
+                                    [&](float t) {
+            return RollQ(roll) * PitchQ(-thigh.at(t + offset) * style.stride);
+        }));
         walk.Tracks.push_back(Track(skeleton, bone(BoneName::kShin, suffix), cycle, kKeys,
                                     [&](float t) { return PitchQ(knee.at(t + offset) * (0.85f + 0.15f * style.stride)); }));
         walk.Tracks.push_back(Track(skeleton, bone(BoneName::kFoot, suffix), cycle, kKeys,
-                                    [&](float t) { return PitchQ(ankle.at(t + offset)); }));
+                                    [&](float t) { return RollQ(-roll) * PitchQ(ankle.at(t + offset)); }));
 
         // The arm on this side swings with the other leg: the right arm is
         // back when the right leg is forward. A hand's breadth of abduction
@@ -767,7 +833,7 @@ AnimationClip WalkClip(const Skeleton& skeleton, float height, float cycle, cons
 /// on one offset is a row of mannequins.
 enum class IdleKind { Look, Phone, Hands };
 
-AnimationClip IdleClip(const Skeleton& skeleton, float height, IdleKind kind)
+AnimationClip IdleClip(const Skeleton& skeleton, float height, IdleKind kind, float stance)
 {
     constexpr float kIdle = 6.0f;
     constexpr int kKeys = 18;
@@ -776,6 +842,9 @@ AnimationClip IdleClip(const Skeleton& skeleton, float height, IdleKind kind)
     const auto bone = [&](const char* base, const char* suffix) {
         return skeleton.find(std::string(base) + suffix);
     };
+    // The same correction the walk makes, or a figure would stand astride
+    // and then step into a normal gait the instant the lights changed.
+    const Adduction adduct = AdductionFor(skeleton, stance);
     const auto slow = [](float t, float phase) { return std::sin(t * MathHelper::TwoPi + phase); };
 
     // The weight on the right leg: the pelvis over the right foot, the
@@ -791,12 +860,21 @@ AnimationClip IdleClip(const Skeleton& skeleton, float height, IdleKind kind)
                                       std::sin(t * MathHelper::TwoPi * 1.5f) * height * 0.002f, 0.0f);
             }));
     }
+    idle.Tracks.push_back(Track(skeleton, bone(BoneName::kThigh, ".R"), kIdle, kKeys,
+                                [&](float) { return RollQ(adduct.roll[0]); }));
+    idle.Tracks.push_back(Track(skeleton, bone(BoneName::kFoot, ".R"), kIdle, kKeys,
+                                [&](float) { return RollQ(-adduct.roll[0]); }));
+    // The weight is on the right leg, so the left one is eased and set a
+    // little forward -- and brought in like the other, or a waiting figure
+    // stands astride the kerb.
     idle.Tracks.push_back(Track(skeleton, bone(BoneName::kThigh, ".L"), kIdle, kKeys,
-                                [&](float) { return PitchQ(-0.08f) * RollQ(0.05f); }));
+                                [&](float) {
+        return RollQ(adduct.roll[1] + 0.05f) * PitchQ(-0.08f);
+    }));
     idle.Tracks.push_back(Track(skeleton, bone(BoneName::kShin, ".L"), kIdle, kKeys,
                                 [&](float) { return PitchQ(0.14f); }));
     idle.Tracks.push_back(Track(skeleton, bone(BoneName::kFoot, ".L"), kIdle, kKeys,
-                                [&](float) { return PitchQ(-0.06f); }));
+                                [&](float) { return RollQ(-adduct.roll[1] - 0.05f) * PitchQ(-0.06f); }));
     idle.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kChest), kIdle, kKeys, [&](float t) {
         const float lookYaw = kind == IdleKind::Look ? 0.10f * slow(t, 0.7f) : 0.03f * slow(t, 0.7f);
         return YawQ(lookYaw) * RollQ(-0.03f) * PitchQ(kind == IdleKind::Phone ? -0.06f : 0.0f);
@@ -882,7 +960,7 @@ void CharacterFactory::Clips::install(std::unordered_map<std::string, AnimationC
 }
 
 CharacterFactory::Clips CharacterFactory::clips(const Skeleton& skeleton, float height,
-                                                 float strideSeconds)
+                                                 float strideSeconds, float stance)
 {
     Clips out;
     const float cycle = std::max(strideSeconds, 0.3f);
@@ -895,12 +973,12 @@ CharacterFactory::Clips CharacterFactory::clips(const Skeleton& skeleton, float 
     brisk.stride = 1.10f; brisk.arm = 0.40f; brisk.lean = 0.07f; brisk.bob = 1.15f;
     WalkStyle easy;
     easy.stride = 0.90f; easy.arm = 0.17f; easy.lean = 0.02f; easy.bob = 0.85f; easy.lag = 0.05f;
-    out.walk      = WalkClip(skeleton, height, cycle, plain);
-    out.walkBrisk = WalkClip(skeleton, height, cycle, brisk);
-    out.walkEasy  = WalkClip(skeleton, height, cycle, easy);
-    out.idle      = IdleClip(skeleton, height, IdleKind::Look);
-    out.idlePhone = IdleClip(skeleton, height, IdleKind::Phone);
-    out.idleHands = IdleClip(skeleton, height, IdleKind::Hands);
+    out.walk      = WalkClip(skeleton, height, cycle, plain, stance);
+    out.walkBrisk = WalkClip(skeleton, height, cycle, brisk, stance);
+    out.walkEasy  = WalkClip(skeleton, height, cycle, easy, stance);
+    out.idle      = IdleClip(skeleton, height, IdleKind::Look, stance);
+    out.idlePhone = IdleClip(skeleton, height, IdleKind::Phone, stance);
+    out.idleHands = IdleClip(skeleton, height, IdleKind::Hands, stance);
     return out;
 }
 

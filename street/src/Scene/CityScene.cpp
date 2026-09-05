@@ -2930,8 +2930,11 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
             entry->skinning.SkeletonHierarchy = person->skeleton.hierarchy();
             entry->skinning.BindPose          = person->skeleton.bindPose();
             entry->skinning.InverseBindPose   = person->skeleton.inverseBindPose();
-            const CharacterFactory::Clips clips =
-                CharacterFactory::clips(person->skeleton, person->height, 1.06f);
+            // A base of support of this figure's own, so eight people are not
+            // eight copies of one walk: a tenth either side of the plain
+            // stance, dealt from the variant's own stream.
+            const CharacterFactory::Clips clips = CharacterFactory::clips(
+                person->skeleton, person->height, 1.06f, pick.range(0.88f, 1.14f));
             clips.install(entry->skinning.AnimationClips);
             // The rigid stand-in for the shadow pass, from the far copy in its
             // bind pose; see CNA-F14 below.
@@ -3002,7 +3005,7 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         entry->skinning.BindPose          = full.skeleton.bindPose();
         entry->skinning.InverseBindPose   = full.skeleton.inverseBindPose();
         const CharacterFactory::Clips clips =
-            CharacterFactory::clips(full.skeleton, look.height, 1.06f);
+            CharacterFactory::clips(full.skeleton, look.height, 1.06f, pick.range(0.88f, 1.14f));
         clips.install(entry->skinning.AnimationClips);
 
         // A rigid stand-in for the shadow pass. CNA's cascade caster takes its
@@ -3198,14 +3201,28 @@ void CityScene::buildViewpoints()
                                         Vector3(at.X - 5.4f, 1.45f, at.Y + 5.6f),
                                         kEast + 0.72f, -0.16f, 0.62f});
     }
-    for (int variant = 0; variant < PedestrianSystem::kVariantCount; ++variant)
+    // Three rows of eight: standing, frozen at heel strike, and spread over
+    // the walk cycle. Every one gets a square front view, which is the view an
+    // implausible leg spread shows in, and the striding row gets a side view
+    // too, which is the view a knee shows in.
+    static const char* const kRowName[3] = {"Person ", "Stride ", "Cycle "};
+    for (int i = 0; i < PedestrianSystem::kVariantCount * 3; ++i)
     {
-        const Vector2 at = PedestrianSystem::lineupPlace(variant);
-        // Square in front of a figure that is facing the road, at three
-        // metres: the distance a person on the far pavement is seen from.
-        viewpoints_.push_back(Viewpoint{"Person " + std::to_string(variant),
-                                        Vector3(at.X + 3.0f, 1.06f, at.Y),
-                                        -kEast, 0.0f, 0.52f});
+        const Vector2 at = PedestrianSystem::lineupPlace(i);
+        const std::string tag = kRowName[i / PedestrianSystem::kVariantCount]
+                                + std::to_string(i % PedestrianSystem::kVariantCount);
+        // Square in front of a figure that is facing the road, far enough
+        // back and wide enough that the whole figure is in frame -- the feet
+        // most of all, since they are where a stance is read.
+        viewpoints_.push_back(Viewpoint{tag, Vector3(at.X + 3.6f, 0.95f, at.Y),
+                                        -kEast, 0.0f, 0.72f});
+        // And a three-quarter of the striding row, which shows the knee as
+        // well as the stance. Not a square side view: the figures stand 3.4 m
+        // apart, so a camera abeam one of them is inside the next.
+        if (i / PedestrianSystem::kVariantCount == 1)
+            viewpoints_.push_back(Viewpoint{tag + " three-quarter",
+                                            Vector3(at.X + 2.7f, 0.95f, at.Y - 2.7f),
+                                            -kEast * 0.5f, 0.0f, 0.72f});
     }
 }
 
