@@ -100,7 +100,10 @@ struct ShopDisplay
 class BuildingBuilder
 {
 public:
-    BuildingBuilder(const MaterialLibrary& materials, const CityLayout& layout);
+    /// The library is taken non-const because a shop tints the room materials
+    /// to its trade -- a bakery's walls are warm, an electrical shop's are
+    /// dark -- and a tint is a derived material the library has to own.
+    BuildingBuilder(MaterialLibrary& materials, const CityLayout& layout);
 
     /// Builds one plot into the collector. Anchors found along the way are
     /// appended to @p anchors, and any window display the shop unit wants to
@@ -182,8 +185,21 @@ private:
     void buildRainwaterGoods(const Plot& plot, const FacadeFrame& frame, const Palette& palette,
                              GeometryCollector& collector);
 
-    const MaterialLibrary& materials_;
-    const CityLayout&      layout_;
+    /// Lays a weathering decal a few millimetres over the wall: rain run-off
+    /// under a sill, the dirt band at the foot of a wall, the stain beside a
+    /// downpipe. `cell` picks one of the four in the atlas; `strength` scales
+    /// the chance and the size, and comes from the plot's own weathering so
+    /// one building is grubby and its neighbour freshly painted.
+    void grimeDecal(const FacadeFrame& frame, float u0, float v0, float u1, float v1, int cell,
+                    GeometryCollector& collector, bool flipU = false);
+
+    MaterialLibrary&  materials_;
+    const CityLayout& layout_;
+    /// The plot being built, for the parts of a building that are decided by
+    /// the whole rather than by the elevation: how weathered it is, whether
+    /// its shop is open.
+    float weathering_ = 0.5f;
+    std::uint32_t plotSeed_ = 0;
 };
 
 }  // namespace CnaStreet

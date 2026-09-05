@@ -47,6 +47,12 @@ enum class MaterialId
     Glazing, ShopGlazing, Interior,
     ShopFitting, ShopStock, ShopCeilingLight, ShopWall, ShopFloor, ShopTimber,
     ShopScreen,
+    /// Posters and notices on a shop's back wall, a roller blind drawn down
+    /// behind a closed shop's glass.
+    ShopPoster, ShopBlind,
+    /// The weathering decals laid over a wall where the water runs: under a
+    /// sill, along the plinth, beside a downpipe.
+    FacadeGrime,
     FrameWhite, FrameDark, FrameBronze,
     DoorGreen, DoorRed, DoorBlue, DoorOak,
     ShopFascia, Awning,

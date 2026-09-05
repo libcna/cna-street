@@ -1269,67 +1269,271 @@ SurfaceMaps TextureFactory::facadeGrid(int size, std::uint32_t seed, int bays,
 SurfaceMaps TextureFactory::shopStock(int size, std::uint32_t seed)
 {
     Surface s(size);
-    // A grid of packets. Each cell takes a saturated hue off a small wheel and a
-    // brightness of its own, and the dark seams between them are most of what a
-    // shelf of stock actually is at the distance a shop window is looked into.
-    constexpr int kCells = 12;
+    // A grid of packets, eight across and ten down, stocked the way a shelf is:
+    // in *facings* -- three or four of the same product side by side, then the
+    // next line. The first version picked a saturated hue per cell off a
+    // six-hue wheel, and through the glass a shelf of it was confetti: a paint
+    // chart, not packaging. Packaging is printed on white card, and most of a
+    // shelf is white card. So most cells are pale with one coloured label band
+    // across them, a few are a coloured box, a few are dark, and the colour of
+    // a run is shared by the run.
+    constexpr int kCols = 8;
+    constexpr int kRows = 10;
     for (int y = 0; y < size; ++y)
         for (int x = 0; x < size; ++x)
         {
             const float u = static_cast<float>(x) / static_cast<float>(size);
             const float v = static_cast<float>(y) / static_cast<float>(size);
-            const int cx = static_cast<int>(u * kCells);
-            const int cy = static_cast<int>(v * kCells);
-            // Per-cell hashes rather than value noise: sampled at a
-            // half-integer lattice point, value noise returns the mean of four
-            // randoms and lands within a tenth of 0.5 almost every time. Six
-            // hues quantised from that pick only ever produced two of them,
-            // which is why a shelf of assorted packaging came out uniformly
-            // teal.
-            // Facings, not individual packets. A shelf is stocked in runs of
-            // the same product -- three or four facings of one line, then the
-            // next -- so the hue is picked per *group* of cells and only the
-            // brightness varies within one. Picking it per cell gave every
-            // packet a different colour off a six-hue wheel, and a wall of
-            // that reads as confetti rather than as a shop.
-            const int  group   = cx / 3;
+            const int cx = static_cast<int>(u * kCols);
+            const int cy = static_cast<int>(v * kRows);
+            const int group = cx / 3 + cy * 7;
+            // Per-cell hashes rather than value noise: sampled at a half-integer
+            // lattice point, value noise returns the mean of four randoms and
+            // lands within a tenth of 0.5 almost every time.
             const float pick   = Noise::random2(group, cy, seed + 3u);
-            const float bright = 0.30f + 0.46f * Noise::random2(cx, cy, seed + 11u);
-            // Six hues around the wheel, which is what a shelf of packaging is.
-            const float hue = std::floor(pick * 6.0f) / 6.0f;
-            const float r = std::fabs(hue * 6.0f - 3.0f) - 1.0f;
-            const float g = 2.0f - std::fabs(hue * 6.0f - 2.0f);
-            const float b = 2.0f - std::fabs(hue * 6.0f - 4.0f);
-            // Well under half saturation. Packaging is printed on white card
-            // and most of a shelf is white card: full-chroma cells read as a
-            // paint chart, and through glass at three metres the loudest thing
-            // in the street was a bakery's shelving.
-            const float sat = 0.13f + 0.27f * pick;
-            float base[3] = {
-                Mix(bright, bright * saturate(r), sat),
-                Mix(bright, bright * saturate(g), sat),
-                Mix(bright, bright * saturate(b), sat),
-            };
+            const float kind   = Noise::random2(group, cy + 101, seed + 5u);
+            const float bright = 0.62f + 0.30f * Noise::random2(cx, cy, seed + 11u);
 
-            // The seam, and a lighter band across each packet where a label is.
-            const float fx = u * static_cast<float>(kCells) - static_cast<float>(cx);
-            const float fy = v * static_cast<float>(kCells) - static_cast<float>(cy);
+            // Six hues, and the label colour of the run.
+            const float hue = std::floor(pick * 6.0f) / 6.0f;
+            const float r = saturate(std::fabs(hue * 6.0f - 3.0f) - 1.0f);
+            const float g = saturate(2.0f - std::fabs(hue * 6.0f - 2.0f));
+            const float b = saturate(2.0f - std::fabs(hue * 6.0f - 4.0f));
+            const float label[3] = {Mix(0.30f, r * 0.55f, 0.75f), Mix(0.30f, g * 0.55f, 0.75f),
+                                    Mix(0.30f, b * 0.55f, 0.75f)};
+
+            const float fx = u * static_cast<float>(kCols) - static_cast<float>(cx);
+            const float fy = v * static_cast<float>(kRows) - static_cast<float>(cy);
+            float base[3];
+            if (kind < 0.62f)
+            {
+                // White card with a label band across the middle third, on
+                // about half of them; the rest are plain card with a small
+                // coloured mark, because a shelf where every packet has a
+                // stripe across it is a shelf of stripes.
+                const float card = bright;
+                base[0] = base[1] = base[2] = card * 0.92f;
+                base[2] *= 0.96f;
+                const bool striped = Noise::random2(group, cy + 303, seed + 9u) < 0.5f;
+                const float band = striped
+                                       ? smoothstep(0.30f, 0.36f, fy) * (1.0f - smoothstep(0.62f, 0.68f, fy))
+                                       : smoothstep(0.30f, 0.34f, fy) * (1.0f - smoothstep(0.44f, 0.48f, fy))
+                                             * smoothstep(0.30f, 0.34f, fx) * (1.0f - smoothstep(0.62f, 0.66f, fx));
+                for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], label[c] * 1.3f, band);
+            }
+            else if (kind < 0.86f)
+            {
+                // A coloured box with a pale panel on it.
+                for (int c = 0; c < 3; ++c) base[c] = label[c] * bright * 1.15f;
+                const float panel = smoothstep(0.18f, 0.24f, fy) * (1.0f - smoothstep(0.48f, 0.54f, fy))
+                                    * smoothstep(0.12f, 0.18f, fx) * (1.0f - smoothstep(0.82f, 0.88f, fx));
+                for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], 0.70f, panel * 0.85f);
+            }
+            else
+            {
+                // A dark box: a bottle, a tin, a black carton.
+                for (int c = 0; c < 3; ++c) base[c] = 0.045f + label[c] * 0.10f;
+                const float band = smoothstep(0.40f, 0.46f, fy) * (1.0f - smoothstep(0.58f, 0.64f, fy));
+                for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], 0.55f, band * 0.6f);
+            }
+
+            // The seam between packets, and a small text block that reads as
+            // print without being print.
             const float edge = std::min(std::min(fx, 1.0f - fx), std::min(fy, 1.0f - fy));
-            const float seam = 1.0f - smoothstep(0.0f, 0.055f, edge);
-            const float label =
-                smoothstep(0.34f, 0.40f, fy) * (1.0f - smoothstep(0.60f, 0.66f, fy));
+            const float seam = 1.0f - smoothstep(0.0f, 0.045f, edge);
+            const float text = smoothstep(0.74f, 0.77f, fy) * (1.0f - smoothstep(0.84f, 0.87f, fy))
+                               * smoothstep(0.20f, 0.24f, fx) * (1.0f - smoothstep(0.60f, 0.66f, fx))
+                               * (0.5f + 0.5f * std::sin(fy * kPi * 20.0f));
             for (int c = 0; c < 3; ++c)
             {
-                base[c] = Mix(base[c], base[c] * 0.88f + 0.32f, label * 0.45f);
-                base[c] = Mix(base[c], base[c] * 0.25f, seam);
+                base[c] = Mix(base[c], base[c] * 0.35f, text * 0.7f);
+                base[c] = Mix(base[c], base[c] * 0.22f, seam);
             }
 
             s.albedo.setRgb(x, y, base[0], base[1], base[2]);
             s.height.setRgb(x, y, saturate(0.72f - seam * 0.60f), 0.0f, 0.0f);
-            s.orm.set(x, y, saturate(1.0f - seam * 0.45f), saturate(0.44f + label * 0.22f), 0.0f,
-                      1.0f);
+            s.orm.set(x, y, saturate(1.0f - seam * 0.45f), saturate(0.42f + (kind > 0.86f ? -0.18f : 0.0f)),
+                      0.0f, 1.0f);
         }
     return s.finish(0.35f);
+}
+
+SurfaceMaps TextureFactory::posters(int size, std::uint32_t seed)
+{
+    Surface s(size);
+    constexpr int kCells = 2;
+    const int cell = size / kCells;
+    // Poster papers: a strong colour, a dark one, two pale ones.
+    float papers[6][3];
+    Srgb8(papers[0], 214, 64, 52);
+    Srgb8(papers[1], 42, 66, 122);
+    Srgb8(papers[2], 236, 228, 208);
+    Srgb8(papers[3], 248, 244, 236);
+    Srgb8(papers[4], 232, 182, 44);
+    Srgb8(papers[5], 40, 42, 46);
+
+    for (int cy = 0; cy < kCells; ++cy)
+        for (int cx = 0; cx < kCells; ++cx)
+        {
+            const std::uint32_t cellSeed = hash2(cx * 13 + 5, cy * 29 + 11, seed);
+            auto roll = [&](int index) {
+                return static_cast<float>(hashInt(cellSeed + static_cast<std::uint32_t>(index)
+                                                  * 2654435761u))
+                       * (1.0f / 4294967296.0f);
+            };
+            const int paper = static_cast<int>(roll(1) * 6.0f) % 6;
+            const int ink   = (paper + 2 + static_cast<int>(roll(2) * 3.0f)) % 6;
+            const bool dark = paper == 1 || paper == 5;
+            const float pictureTop = 0.14f + roll(3) * 0.12f;
+            const float pictureBottom = pictureTop + 0.30f + roll(4) * 0.18f;
+            const int lines = 2 + static_cast<int>(roll(5) * 3.0f);
+            const bool roundel = roll(6) < 0.55f;
+            const float roundelX = 0.68f + roll(7) * 0.16f;
+            const float roundelY = 0.70f + roll(8) * 0.12f;
+
+            for (int y = 0; y < cell; ++y)
+                for (int x = 0; x < cell; ++x)
+                {
+                    const float fu = (static_cast<float>(x) + 0.5f) / static_cast<float>(cell);
+                    const float fv = (static_cast<float>(y) + 0.5f) / static_cast<float>(cell);
+                    float base[3] = {papers[paper][0], papers[paper][1], papers[paper][2]};
+                    // The paper, with the slight unevenness of print.
+                    const float grain = fbm(fu * 40.0f, fv * 40.0f, 40, 2, 2.0f, 0.5f, cellSeed);
+                    for (int c = 0; c < 3; ++c) base[c] *= 0.94f + grain * 0.12f;
+
+                    // A picture block: a second colour with a gradient across it,
+                    // which is what a photograph is at this size.
+                    const bool inPicture = fu > 0.10f && fu < 0.90f && fv > pictureTop
+                                           && fv < pictureBottom;
+                    if (inPicture)
+                    {
+                        const float t = (fv - pictureTop) / (pictureBottom - pictureTop);
+                        for (int c = 0; c < 3; ++c)
+                            base[c] = Mix(papers[ink][c] * (0.6f + 0.5f * t),
+                                          base[c] * 0.5f, 0.25f);
+                        const float shape = fbm(fu * 6.0f + 3.0f, fv * 6.0f, 6, 3, 2.0f, 0.5f,
+                                                cellSeed + 7u);
+                        for (int c = 0; c < 3; ++c) base[c] *= 0.72f + shape * 0.55f;
+                    }
+
+                    // Headline and body text as bars of ink.
+                    const float inkTone = dark ? 0.86f : 0.06f;
+                    float text = 0.0f;
+                    const float headTop = 0.04f, headBottom = 0.11f;
+                    if (fv > headTop && fv < headBottom && fu > 0.10f && fu < 0.10f + 0.55f + roll(9) * 0.3f)
+                        text = 0.5f + 0.5f * std::sin(fu * kPi * 14.0f);
+                    for (int line = 0; line < lines; ++line)
+                    {
+                        const float ly = pictureBottom + 0.05f + static_cast<float>(line) * 0.065f;
+                        const float len = 0.45f + roll(20 + line) * 0.42f;
+                        if (fv > ly && fv < ly + 0.028f && fu > 0.10f && fu < 0.10f + len)
+                            text = std::max(text, 0.5f + 0.5f * std::sin(fu * kPi * 40.0f));
+                    }
+                    for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], inkTone, smoothstep(0.35f, 0.75f, text));
+
+                    if (roundel)
+                    {
+                        const float d = std::sqrt((fu - roundelX) * (fu - roundelX)
+                                                  + (fv - roundelY) * (fv - roundelY));
+                        const float disc = 1.0f - smoothstep(0.075f, 0.085f, d);
+                        float red[3];
+                        Srgb8(red, 200, 36, 30);
+                        for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], red[c], disc);
+                        const float digits = (1.0f - smoothstep(0.045f, 0.055f, d))
+                                             * (0.5f + 0.5f * std::sin(fu * kPi * 36.0f));
+                        for (int c = 0; c < 3; ++c) base[c] = Mix(base[c], 0.92f, smoothstep(0.4f, 0.8f, digits));
+                    }
+
+                    const int px = cx * cell + x;
+                    const int py = cy * cell + y;
+                    s.albedo.set(px, py, base[0], base[1], base[2], 1.0f);
+                    s.height.setRgb(px, py, 0.5f, 0.0f, 0.0f);
+                    s.orm.set(px, py, 1.0f, 0.52f, 0.0f, 1.0f);
+                }
+        }
+    return s.finish(0.0f);
+}
+
+SurfaceMaps TextureFactory::grimeDecals(int size, std::uint32_t seed)
+{
+    Surface s(size);
+    constexpr int kCells = 2;
+    const int cell = size / kCells;
+    for (int cy = 0; cy < kCells; ++cy)
+        for (int cx = 0; cx < kCells; ++cx)
+        {
+            const int which = cy * kCells + cx;
+            const std::uint32_t cellSeed = hash2(cx, cy, seed);
+            for (int y = 0; y < cell; ++y)
+                for (int x = 0; x < cell; ++x)
+                {
+                    const float fu = (static_cast<float>(x) + 0.5f) / static_cast<float>(cell);
+                    const float fv = (static_cast<float>(y) + 0.5f) / static_cast<float>(cell);
+                    float alpha = 0.0f;
+                    float tone  = 0.05f;
+                    switch (which)
+                    {
+                        case 0:
+                        {
+                            // Rain run-off from a sill: streaks that start dense
+                            // at the top edge and fan out and fade downwards,
+                            // heaviest at the two ends where the sill's drip
+                            // fails.
+                            const float streak = fbm(fu * 18.0f, fv * 1.4f, 18, 3, 2.0f, 0.5f,
+                                                     cellSeed + 3u);
+                            const float ends = 0.55f + 0.45f * std::pow(std::fabs(fu - 0.5f) * 2.0f, 1.5f);
+                            const float fall = std::pow(1.0f - fv, 1.6f);
+                            alpha = smoothstep(0.42f, 0.80f, streak) * fall * ends;
+                            alpha *= smoothstep(0.0f, 0.08f, fu) * smoothstep(1.0f, 0.92f, fu);
+                            tone = 0.04f;
+                            break;
+                        }
+                        case 1:
+                        {
+                            // Splash dirt at the foot of a wall: dense at the
+                            // bottom, patchy, gone by half height.
+                            const float patch = fbm(fu * 9.0f, fv * 5.0f, 9, 4, 2.0f, 0.55f,
+                                                    cellSeed + 5u);
+                            const float rise = std::pow(fv, 1.3f);
+                            alpha = smoothstep(0.30f, 0.70f, patch * 0.6f + rise * 0.6f) * rise;
+                            tone = 0.06f;
+                            break;
+                        }
+                        case 2:
+                        {
+                            // Beside a downpipe: a soft dark band down the wall,
+                            // wider towards the bottom, with green in it.
+                            const float centre = std::fabs(fu - 0.5f) * 2.0f;
+                            const float width = 0.25f + fv * 0.45f;
+                            const float wobble = fbm(fu * 4.0f, fv * 6.0f, 4, 3, 2.0f, 0.5f,
+                                                     cellSeed + 7u);
+                            alpha = (1.0f - smoothstep(width * 0.4f, width, centre))
+                                    * (0.35f + 0.65f * wobble) * smoothstep(0.0f, 0.15f, fv);
+                            tone = 0.05f;
+                            break;
+                        }
+                        default:
+                        {
+                            // A soot or damp patch: a soft blob with a ragged edge.
+                            const float d = std::sqrt((fu - 0.5f) * (fu - 0.5f)
+                                                      + (fv - 0.5f) * (fv - 0.5f)) * 2.0f;
+                            const float ragged = fbm(fu * 7.0f, fv * 7.0f, 7, 4, 2.0f, 0.55f,
+                                                     cellSeed + 11u);
+                            alpha = (1.0f - smoothstep(0.35f, 0.95f, d + (ragged - 0.5f) * 0.5f))
+                                    * (0.5f + 0.5f * ragged);
+                            tone = 0.05f;
+                            break;
+                        }
+                    }
+                    const int px = cx * cell + x;
+                    const int py = cy * cell + y;
+                    // Slightly green-black: algae and soot together.
+                    s.albedo.set(px, py, tone * 0.92f, tone, tone * 0.86f, saturate(alpha));
+                    s.height.setRgb(px, py, 0.5f, 0.0f, 0.0f);
+                    s.orm.set(px, py, 1.0f, 0.95f, 0.0f, 1.0f);
+                }
+        }
+    return s.finish(0.0f);
 }
 
 SurfaceMaps TextureFactory::paintedWood(int size, std::uint32_t seed, const float colour[3])

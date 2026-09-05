@@ -707,13 +707,13 @@ void MaterialLibrary::build(std::uint32_t seed)
         Material fitting = pbr(0.62f, 0.0f);
         fitting.baseColour = Srgb(212, 209, 203);
         // A shelf unit stands under the tubes and takes the most of them.
-        fitting.emissiveFactor = shopLight(0.38f);
+        fitting.emissiveFactor = shopLight(0.24f);
         float fittingRgb[3];
         Rgb(fittingRgb, fitting.baseColour);
         install(MaterialId::ShopFitting, "shop-fitting",
                 [&] {
                     return enclose(TextureFactory::paintedMetal(kSmall, s + 61u, fittingRgb, 0.62f),
-                                   0.44f, 1.0f);
+                                   0.34f, 1.0f);
                 },
                 fitting);
 
@@ -722,9 +722,9 @@ void MaterialLibrary::build(std::uint32_t seed)
         // nothing else, and giving each shop its own palette would cost sixteen
         // textures to say something nobody can resolve.
         Material stock = pbr(0.68f, 0.0f);
-        stock.emissiveFactor = shopLight(0.48f);
+        stock.emissiveFactor = shopLight(0.32f);
         install(MaterialId::ShopStock, "shop-stock",
-                [&] { return enclose(TextureFactory::shopStock(kSmall, s + 62u), 0.46f, 1.0f); }, stock);
+                [&] { return enclose(TextureFactory::shopStock(kMedium, s + 62u), 0.36f, 1.0f); }, stock);
 
         // A lit ceiling panel. Emissive rather than a real light: a punctual
         // light per shop would be forty of them in the clustered set to
@@ -732,7 +732,7 @@ void MaterialLibrary::build(std::uint32_t seed)
         // is the *brightness* of the soffit through the glass.
         Material ceiling = pbr(0.55f, 0.0f);
         ceiling.baseColour     = Vector3(0.92f, 0.90f, 0.86f);
-        ceiling.emissiveFactor = Vector3(2.30f, 2.10f, 1.80f);
+        ceiling.emissiveFactor = Vector3(1.75f, 1.58f, 1.32f);
         float ceilingRgb[3];
         Rgb(ceilingRgb, ceiling.baseColour);
         install(MaterialId::ShopCeilingLight, "shop-ceiling-light",
@@ -746,8 +746,8 @@ void MaterialLibrary::build(std::uint32_t seed)
         // wall in front of it would mean drawing a wall of shelving into the
         // cascade atlas from two hundred metres.
         Material shopWall = pbr(0.86f, 0.0f);
-        shopWall.baseColour  = Srgb(196, 194, 188);
-        shopWall.emissiveFactor = shopLight(0.19f);
+        shopWall.baseColour  = Srgb(178, 174, 166);
+        shopWall.emissiveFactor = shopLight(0.10f);
         shopWall.castsShadow = false;
         const float shopWallRgb[3] = {1.0f, 1.0f, 1.0f};
         // Painted plasterboard, not exterior render. The plaster generator's
@@ -758,23 +758,23 @@ void MaterialLibrary::build(std::uint32_t seed)
                 [&] {
                     return enclose(TextureFactory::paintedMetal(kMedium, s + 63u, shopWallRgb,
                                                                 0.86f),
-                                   0.26f, 1.0f);
+                                   0.20f, 1.0f);
                 },
                 shopWall);
 
         Material shopFloor = pbr(0.55f, 0.0f);
         shopFloor.baseColour  = Srgb(168, 164, 158);
-        shopFloor.emissiveFactor = shopLight(0.22f);
+        shopFloor.emissiveFactor = shopLight(0.11f);
         shopFloor.castsShadow = false;
         install(MaterialId::ShopFloor, "shop-floor",
-                [&] { return enclose(TextureFactory::concretePaving(kMedium, s + 64u, 8.0f), 0.30f, 1.0f); },
+                [&] { return enclose(TextureFactory::concretePaving(kMedium, s + 64u, 8.0f), 0.22f, 1.0f); },
                 shopFloor);
 
         Material shopTimber = pbr(0.52f, 0.0f);
-        shopTimber.emissiveFactor = shopLight(0.24f);
+        shopTimber.emissiveFactor = shopLight(0.15f);
         shopTimber.castsShadow = false;
         install(MaterialId::ShopTimber, "shop-timber",
-                [&] { return enclose(TextureFactory::hardwood(kSmall, s + 65u), 0.36f, 1.0f); },
+                [&] { return enclose(TextureFactory::hardwood(kSmall, s + 65u), 0.28f, 1.0f); },
                 shopTimber);
 
         Material shopScreen = pbr(0.16f, 0.0f);
@@ -785,9 +785,32 @@ void MaterialLibrary::build(std::uint32_t seed)
         install(MaterialId::ShopScreen, "shop-screen",
                 [&] { return TextureFactory::flat(8, screenRgb, 0.16f, 0.0f); }, shopScreen);
 
+        // Posters on the back wall, lit like the wall they hang on.
+        Material poster = pbr(0.52f, 0.0f);
+        poster.emissiveFactor = shopLight(0.13f);
+        poster.castsShadow = false;
+        install(MaterialId::ShopPoster, "shop-poster",
+                [&] { return enclose(TextureFactory::posters(kMedium, s + 66u), 0.22f, 1.0f); },
+                poster);
+
+        // A roller blind, drawn down behind the glass of a shop that is shut.
+        // Pale, matte and lit from the street rather than from inside.
+        Material blind = pbr(0.82f, 0.0f);
+        blind.baseColour = Srgb(198, 190, 176);
+        blind.castsShadow = false;
+        const float blindRgb[3] = {1.0f, 1.0f, 1.0f};
+        install(MaterialId::ShopBlind, "shop-blind",
+                [&] { return TextureFactory::fabric(kSmall, s + 67u, blindRgb); }, blind);
+
         materials_[static_cast<std::size_t>(MaterialId::ShopFitting)].castsShadow = false;
         materials_[static_cast<std::size_t>(MaterialId::ShopStock)].castsShadow = false;
         materials_[static_cast<std::size_t>(MaterialId::ShopCeilingLight)].castsShadow = false;
+        // Nothing in a room is lit by the sun. See `Material::sunlit`.
+        for (const MaterialId id : {MaterialId::ShopFitting, MaterialId::ShopStock,
+                                    MaterialId::ShopCeilingLight, MaterialId::ShopWall,
+                                    MaterialId::ShopFloor, MaterialId::ShopTimber,
+                                    MaterialId::ShopScreen, MaterialId::ShopPoster})
+            materials_[static_cast<std::size_t>(id)].sunlit = false;
     }
 
     // ---------------------------------------------------------------------

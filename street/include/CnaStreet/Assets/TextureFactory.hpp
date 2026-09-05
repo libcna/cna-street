@@ -91,9 +91,23 @@ public:
     /// curtained, some empty — the cheapest convincing interior there is.
     [[nodiscard]] static SurfaceMaps interiorAtlas(int size, std::uint32_t seed);
 
-    /// Stock on a shelf. Blocks of saturated colour at the scale of a packet,
-    /// which is all a product is at the distance a shop window is looked into.
+    /// Stock on a shelf. Packets in runs of the same product -- mostly white
+    /// card with a coloured label band, some coloured, some dark -- with the
+    /// seams between them, which is all a product is at the distance a shop
+    /// window is looked into.
     [[nodiscard]] static SurfaceMaps shopStock(int size, std::uint32_t seed);
+
+    /// A 2x2 atlas of posters and notices for a shop's back wall: coloured
+    /// paper, a picture block, lines of text too small to read and a price
+    /// roundel. Addressed one cell at a time by explicit UVs.
+    [[nodiscard]] static SurfaceMaps posters(int size, std::uint32_t seed);
+
+    /// Weathering decals, alpha-masked, as a 2x2 atlas: (0) rain run-off
+    /// fanning down from a sill, (1) a dirt band rising from the pavement,
+    /// (2) the staining beside a leaking downpipe, (3) a soot patch. Laid
+    /// over a wall where the water actually runs, which is the one thing a
+    /// tiling wall material can never know.
+    [[nodiscard]] static SurfaceMaps grimeDecals(int size, std::uint32_t seed);
 
     /// A whole storey of a building, as one tileable image: wall, window
     /// openings with their reveals and sills, and glass that is dark, curtained
