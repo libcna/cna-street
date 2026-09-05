@@ -34,6 +34,11 @@
     "fxaa": true,
     "heightFog": true,
 
+    "reflectionProbes": true,
+    "probeIrradiance": true,
+    "probeSpacing": 24.0,
+    "probeFaceSize": 64,
+
     "traffic": true,
     "pedestrians": true,
     "vegetation": true,
