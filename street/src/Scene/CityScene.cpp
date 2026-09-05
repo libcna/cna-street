@@ -2624,24 +2624,35 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
     if (heroVehicleMeshes_.empty()) return;
     std::vector<HeroVehicleMesh>& heroes = heroVehicleMeshes_;
 
-    // The bays the showcase viewpoints look at: both parking lanes of the
-    // main street north of the junction, from the crossing to the far end of
-    // the hero corridor. Nearest the cameras first, so the best-known models
-    // land where they are looked at hardest.
-    const float from = M::kSideStreetHalfWidth + 12.0f;
-    const float to   = 68.0f;
+    // Every parking bay a camera or a walker can get to, which is both
+    // parking lanes of the main street for ninety-five metres either side of
+    // the junction -- not, as it was, one stretch north of it.
+    //
+    // The rule this follows is that the weakest prominent car sets the
+    // perceived quality of all of them: a lofted crossover parked between two
+    // authored ones does not read as "a cheaper car", it reads as the moment
+    // the rendering stops. Repeating eight good models is the lesser fault,
+    // and the dealing below never puts the same one in two neighbouring bays.
+    //
+    // It costs almost nothing. The copies are instances of meshes already
+    // uploaded, so more of them is more matrices and no more draw calls, and
+    // past forty-five metres each one is its welded far copy at a tenth of
+    // the triangles.
+    const float reach = 126.0f;
     const std::vector<Vehicle>& fleet = traffic_.vehicles();
     std::vector<std::size_t> bays;
     for (std::size_t i = 0; i < fleet.size(); ++i)
     {
         const Vehicle& vehicle = fleet[i];
         if (!vehicle.parked) continue;
-        if (vehicle.parkedAt.Y < from || vehicle.parkedAt.Y > to) continue;
+        if (std::fabs(vehicle.parkedAt.Y) > reach) continue;
         if (std::fabs(vehicle.parkedAt.X) > M::kMainCarriagewayWidth) continue;
         bays.push_back(i);
     }
+    // Nearest the junction first, so the models the closest viewpoints stand
+    // in front of are dealt before the deck starts repeating.
     std::sort(bays.begin(), bays.end(), [&](std::size_t a, std::size_t b) {
-        return fleet[a].parkedAt.Y < fleet[b].parkedAt.Y;
+        return std::fabs(fleet[a].parkedAt.Y) < std::fabs(fleet[b].parkedAt.Y);
     });
 
     // Deal the models out in a seeded order rather than in list order, so the
@@ -2652,20 +2663,36 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
     for (std::size_t i = deck.size(); i > 1; --i)
         std::swap(deck[i - 1], deck[rng.index(i)]);
 
-    std::vector<std::vector<Matrix>> parkedAt(heroes.size());
+    // One placement list per model *per ring of the street*, because a level
+    // of detail is chosen once for a whole instance group -- one car three
+    // metres away would otherwise draw every other copy of that model, the
+    // length of the street, at its full hundred and fifty thousand
+    // triangles. Four rings of about thirty-four metres: the camera upgrades
+    // the ring it is standing in and no other.
+    constexpr int kRings = 4;
+    constexpr float kRingDepth = 34.0f;
+    std::vector<std::vector<Matrix>> parkedAt(heroes.size() * kRings);
+    const auto ringOf = [&](float z) {
+        return std::min(kRings - 1, static_cast<int>(std::fabs(z) / kRingDepth));
+    };
     std::size_t dealt = 0;
-    std::size_t lastOnSide[2] = {SIZE_MAX, SIZE_MAX};
+    std::size_t lastOnSide[4] = {SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX};
     for (const std::size_t index : bays)
     {
         const Vehicle& vehicle = fleet[index];
-        const int side = vehicle.parkedAt.X < 0.0f ? 0 : 1;
+        // Four runs of bays, not two: the two parking lanes on each half of
+        // the street. "Never the same model twice running" has to mean along
+        // a run somebody walks down, and the two halves are dealt
+        // interleaved now that the bays are sorted by distance.
+        const bool west = vehicle.parkedAt.X < 0.0f;
+        const int side = (west ? 0 : 1) + (vehicle.parkedAt.Y < 0.0f ? 0 : 2);
         // Room for it: the bay pitch minus both neighbours' errors, or the
-        // gap to the nearest other parked car on this side.
+        // gap to the nearest other parked car in the same lane.
         float room = 1e30f;
         for (std::size_t j = 0; j < fleet.size(); ++j)
         {
             if (j == index || !fleet[j].parked) continue;
-            if ((fleet[j].parkedAt.X < 0.0f) != (side == 0)) continue;
+            if ((fleet[j].parkedAt.X < 0.0f) != west) continue;
             const float gap = std::fabs(fleet[j].parkedAt.Y - vehicle.parkedAt.Y);
             room = std::min(room, gap * 2.0f - fleet[j].length);
         }
@@ -2681,7 +2708,8 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         }
         if (pick == SIZE_MAX) continue;
         lastOnSide[side] = pick;
-        parkedAt[pick].push_back(vehicle.transform(traffic_.lanes()));
+        parkedAt[pick * kRings + static_cast<std::size_t>(ringOf(vehicle.parkedAt.Y))]
+            .push_back(vehicle.transform(traffic_.lanes()));
         vehicleReplaced_[index] = true;
         // The loft is not drawn any more but it is still the solid the
         // walking camera meets, so it takes the size of the car that stands
@@ -2694,11 +2722,15 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
     const float cull  = settings.propCullDistance;
     const float shade = settings.propShadowDistance;
     for (std::size_t h = 0; h < heroes.size(); ++h)
-    {
-        if (parkedAt[h].empty()) continue;
-        placeProp(heroes[h].whole, parkedAt[h], "hero-" + heroes[h].name, cull * 0.75f, shade,
-                  /*castsShadow=*/true, heroes[h].far.empty() ? nullptr : &heroes[h].far, 45.0f);
-    }
+        for (int ring = 0; ring < kRings; ++ring)
+        {
+            std::vector<Matrix>& at = parkedAt[h * kRings + static_cast<std::size_t>(ring)];
+            if (at.empty()) continue;
+            placeProp(heroes[h].whole, at,
+                      "hero-" + heroes[h].name + "-r" + std::to_string(ring), cull * 0.75f, shade,
+                      /*castsShadow=*/true, heroes[h].far.empty() ? nullptr : &heroes[h].far,
+                      45.0f);
+        }
 
     // --- the moving traffic --------------------------------------------------
     // Every moving loft is drawn as an authored car of the nearest class: a

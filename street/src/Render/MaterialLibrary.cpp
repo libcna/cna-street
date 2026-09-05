@@ -151,7 +151,8 @@ const Material* MaterialLibrary::add(const std::string& name, const Assets::Surf
 }
 
 const Material* MaterialLibrary::addFromContent(const std::string& name, const std::string& albedo,
-                                                const std::string& normal, Material material)
+                                                const std::string& normal, Material material,
+                                                const std::string& orm)
 {
     const auto existing = derived_.find(name);
     if (existing != derived_.end()) return existing->second.get();
@@ -159,7 +160,7 @@ const Material* MaterialLibrary::addFromContent(const std::string& name, const s
     material.albedo = albedo.empty() ? nullptr : load(albedo);
     if (material.albedo == nullptr) return nullptr;
     material.normal = normal.empty() ? nullptr : load(normal);
-    material.orm    = nullptr;
+    material.orm    = orm.empty() ? nullptr : load(orm);
     auto owned = std::make_unique<Material>(material);
     Material* raw = owned.get();
     derived_.emplace(name, std::move(owned));
