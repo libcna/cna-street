@@ -128,6 +128,28 @@ void main() {
     // pointing at the sun is its negation.
     vec3 toSun = -normalize(uSunDirection);
 
+    // Civil twilight. With the sun a few degrees under the horizon the
+    // scattering model is left with its reddest, dimmest term everywhere, and
+    // the whole sky came out the same dark brown. A real twilight sky is deep
+    // blue overhead -- ozone absorption, which a single-scattering model has
+    // no term for -- with the warm band kept to the horizon on the sun's side.
+    // So the blue is added by hand, weighted by how far the sun is down and
+    // how far this direction is from it, and the model keeps the glow where
+    // the glow is.
+    float dusk = clamp(-toSun.y * 9.0, 0.0, 1.0);
+    if (dusk > 0.0) {
+        float up = clamp(direction.y, 0.0, 1.0);
+        vec3 zenithBlue = vec3(0.010, 0.020, 0.058);
+        vec3 horizonBlue = vec3(0.030, 0.038, 0.070);
+        vec3 twilight = mix(horizonBlue, zenithBlue, pow(up, 0.6)) * uIntensity;
+        // The band of afterglow around the sun's azimuth, low on the horizon.
+        float towards = clamp(dot(normalize(vec3(direction.x, 0.0, direction.z)),
+                                  normalize(vec3(toSun.x, 0.0, toSun.z))), 0.0, 1.0);
+        float glow = pow(towards, 3.0) * (1.0 - smoothstep(0.0, 0.28, direction.y));
+        vec3 afterglow = vec3(0.34, 0.14, 0.05) * uIntensity * glow;
+        sky = mix(sky, twilight + afterglow + sky * 0.35, dusk);
+    }
+
     // The scattering model gives the glow around the sun but not its disc.
     // 0.5 degrees across, with limb darkening, and a small forward-scattering
     // halo so it sits in the sky rather than on it.
@@ -156,15 +178,22 @@ void main() {
         float rim = clamp(lower - thickness, 0.0, 1.0);
         cloudColour += sunColour * rim * pow(max(cosAngle, 0.0), 6.0) * 0.9;
         // Clouds are lit by the same sun, so they dim with it rather than
-        // staying white at dusk.
+        // staying white at dusk -- and once the sun is under the horizon they
+        // are lit by nothing but the sky around them. The first version kept
+        // a third of their daylight brightness at night, which hung pale
+        // brown blobs in a sky that was otherwise dark: a cloud after dusk is
+        // a slightly lighter patch of the sky's own colour, no more.
+        float daylight = clamp(toSun.y * 3.0 + 0.08, 0.0, 1.0);
         cloudColour *= uIntensity * (0.35 + 0.75 * clamp(toSun.y, 0.0, 1.0));
+        cloudColour = mix(sky * 1.25 + vec3(0.002), cloudColour, daylight);
 
         sky = mix(sky, cloudColour, clamp(lower, 0.0, 1.0) * 0.96);
 
         // --- cirrus ------------------------------------------------------
         float high = deck(direction, 6200.0, 0.00019, uCloudCoverage * 0.55 + 0.10, 0.55,
                           drift * 2.4);
-        sky = mix(sky, vec3(1.02, 1.01, 1.03) * uIntensity, high * 0.32);
+        vec3 cirrus = mix(sky * 1.15, vec3(1.02, 1.01, 1.03) * uIntensity, daylight);
+        sky = mix(sky, cirrus, high * 0.32);
     }
 
     // --- horizon ------------------------------------------------------------

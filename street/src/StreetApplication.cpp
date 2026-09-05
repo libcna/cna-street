@@ -203,14 +203,16 @@ bool StreetApplication::configure(int argc, char** argv)
             // else that changes at night follows from the sun's elevation
             // through `RenderSettings::nightLighting`.
             settings_.sunElevationDegrees = -4.0f;
-            // 1.0 against the daylight 0.42, which is a stop and a quarter
-            // rather than the two and a half the first attempt used. The sky
+            // 1.5 against the daylight 0.42: a little under two stops. The sky
             // at civil twilight carries almost nothing -- its ambient is
             // (0.008, 0.001, 0.000) -- so what the frame is actually exposed
             // for is the lamps, the shop windows and the flats above them, and
             // opening up far enough to lift the *pavement* to mid grey turns a
-            // night street into an overcast afternoon with the lights on.
-            settings_.exposure            = 1.0f;
+            // night street into an overcast afternoon with the lights on. It
+            // was 1.0 when the ambient came from the sky cube; the reflection
+            // probes now light the street from what it actually sees at night,
+            // which is darker than an open sky, and the half stop follows.
+            settings_.exposure            = 1.5f;
             settings_.bloomThreshold      = 0.72f;
             settings_.bloomIntensity      = 0.55f;
         }
