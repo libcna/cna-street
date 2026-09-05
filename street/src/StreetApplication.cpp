@@ -24,6 +24,7 @@
 #include "System/NotSupportedException.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -107,6 +108,8 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --frames <n>                      render n frames and exit\n"
                 "  --screenshot <file.png>           write one frame and exit\n"
                 "  --capture <dir>                   write every viewpoint into dir and exit\n"
+                "  --supersample <n>                 render stills at n times the size and\n"
+                "                                    filter them down (1-4); stills only\n"
                 "  --exposure <v>                    exposure multiplier\n"
                 "  --shadow-debug                    tint each shadow cascade\n"
                 "  --no-shadows --no-bloom --no-ssao --no-fog --no-clouds --no-ibl\n"
@@ -158,6 +161,7 @@ bool StreetApplication::configure(int argc, char** argv)
         }
         else if (arg == "--frames")     { const char* v = next(i); if (v) frameBudget_ = std::atoi(v); }
         else if (arg == "--screenshot") { const char* v = next(i); if (v) screenshotPath_ = v; }
+        else if (arg == "--supersample") { const char* v = next(i); if (v) supersample_ = std::clamp(std::atoi(v), 1, 4); }
         else if (arg == "--capture")    { const char* v = next(i); if (v) captureDirectory_ = v; }
         else if (arg == "--exposure")  { const char* v = next(i); if (v) settings_.exposure = static_cast<float>(std::atof(v)); }
         else if (arg == "--no-ibl")         settings_.imageBasedLighting = false;
@@ -268,8 +272,13 @@ void StreetApplication::loadSettingsFile()
 
 void StreetApplication::Initialize()
 {
-    graphics_->setPreferredBackBufferWidthProperty(settings_.windowWidth);
-    graphics_->setPreferredBackBufferHeightProperty(settings_.windowHeight);
+    // A supersampled still renders into a back buffer N times the size asked
+    // for; the file is filtered back down when it is written. Only when a
+    // still was asked for: an interactive window at four times its size is
+    // not what anyone meant.
+    if (supersample_ > 1 && screenshotPath_.empty() && captureDirectory_.empty()) supersample_ = 1;
+    graphics_->setPreferredBackBufferWidthProperty(settings_.windowWidth * supersample_);
+    graphics_->setPreferredBackBufferHeightProperty(settings_.windowHeight * supersample_);
     graphics_->setSynchronizeWithVerticalRetraceProperty(settings_.vsync);
     graphics_->setPreferMultiSamplingProperty(settings_.multiSample > 0);
     graphics_->ApplyChanges();
@@ -652,7 +661,55 @@ void StreetApplication::captureScreenshot(const std::string& path)
             rgba[i * 4 + 2] = static_cast<std::uint8_t>(pixels[i].getBProperty());
             rgba[i * 4 + 3] = 255;
         }
-        Texture2D shot = Texture2D::CreateFromPixels(device, width, height, rgba);
+        // The supersample resolve: every output pixel is the mean of its
+        // N x N block, taken in linear light so a thin bright edge over a
+        // dark ground averages to what a camera would have recorded rather
+        // than to the darker value that averaging encoded bytes gives.
+        int outWidth = width, outHeight = height;
+        if (supersample_ > 1)
+        {
+            const int n = supersample_;
+            outWidth  = width / n;
+            outHeight = height / n;
+            static float toLinear[256];
+            static bool tableReady = false;
+            if (!tableReady)
+            {
+                for (int i = 0; i < 256; ++i)
+                {
+                    const float c = static_cast<float>(i) / 255.0f;
+                    toLinear[i] = c <= 0.04045f ? c / 12.92f : std::pow((c + 0.055f) / 1.055f, 2.4f);
+                }
+                tableReady = true;
+            }
+            std::vector<std::uint8_t> small(static_cast<std::size_t>(outWidth) * static_cast<std::size_t>(outHeight) * 4u);
+            const float weight = 1.0f / static_cast<float>(n * n);
+            for (int y = 0; y < outHeight; ++y)
+                for (int x = 0; x < outWidth; ++x)
+                {
+                    float sum[3] = {0.0f, 0.0f, 0.0f};
+                    for (int dy = 0; dy < n; ++dy)
+                        for (int dx = 0; dx < n; ++dx)
+                        {
+                            const std::size_t at = (static_cast<std::size_t>(y * n + dy) * static_cast<std::size_t>(width)
+                                                    + static_cast<std::size_t>(x * n + dx)) * 4u;
+                            for (int c = 0; c < 3; ++c) sum[c] += toLinear[rgba[at + static_cast<std::size_t>(c)]];
+                        }
+                    const std::size_t out = (static_cast<std::size_t>(y) * static_cast<std::size_t>(outWidth)
+                                             + static_cast<std::size_t>(x)) * 4u;
+                    for (int c = 0; c < 3; ++c)
+                    {
+                        const float lin = sum[c] * weight;
+                        const float enc = lin <= 0.0031308f ? lin * 12.92f
+                                                            : 1.055f * std::pow(lin, 1.0f / 2.4f) - 0.055f;
+                        small[out + static_cast<std::size_t>(c)] =
+                            static_cast<std::uint8_t>(std::clamp(enc * 255.0f + 0.5f, 0.0f, 255.0f));
+                    }
+                    small[out + 3] = 255;
+                }
+            rgba.swap(small);
+        }
+        Texture2D shot = Texture2D::CreateFromPixels(device, outWidth, outHeight, rgba);
         shot.SaveAsPng(path);
         CNA::Logger::Info("cna-street: wrote " + path);
     }

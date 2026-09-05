@@ -77,6 +77,7 @@ if(TARGET cna_tool_source_to_cnb)
                 -D "MANIFEST=${CNA_STREET_MANIFEST}"
                 -D "PYTHON=${CNA_STREET_PYTHON}"
                 -D "PREPARE=${CMAKE_SOURCE_DIR}/scripts/prepare-surfaces.py"
+                -D "MODEL_TEXTURES=${CMAKE_SOURCE_DIR}/scripts/model-textures.py"
                 -P "${CMAKE_CURRENT_LIST_DIR}/CnaStreetBuildContent.cmake"
         DEPENDS bake-assets cna_tool_source_to_cnb
                 $<$<TARGET_EXISTS:cna_tool_gltf_to_cnb>:cna_tool_gltf_to_cnb>

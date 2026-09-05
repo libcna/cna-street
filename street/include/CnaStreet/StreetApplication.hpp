@@ -109,6 +109,12 @@ private:
     int         captureIndex_    = 0;
     int         captureSettle_   = 0;
     std::string screenshotPath_;
+    /// `--supersample N` renders a still at N times the requested size and
+    /// box-filters it down on the way to the file: the one anti-aliasing
+    /// this application can add on its own side of the framework, and the
+    /// only one that settles leaf cards, wheel spokes and shutter rails
+    /// smaller than a pixel. Stills only; the window is not shown at it.
+    int         supersample_     = 1;
     std::string shadowDumpPath_;
     std::string probeDumpPath_;
     /// The sun moved this session and the reflection probes have not followed

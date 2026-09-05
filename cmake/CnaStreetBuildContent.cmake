@@ -137,12 +137,53 @@ if(DEFINED GLTF_COMPILER AND NOT GLTF_COMPILER STREQUAL "" AND DEFINED GLTF_SOUR
         endif()
         # The images the model refers to, beside it, for a compiled Model that
         # carries its textures as external references rather than absorbing
-        # them. ContentManager resolves them by name.
+        # them. ContentManager resolves them by name -- and it looks for
+        # "<name>.cnb" before it looks for the loose file, so each image is
+        # also compiled under its own full name through the same mip-chain
+        # compiler the catalogue's surfaces go through, in the colour space
+        # scripts/model-textures.py reads off the model. The loose image
+        # would arrive with one mip level (docs/cna-findings.md GLTF-206)
+        # and shimmer from a few metres; the compiled one arrives with the
+        # chain. The loose copy stays beside it for a runtime without the
+        # compiled one.
+        set(spaces "")
+        if(DEFINED PYTHON AND NOT PYTHON STREQUAL "" AND DEFINED MODEL_TEXTURES
+           AND EXISTS "${MODEL_TEXTURES}")
+            execute_process(COMMAND "${PYTHON}" "${MODEL_TEXTURES}"
+                                    "${gltf_staging}/${logical}/${logical}.cnj"
+                            OUTPUT_VARIABLE spaces
+                            RESULT_VARIABLE spaces_result
+                            OUTPUT_STRIP_TRAILING_WHITESPACE)
+            if(NOT spaces_result EQUAL 0)
+                set(spaces "")
+            endif()
+            string(REPLACE "\n" ";" spaces "${spaces}")
+        endif()
         file(GLOB extracted "${gltf_staging}/${logical}/*.jpg"
                             "${gltf_staging}/${logical}/*.png")
         foreach(image IN LISTS extracted)
             get_filename_component(image_name "${image}" NAME)
             file(COPY_FILE "${image}" "${OUTPUT}/${image_name}")
+            set(space "")
+            foreach(entry IN LISTS spaces)
+                if(entry STREQUAL "${image_name}=srgb")
+                    set(space srgb)
+                elseif(entry STREQUAL "${image_name}=linear")
+                    set(space linear)
+                endif()
+            endforeach()
+            if(space STREQUAL "")
+                continue()
+            endif()
+            execute_process(COMMAND "${COMPILER}" "${image}" "${OUTPUT}/${image_name}.cnb"
+                                    --name "${image_name}" --mipmaps --mip-color-space "${space}"
+                                    --quiet
+                            RESULT_VARIABLE compile_result)
+            if(NOT compile_result EQUAL 0)
+                message(WARNING "cna-street: could not compile ${image_name} with a mip chain "
+                                "(${compile_result}); the loose image stands")
+                file(REMOVE "${OUTPUT}/${image_name}.cnb")
+            endif()
         endforeach()
         math(EXPR models "${models} + 1")
     endforeach()
