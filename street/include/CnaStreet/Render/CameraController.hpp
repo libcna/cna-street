@@ -94,6 +94,12 @@ public:
                 const Microsoft::Xna::Framework::Input::MouseState& mouse,
                 const Microsoft::Xna::Framework::Input::MouseState& previousMouse);
 
+    /// One step of a scripted walk: move by @p delta through the walk-mode
+    /// collision, out of anything that has driven into the camera, and back
+    /// onto the ground. What `--walkthrough` drives the camera with, so that
+    /// what the script exercises is the same code a person's WASD does.
+    void walkStep(float deltaSeconds, const Microsoft::Xna::Framework::Vector3& delta);
+
     /// Drives the cinematic dolly. Separated so a headless run can step it
     /// deterministically without any input at all.
     void updateCinematic(float deltaSeconds);
@@ -108,6 +114,9 @@ private:
     /// Eases the camera out of anything that has moved into it, at walking
     /// pace. Called every frame in Walk mode and once on entering it.
     void escapeSolids(float deltaSeconds);
+    /// Puts the camera at eye height over whatever it is standing on, falling
+    /// if there is nothing under it.
+    void settleOnGround(float deltaSeconds);
 
     Camera*    camera_ = nullptr;
     CameraMode mode_   = CameraMode::Fly;

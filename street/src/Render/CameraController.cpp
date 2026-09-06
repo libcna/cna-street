@@ -278,6 +278,21 @@ void CameraController::update(float deltaSeconds, const KeyboardState& keyboard,
     escapeSolids(dt);
 
     // --- walking on the ground ----------------------------------------------
+    settleOnGround(dt);
+
+}
+
+void CameraController::walkStep(float deltaSeconds, const Vector3& delta)
+{
+    const float dt = std::clamp(deltaSeconds, 0.0f, kMaxFrameSeconds);
+    moveWithCollision(delta);
+    escapeSolids(dt);
+    settleOnGround(dt);
+}
+
+void CameraController::settleOnGround(float dt)
+{
+    if (camera_ == nullptr) return;
     if (mode_ == CameraMode::Walk && ground_)
     {
         const Vector3 p = camera_->position();
