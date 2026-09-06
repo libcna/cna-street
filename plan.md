@@ -392,6 +392,46 @@ draw-call consolidation that paid for fixing them. Everything below is in
   through the same collision code a person's WASD goes through and reports
   what it met.
 
+## The seventh visual pass
+
+An eighth pass, in two halves that turned out to be one: make the city
+hold up past the hero block, and stop guessing where the frame goes.
+Everything below is in `docs/visual-overhaul-7/`.
+
+* **Four live-play defects, reported from the keyboard.** The street was
+  laid out for left-hand traffic under a comment saying right-hand -- the
+  left of a car facing +Z is +X, which `Geometry::AlongFrame` had always
+  said -- with eight left-hand-drive models on it; every driver sat in the
+  passenger seat beside the wheel; the driver was a faceless two-draw
+  prop; and five of the eight cars' wheel nodes carried an arch liner, a
+  mudflap or a caliper that orbited the axle. The lanes, bays and signal
+  kerbs keep right through one `TrafficSystem::rightOf`; the steering
+  side is measured off each model's cabin by `vehicle-orientation.py`;
+  the driver is the crowd's own imported figure playing a new `drive`
+  clip; a wheel part rolls only if it is a surface of revolution about
+  the axle.
+* **Every imported model's box was a cube.** CNA's `ModelMesh` has a
+  sphere and no box; a cube of the diagonal gave every car its length as
+  its width and height. Measured from the vertices now (CNA-F18).
+* **A GPU clock.** A `GpuTimer` per stage beside the CPU stopwatch, the
+  post chain's own pass timers, per-cascade shadow work, and the shadow
+  pass attributed by content family. The opaque pass is CPU-bound by 12
+  ms of `PbrEffect::Apply`; the post chain is GPU-bound; the shadow pass
+  was more than half scanned trees.
+* **Half the shadow pass.** Trees and props cast from their far level of
+  detail; the parked fleet casts from a shadow-only proxy; architecture,
+  the district and people each have a shadow distance of their own.
+  13.2 M shadow triangles to 6.5 M, GPU shadow 15.5 ms to 9.5.
+* **The city behind the frontage.** Two rows of blocks behind the
+  street-facing district on both arms of both streets, batched a strip
+  at a time: +45 draws, +5.5 k triangles, and the field behind the
+  street is gone from every elevated view.
+* **Sound.** `SoundScape`, through CNA's own XNA audio: engines by speed
+  with Doppler, horns, the walking camera's and the pedestrians'
+  footsteps, voices at the crossings, wind and birds. NOX Sound's CC0
+  packs, derived by `scripts/prepare-audio.py`.
+* **A loading screen**, in place of twenty-five seconds of black window.
+
 ## Next
 
 * **Brake lights on the authored cars.** A driven authored car shows no lit
@@ -431,13 +471,24 @@ draw-call consolidation that paid for fixing them. Everything below is in
   one means either putting the 2k skin through an atlas cell, which is the
   face, or alpha-testing the hair against the same atlas. It is the largest
   remaining draw-call item by a factor of four.
-* **The context district, walked.** Its blocks carry real openings and now
-  the street's own trees and cars, but standing among them the facades are
-  plainly cheaper than the modelled frontage: one plane of render with a
-  shopfront band.
+* **The context district, walked.** Its blocks carry real openings, the
+  street's own trees and cars, and now a city behind them; standing among
+  them the facades are still one plane of render with a shopfront band,
+  and the rows behind are painted. Balconies, quoins and shutters on the
+  windowed blocks, and a third tier between them and the painted rows,
+  are the next step.
+* **The far cascade.** Half the shadow pass is cascade 3, whose fit sphere
+  contains most of the near street; a caster reach that tests shadow
+  extent against the slice rather than distance from its centre is the
+  next shadow win. And the hydrant is 6 200 triangles a copy.
+* **The bolted wheel parts.** The arch liners, calipers and mudflaps the
+  wheel splitter swept up now sit still, at a draw each; folding them
+  into the body node in `scripts/blender-vehicles.py` gives those back.
 * **A skinned shadow caster in CNA.** CNA-F14. Every character currently casts
   with a rigid stand-in in its bind pose.
-* **Audio.** CNA's audio module works; the demo has nothing to play through it.
+* **Sound, further.** The engines are four loops chosen by speed; a
+  granular blend between them, tyre noise on the move, and a signal
+  beeper at the crossings are the next things a listener notices missing.
 * **A measured `low` preset.** Its decisions are reasoned rather than measured,
   because this environment has only a software rasteriser.
 

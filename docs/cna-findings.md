@@ -566,6 +566,83 @@ carry, or let the importer drop attributes the stock effects do not read.
 
 ---
 
+## CNA-F18 — a `ModelMesh` publishes a bounding sphere and no box
+
+**Severity:** medium (silent wrong sizes, and every consumer that needs a box
+has to invent one)
+**Affected:** `Microsoft::Xna::Framework::Graphics::ModelMesh`
+(`getBoundingSphereProperty` only), and through it every application that
+culls, collides or scales imported models by their extent
+
+**What happens.** XNA's `ModelMesh` exposes a `BoundingSphere` and CNA
+matches it exactly. There is no axis-aligned box, no per-part bounds, and no
+way to ask the importer for one. A consumer that needs a box -- and every
+consumer that culls against a frustum, sizes a collision solid or scales a
+model to a real-world height needs one -- takes the sphere's cube, which is
+a box of the model's *diagonal*: on a car, 73 per cent too wide and too
+tall. This project reported the Opel Astra as 4.47 x 4.47 x 4.47 m for four
+passes.
+
+**What it cost here.** A walking camera stopped two metres short of every
+parked car; the driver of a van-class vehicle sat 1.6 m ahead of centre, on
+the bonnet; `ModelLibrary::fitTo`, which scales a prop to a stated height
+off the box it is given, scaled every prop by the wrong factor; every
+imported model was culled and shadow-culled as though it were its own
+diagonal.
+
+**Reproduction.** Load any long thin model -- a car -- and compare
+`getBoundingSphereProperty().Radius * 2` with the model's own length: they
+are equal, and its width and height are neither.
+
+**Workaround here.** `ModelLibrary::PartBounds` reads each part's positions
+back from `VertexBuffer::GetDataRawEXT`, which serves the CPU shadow the
+buffer keeps of what was uploaded into it, and takes the box of those. A
+memcpy per part at load, nothing per frame. The sphere's cube stays as the
+fallback for a write-only buffer.
+
+**Proposed fix.** A `BoundingBox` on `ModelMesh` (or on `ModelMeshPart`,
+which is the granularity a cull wants), computed by the importer from the
+positions it already has, as `BoundingSphere` is. Cheaper there than in
+every consumer, and correct there in a way a sphere's cube can never be.
+
+---
+
+## Seventh visual pass (2026-09-06): environment notes and behaviour
+
+**One new defect, CNA-F18 above. Nothing in CNA, sharp-runtime, easy-gl or
+meta-gl was modified.** Three behaviours are worth knowing.
+
+**A `GpuTimer` range cannot contain another.** `CNA::Graphics::GpuTimer` is
+`GL_TIME_ELAPSED`, and GL allows one open query of that target at a time, so
+a range round the frame that contained ranges round its stages would be an
+error, and a range round the post chain would collide with the chain's own
+per-pass timers (`RenderPipeline::setGpuTimingEnabledEXT`). Not a defect:
+it is the API's shape. What it means for a consumer is that a frame total is
+a sum of stage ranges, that the post chain is measured by the pipeline and
+nothing else, and that each timer's result has to be `poll`ed *before* its
+range is reopened, because a timer object holds one result and reopening
+discards it -- the first version of this project's stage timers polled
+after `end` and reported "unavailable" on hardware that has it.
+
+**`PbrEffect::Apply` uploads the whole parameter block.** Whether or not a
+property changed since the last `Apply`. The consequence is that a
+consumer's own material state cache saves the setters and not the upload,
+and the upload is the cost: the two clocks put this project's opaque pass
+at 32 ms of submission for 20 ms of execution, 1 436 draws at about 22 us
+of driver time each. On this side of the effect the only lever is fewer
+draws. A dirty-tracked upload, or a per-material constant buffer bound
+rather than re-uploaded, is the framework-side change that would move it.
+
+**The mixer's simultaneous-voice ceiling is not published.** `SoundEffect`
+and `SoundEffectInstance` work as XNA's do, `Apply3D` gives attenuation, pan
+and an exact Doppler, and a WAV of any bit depth decodes to PCM16 through
+SDL. What a consumer cannot find out is how many instances may play at
+once before `Play` refuses; `InstancePlayLimitException` exists, and this
+project caps its own voices at fourteen and logs a refusal once rather
+than finding the number by throwing.
+
+---
+
 ## Second visual pass (2026-09-05): environment notes and behaviour
 
 Nothing below is a CNA defect. Each is something the second visual pass ran

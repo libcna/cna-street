@@ -568,3 +568,44 @@ person is dealt one of each with a stride scaled to their height -- the
 clip's clock is distance over stride, so the feet stay on the ground in
 all of them. The signs are pinned by `gait_tests`, which refuses a knee
 that bends forward.
+
+## Which side of the road, and which side of the car
+
+Two claims had stood in comments since the first pass: that the street
+kept right, and that a driver sat at -X. Both were wrong, and both were
+wrong in the same way -- a statement about geometry that nothing measured.
+The frame's own convention, `Geometry::AlongFrame`, had always said the
+left of a heading (ux,uz) is (uz,-ux), so the left of a car facing +Z is
++X; the northbound lane at +X was on its own left, and a seat at -X was the
+passenger's. The fix is the same shape as the sixth pass's fix for a car
+that drove in reverse: one rule in one place (`TrafficSystem::rightOf`),
+every consumer written through it, and a test that checks the rule rather
+than four hand-written signs. The steering side is measured off each
+model's own cabin -- the triangle area either side of the dashboard slab
+-- because a car model is a file and a file can be right-hand drive.
+
+## A shadow does not need the leaves
+
+The shadow pass was more than half scanned trees. `shadowReport()` said so;
+nothing else could have, because the registered-scene and visible-set
+tables only ever counted what the eye sees, and a caster is written into
+every cascade it can reach. A canopy silhouette on a cascade whose ground
+sample is metres wide does not need the geometry a canopy needs at three
+metres from the eye, so an instanced caster now draws from its far level
+of detail at any distance, and the parked fleet from a shadow-only proxy
+whose materials -- a shadow reads only positions -- need not match. The
+general rule: **the eye and the shadow map are two viewers with two
+budgets**, and content was being cut for one and charged to both.
+
+## Sound is placed, or it is a soundtrack
+
+Every source that has a place in the world is a `SoundEffectInstance` with
+`Apply3D` against a listener at the camera: the mixer does the attenuation,
+the pan on the listener's own right axis and the Doppler from the emitter's
+velocity, and this side only has to say *where* things are and *what state*
+they are in. An engine's sample is picked by the car's speed and bent
+inside the band by it; a footstep is played when a person's walk phase
+crosses half a stride, the same clock their legs run on, so the sound is
+on the foot; the birds are in whichever tree is nearest, because that is
+where birds are. The one unplaced sound is the wind, which is nowhere in
+particular and so does not pan or fall off.
