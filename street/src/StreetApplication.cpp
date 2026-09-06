@@ -333,6 +333,10 @@ void StreetApplication::LoadContent()
     renderer_  = std::make_unique<SceneRenderer>(device, *materials_);
     renderer_->resize(width, height);
     renderer_->initialise(settings_);
+    // The shadow-by-name breakdown costs a hash-map insert per shadow draw
+    // call, which a `--frames` profiling run should pay for and an ordinary
+    // one flying the camera should not.
+    renderer_->setShadowReportEnabled(frameBudget_ > 0);
 
     // The overlay before the scene, not after: it owns the font and the sprite
     // batch the loading screen draws with, and the loading screen is the whole
@@ -574,6 +578,44 @@ void StreetApplication::recordFrame()
     profile_.shadowDraws += stats.shadowDrawCalls;
     profile_.triangles   += static_cast<long long>(stats.triangles);
     ++profile_.samples;
+
+    profile_.vehicleDraws         += stats.vehicleDrawCalls;
+    profile_.driverDraws          += stats.driverDrawCalls;
+    profile_.skinnedDraws         += stats.skinnedDrawCalls;
+    profile_.characterShadowDraws += stats.characterShadowDrawCalls;
+    profile_.vehicleTriangles     += static_cast<long long>(stats.vehicleTriangles);
+    profile_.characterTriangles   += static_cast<long long>(stats.characterTriangles);
+
+    if (profile_.cascades.size() < stats.cascades.size())
+        profile_.cascades.resize(stats.cascades.size());
+    for (std::size_t i = 0; i < stats.cascades.size(); ++i)
+    {
+        profile_.cascades[i].draws     += static_cast<double>(stats.cascades[i].draws);
+        profile_.cascades[i].triangles += static_cast<double>(stats.cascades[i].triangles);
+        profile_.cascades[i].radius    += static_cast<double>(stats.cascades[i].radius);
+        profile_.cascades[i].split      = stats.cascades[i].split;
+    }
+
+    // Only a frame that actually carried a GPU result counts toward the GPU
+    // averages: a query lands a frame or two after its range closed, so the
+    // first settled frames report -1 and averaging those in would make every
+    // stage look cheaper than it is.
+    if (stats.gpuOpaqueMs >= 0.0)
+    {
+        profile_.gpuShadowMs  += std::max(stats.gpuShadowMs, 0.0);
+        profile_.gpuPrepassMs += std::max(stats.gpuPrepassMs, 0.0);
+        profile_.gpuSkyMs     += std::max(stats.gpuSkyMs, 0.0);
+        profile_.gpuOpaqueMs  += stats.gpuOpaqueMs;
+        profile_.gpuPostMs    += std::max(stats.gpuPostMs, 0.0);
+        ++profile_.gpuSamples;
+        if (profile_.postPassMs.size() < stats.gpuPostPasses.size())
+            profile_.postPassMs.resize(stats.gpuPostPasses.size());
+        for (std::size_t i = 0; i < stats.gpuPostPasses.size(); ++i)
+        {
+            profile_.postPassMs[i].first = stats.gpuPostPasses[i].first;
+            profile_.postPassMs[i].second += stats.gpuPostPasses[i].second;
+        }
+    }
 }
 
 void StreetApplication::reportProfile()
@@ -620,6 +662,65 @@ void StreetApplication::reportProfile()
                       + std::to_string(profile_.triangles / profile_.samples)
                       + " triangles per frame");
 
+    // The other clock. A CPU stage time is how long the driver took to accept
+    // the work; a GPU stage time is how long the hardware took to do it. Which
+    // of the two dominates decides what to optimise, and until this pass this
+    // project only had the first.
+    if (profile_.gpuSamples > 0)
+    {
+        const double g = static_cast<double>(profile_.gpuSamples);
+        const double gpuTotal = (profile_.gpuShadowMs + profile_.gpuPrepassMs + profile_.gpuSkyMs
+                                 + profile_.gpuOpaqueMs + profile_.gpuPostMs) / g;
+        CNA::Logger::Info("cna-street:   GPU  shadow " + fixed(profile_.gpuShadowMs / g, 2)
+                          + "  prepass " + fixed(profile_.gpuPrepassMs / g, 2)
+                          + "  sky " + fixed(profile_.gpuSkyMs / g, 2)
+                          + "  opaque " + fixed(profile_.gpuOpaqueMs / g, 2)
+                          + "  post " + fixed(profile_.gpuPostMs / g, 2)
+                          + "  = " + fixed(gpuTotal, 2) + " ms of a "
+                          + fixed(mean, 2) + " ms frame ("
+                          + fixed(100.0 * gpuTotal / std::max(mean, 0.001), 0) + "%)");
+        if (!profile_.postPassMs.empty())
+        {
+            std::ostringstream passes;
+            passes << "cna-street:   GPU post passes ";
+            for (const auto& pass : profile_.postPassMs)
+                passes << pass.first << " " << fixed(pass.second / g, 2) << "  ";
+            CNA::Logger::Info(passes.str());
+        }
+    }
+    else
+    {
+        CNA::Logger::Info("cna-street:   GPU timing unavailable on this renderer");
+    }
+
+    if (!profile_.cascades.empty())
+    {
+        CNA::Logger::Info("cna-street:   shadow cascades, per frame:");
+        for (std::size_t i = 0; i < profile_.cascades.size(); ++i)
+        {
+            const auto& cascade = profile_.cascades[i];
+            std::ostringstream line;
+            line << "cna-street:     cascade " << i << "  to "
+                 << std::fixed << std::setprecision(1) << cascade.split << " m, fit radius "
+                 << cascade.radius / n << " m: " << std::setprecision(0)
+                 << static_cast<double>(cascade.draws) / n << " draws, "
+                 << static_cast<double>(cascade.triangles) / n << " triangles";
+            CNA::Logger::Info(line.str());
+        }
+    }
+
+    CNA::Logger::Info("cna-street:   content in frame -- vehicles "
+                      + std::to_string(profile_.vehicleDraws / profile_.samples) + " draws / "
+                      + std::to_string(profile_.vehicleTriangles / profile_.samples) + " tris"
+                      + ", drivers " + std::to_string(profile_.driverDraws / profile_.samples)
+                      + " draws"
+                      + ", characters " + std::to_string(profile_.skinnedDraws / profile_.samples)
+                      + " draws / "
+                      + std::to_string(profile_.characterTriangles / profile_.samples) + " tris"
+                      + ", character shadow proxies "
+                      + std::to_string(profile_.characterShadowDraws / profile_.samples)
+                      + " draws");
+
     // And where the scene's weight actually is. A frame time says it got
     // slower; this says which batch did it.
     const std::vector<SceneRenderer::BatchCost> all = renderer_->costReport(0);
@@ -648,6 +749,8 @@ void StreetApplication::reportProfile()
     dump("heaviest batch families as registered, by triangle:", renderer_->costReport(14));
     dump("most expensive families in the last frame, by draw call:",
          renderer_->visibleReport(16));
+    dump("the shadow pass's own triangles, by family, last frame:",
+         renderer_->shadowReport(14));
 }
 
 void StreetApplication::runCaptureScript()

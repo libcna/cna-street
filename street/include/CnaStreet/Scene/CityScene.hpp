@@ -14,6 +14,7 @@
 #include "CnaStreet/Render/MaterialLibrary.hpp"
 #include "CnaStreet/Render/RenderSettings.hpp"
 #include "CnaStreet/Scene/CityLayout.hpp"
+#include "CnaStreet/Render/SceneRenderer.hpp"
 #include "CnaStreet/Scene/GeometryCollector.hpp"
 
 #include <functional>
@@ -172,11 +173,26 @@ private:
                    const std::string& name, float cullDistance, float shadowDistance,
                    bool castsShadow = true, const PropMesh* distant = nullptr,
                    float lodDistance = 0.0f);
+    /// Registers @p proxy as what @p transforms casts a shadow with, drawn
+    /// nowhere else. For a prop whose cheaper mesh does not match its
+    /// detailed one part for part -- an authored car's far copy is a
+    /// differently-merged model, not the same materials at fewer triangles,
+    /// so @ref placeProp's own index-matched LOD swap cannot use it -- and
+    /// whose detailed shadow is too expensive to keep: `--frames` measured
+    /// the parked hero fleet's own near-mesh shadows at over a million
+    /// triangles a frame for geometry a shadow can never resolve to begin
+    /// with. The shadow effect reads only positions, so the proxy's own
+    /// materials -- however many, however matched to the visible mesh's --
+    /// are irrelevant; only its silhouette has to agree.
+    void placeShadowProxy(const PropMesh& proxy,
+                          const std::vector<Microsoft::Xna::Framework::Matrix>& transforms,
+                          const std::string& name, float shadowDistance);
     /// Submits one placed copy of a prop for this frame. `overrideMaterial`
     /// replaces every part's material, which is how a signal lens is drawn lit
     /// or dark from one mesh.
     void submitProp(const PropMesh& prop, const Microsoft::Xna::Framework::Matrix& transform,
-                    const Material* overrideMaterial = nullptr, bool shadowOnly = false);
+                    const Material* overrideMaterial = nullptr, bool shadowOnly = false,
+                    DrawFamily family = DrawFamily::Other);
 
     void buildStreetFurniture(Rng& rng, const RenderSettings& settings);
     void buildVegetation(Rng& rng, const RenderSettings& settings);
