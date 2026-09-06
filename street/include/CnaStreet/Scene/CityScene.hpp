@@ -180,11 +180,21 @@ private:
                               Microsoft::Xna::Framework::Matrix::getIdentityProperty(),
                           const std::function<bool(const std::string&)>& include = nullptr);
     /// Registers a prop's parts as instance groups sharing one transform list.
+    /// @p minDistance leaves out the copies nearer than it -- see
+    /// `InstanceGroup::minDistance`.
     void placeProp(const PropMesh& prop,
                    const std::vector<Microsoft::Xna::Framework::Matrix>& transforms,
                    const std::string& name, float cullDistance, float shadowDistance,
                    bool castsShadow = true, const PropMesh* distant = nullptr,
-                   float lodDistance = 0.0f);
+                   float lodDistance = 0.0f, float minDistance = 0.0f);
+    /// The same prop with every part that shares a material merged into one
+    /// mesh, the node transforms baked in, or the prop itself when its
+    /// geometry cannot be read back. For a prop that never moves a part of
+    /// itself: an authored car's parked copy carries its wheels as separate
+    /// nodes so the moving copy can roll them, and on the Punto that is
+    /// nineteen draws a copy for a car standing still. Merged it is one draw
+    /// per material.
+    PropMesh mergedByMaterial(const PropMesh& prop, const std::string& name);
     /// Registers @p proxy as what @p transforms casts a shadow with, drawn
     /// nowhere else. For a prop whose cheaper mesh does not match its
     /// detailed one part for part -- an authored car's far copy is a
@@ -362,6 +372,9 @@ private:
         };
         std::string name;
         PropMesh whole;
+        /// @ref whole with its parts merged by material, for the parked
+        /// copies: nothing on a parked car moves, so nothing needs a node.
+        PropMesh parked;
         PropMesh body;
         PropMesh far;
         std::vector<Wheel> wheels;

@@ -12,6 +12,14 @@
 #include "CnaStreet/Render/SceneRenderer.hpp"
 #include "CnaStreet/Scene/StreetMetrics.hpp"
 
+#include "Microsoft/Xna/Framework/Graphics/IndexBuffer.hpp"
+#include "Microsoft/Xna/Framework/Graphics/IndexElementSize.hpp"
+#include "Microsoft/Xna/Framework/Graphics/ModelMeshPart.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexBuffer.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexDeclaration.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexElement.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexElementFormat.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexElementUsage.hpp"
 #include "Microsoft/Xna/Framework/MathHelper.hpp"
 
 #include "CNA/Logger.hpp"
@@ -19,8 +27,10 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <cstring>
 #include <cmath>
 #include <set>
+#include <unordered_map>
 
 using namespace Microsoft::Xna::Framework;
 using Microsoft::Xna::Framework::Graphics::GraphicsDevice;
@@ -1290,9 +1300,210 @@ CityScene::PropMesh CityScene::makeProp(const std::string& name,
     return prop;
 }
 
+namespace {
+
+/// One mesh part's geometry, read back from the CPU shadows the buffers keep
+/// of what was uploaded into them (the same read `ModelLibrary` measures a
+/// part's box from; CNA-F18). False when the layout is not this project's or
+/// the indices do not fit the part's own vertex window, in which case the
+/// caller keeps the part as it is.
+bool ReadPart(Graphics::ModelMeshPart& part,
+              std::unordered_map<Graphics::IndexBuffer*, std::vector<std::uint32_t>>& indexCache,
+              Geometry::MeshData& out, std::string& why)
+{
+    Graphics::VertexBuffer* vb = part.getVertexBufferProperty();
+    Graphics::IndexBuffer*  ib = part.getIndexBufferProperty();
+    if (vb == nullptr || ib == nullptr) { why = "no buffers"; return false; }
+    const Graphics::VertexDeclaration& declaration = vb->getVertexDeclarationProperty();
+    const int stride = declaration.getVertexStrideProperty();
+    const int count  = part.getNumVerticesProperty();
+    if (count <= 0 || stride <= 0)
+    {
+        why = "stride " + std::to_string(stride) + ", " + std::to_string(count) + " vertices";
+        return false;
+    }
+    // Where each of this project's four attributes sits in the imported
+    // vertex. The importer's layout is this project's byte for byte today;
+    // reading by element rather than by struct is what keeps that a fact
+    // checked at load and not an assumption, and lets a model with the same
+    // attributes in another order merge as well.
+    int atPosition = -1, atNormal = -1, atTangent = -1, atUv = -1;
+    for (const Graphics::VertexElement& element : declaration.GetVertexElements())
+    {
+        if (element.getUsageIndexProperty() != 0) continue;
+        const auto usage  = element.getVertexElementUsageProperty();
+        const auto format = element.getVertexElementFormatProperty();
+        const int offset  = element.getOffsetProperty();
+        if (usage == Graphics::VertexElementUsage::Position
+            && format == Graphics::VertexElementFormat::Vector3) atPosition = offset;
+        else if (usage == Graphics::VertexElementUsage::Normal
+                 && format == Graphics::VertexElementFormat::Vector3) atNormal = offset;
+        else if (usage == Graphics::VertexElementUsage::Tangent
+                 && format == Graphics::VertexElementFormat::Vector4) atTangent = offset;
+        else if (usage == Graphics::VertexElementUsage::TextureCoordinate
+                 && format == Graphics::VertexElementFormat::Vector2) atUv = offset;
+    }
+    if (atPosition < 0 || atNormal < 0 || atTangent < 0 || atUv < 0
+        || std::max({atPosition + 12, atNormal + 12, atTangent + 16, atUv + 8}) > stride)
+    {
+        why = "vertex layout lacks an attribute (stride " + std::to_string(stride) + ", "
+              + std::to_string(declaration.GetVertexElements().size()) + " elements)";
+        return false;
+    }
+
+    out.vertices.resize(static_cast<std::size_t>(count));
+    try
+    {
+        std::vector<std::uint8_t> bytes(static_cast<std::size_t>(count)
+                                        * static_cast<std::size_t>(stride));
+        vb->GetDataRawEXT(part.getVertexOffsetProperty() * stride, bytes.data(), count, stride);
+        for (int i = 0; i < count; ++i)
+        {
+            const std::uint8_t* v = bytes.data() + static_cast<std::size_t>(i) * static_cast<std::size_t>(stride);
+            Geometry::Vertex& d = out.vertices[static_cast<std::size_t>(i)];
+            std::memcpy(&d.Position, v + atPosition, 12);
+            std::memcpy(&d.Normal, v + atNormal, 12);
+            std::memcpy(&d.Tangent, v + atTangent, 16);
+            std::memcpy(&d.TextureCoordinate, v + atUv, 8);
+        }
+        // The whole index buffer once per buffer, then a window of it per
+        // part: the read-back has no offset form.
+        auto cached = indexCache.find(ib);
+        if (cached == indexCache.end())
+        {
+            std::vector<std::uint32_t> all(static_cast<std::size_t>(ib->getIndexCountProperty()));
+            if (ib->getIndexElementSizeProperty() == Graphics::IndexElementSize::SixteenBits)
+            {
+                std::vector<std::uint16_t> narrow(all.size());
+                ib->GetData(narrow.data(), static_cast<int>(narrow.size()));
+                for (std::size_t i = 0; i < all.size(); ++i) all[i] = narrow[i];
+            }
+            else
+                ib->GetData(all.data(), static_cast<int>(all.size()));
+            cached = indexCache.emplace(ib, std::move(all)).first;
+        }
+        const std::vector<std::uint32_t>& all = cached->second;
+        const std::size_t start = static_cast<std::size_t>(part.getStartIndexProperty());
+        const std::size_t n = static_cast<std::size_t>(part.getPrimitiveCountProperty()) * 3u;
+        if (start + n > all.size())
+        {
+            why = "index window " + std::to_string(start) + "+" + std::to_string(n) + " of "
+                  + std::to_string(all.size());
+            return false;
+        }
+        out.indices.assign(all.begin() + static_cast<std::ptrdiff_t>(start),
+                           all.begin() + static_cast<std::ptrdiff_t>(start + n));
+    }
+    catch (const std::exception& failure)
+    {
+        why = std::string("read-back refused: ") + failure.what();
+        return false;
+    }
+    // Indices are relative to the part's own vertex window, which is how the
+    // part is drawn; one outside it means the window is not what it says.
+    for (const std::uint32_t index : out.indices)
+        if (index >= static_cast<std::uint32_t>(count))
+        {
+            why = "index " + std::to_string(index) + " outside " + std::to_string(count)
+                  + " vertices at offset " + std::to_string(part.getVertexOffsetProperty());
+            return false;
+        }
+    return true;
+}
+
+}  // namespace
+
+namespace {
+
+/// Whether two materials would draw the same: the same maps, the same
+/// factors, the same blend and cull. `ModelLibrary` hands every imported
+/// part a `Material` of its own even when the atlas gave two parts the same
+/// images and numbers, so the identity of the pointer says nothing and the
+/// contents have to be compared.
+bool SameMaterial(const Material& a, const Material& b)
+{
+    return a.albedo == b.albedo && a.normal == b.normal && a.orm == b.orm
+           && a.emissive == b.emissive && a.baseColour == b.baseColour
+           && a.emissiveFactor == b.emissiveFactor && a.metallic == b.metallic
+           && a.roughness == b.roughness && a.alpha == b.alpha && a.normalScale == b.normalScale
+           && a.occlusionStrength == b.occlusionStrength && a.ior == b.ior
+           && a.specular == b.specular && a.alphaMode == b.alphaMode
+           && a.alphaCutoff == b.alphaCutoff && a.doubleSided == b.doubleSided
+           && a.uvScale == b.uvScale && a.uvOffset == b.uvOffset
+           && a.castsShadow == b.castsShadow && a.shadowDistance == b.shadowDistance
+           && a.writesDepth == b.writesDepth && a.premultipliedBlend == b.premultipliedBlend
+           && a.sunlit == b.sunlit;
+}
+
+}  // namespace
+
+CityScene::PropMesh CityScene::mergedByMaterial(const PropMesh& prop, const std::string& name)
+{
+    struct Bucket
+    {
+        const Material* material = nullptr;
+        MeshBuilder builder;
+    };
+    std::vector<std::unique_ptr<Bucket>> buckets;
+    std::unordered_map<Graphics::IndexBuffer*, std::vector<std::uint32_t>> indexCache;
+    Geometry::MeshData data;
+    for (const PropMesh::Part& part : prop.parts)
+    {
+        if (part.mesh == nullptr || part.mesh->part() == nullptr) return prop;
+        data.clear();
+        std::string why;
+        if (!ReadPart(*part.mesh->part(), indexCache, data, why))
+        {
+            CNA::Logger::Info("cna-street: " + name + " keeps its " + std::to_string(prop.parts.size())
+                              + " parts: '" + part.mesh->name() + "' could not be read back ("
+                              + why + ")");
+            return prop;
+        }
+        Bucket* bucket = nullptr;
+        for (const auto& candidate : buckets)
+            if (candidate->material == part.material
+                || SameMaterial(*candidate->material, *part.material))
+                bucket = candidate.get();
+        if (bucket == nullptr)
+        {
+            buckets.push_back(std::make_unique<Bucket>());
+            bucket = buckets.back().get();
+            bucket->material = part.material;
+        }
+        // The node's own transform baked into the vertices, with the normals,
+        // the tangents and the winding carried through a mirroring one.
+        bucket->builder.append(data, part.local);
+    }
+    if (buckets.size() >= prop.parts.size())
+    {
+        // Every part came with a material of its own. On the authored cars
+        // that is not the atlas failing to share: the compiled-model loader
+        // hands each mesh part its own Texture2D objects even where two parts
+        // reference the same image, so two parts that would draw identically
+        // hold maps this side cannot tell apart short of hashing their
+        // pixels. Recorded in docs/cna-findings.md; the merge waits for the
+        // loader to share, and says so once.
+        CNA::Logger::Info("cna-street: " + name + " keeps its " + std::to_string(prop.parts.size())
+                          + " parts: no two share a material (each part carries maps of its own)");
+        return prop;
+    }
+
+    PropMesh merged;
+    merged.bounds = prop.bounds;
+    int index = 0;
+    for (auto& bucket : buckets)
+    {
+        const GpuMesh* mesh = upload(bucket->builder.take(), name + "." + std::to_string(index++));
+        if (mesh == nullptr) continue;
+        merged.parts.push_back(PropMesh::Part{bucket->material, mesh});
+    }
+    return merged.empty() ? prop : merged;
+}
+
 void CityScene::placeProp(const PropMesh& prop, const std::vector<Matrix>& transforms,
                           const std::string& name, float cullDistance, float shadowDistance,
-                          bool castsShadow, const PropMesh* distant, float lodDistance)
+                          bool castsShadow, const PropMesh* distant, float lodDistance,
+                          float minDistance)
 {
     if (prop.empty() || transforms.empty()) return;
     for (std::size_t i = 0; i < prop.parts.size(); ++i)
@@ -1307,6 +1518,7 @@ void CityScene::placeProp(const PropMesh& prop, const std::vector<Matrix>& trans
         if (part.local != Matrix::getIdentityProperty())
             for (Matrix& transform : group.transforms) transform = part.local * transform;
         group.cullDistance   = cullDistance;
+        group.minDistance    = minDistance;
         group.shadowDistance = shadowDistance;
         group.castsShadow    = castsShadow;
         group.name           = name;
@@ -3381,6 +3593,10 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         {
             hero.wheels.clear();
         }
+        // The parked copy, merged: after the straightening, so the wheels are
+        // baked in as they stand. A parked car's nineteen parts were nineteen
+        // draws a copy for geometry nothing ever moves.
+        hero.parked = mergedByMaterial(hero.whole, hero.name + "-parked");
         {
             std::size_t rolling = 0, bolted = 0;
             for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
@@ -3391,14 +3607,16 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
             float worstTilt = 0.0f;
             for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
                 worstTilt = std::max(worstTilt, wheel.tiltDegrees);
-            char line[320];
+            char line[400];
             std::snprintf(line, sizeof(line),
                           "cna-street: %s  %.2f x %.2f x %.2f m, wheel r %.3f, "
                           "%zu wheels, %zu rolling part(s) and %zu bolted to the car, "
-                          "axle up to %.1f deg off X, %d parked part(s) straightened",
+                          "axle up to %.1f deg off X, %d parked part(s) straightened; "
+                          "parked copy %zu parts merged to %zu, far copy %zu",
                           hero.name.c_str(), hero.length, hero.width, hero.height,
                           hero.wheelRadius, hero.wheels.size(), rolling, bolted, worstTilt,
-                          straightenedParked);
+                          straightenedParked, hero.whole.parts.size(), hero.parked.parts.size(),
+                          hero.far.parts.size());
             CNA::Logger::Info(line);
         }
         heroVehicleMeshes_.push_back(std::move(hero));
@@ -3445,18 +3663,14 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
     for (std::size_t i = deck.size(); i > 1; --i)
         std::swap(deck[i - 1], deck[rng.index(i)]);
 
-    // One placement list per model *per ring of the street*, because a level
-    // of detail is chosen once for a whole instance group -- one car three
-    // metres away would otherwise draw every other copy of that model, the
-    // length of the street, at its full hundred and fifty thousand
-    // triangles. Four rings of about thirty-four metres: the camera upgrades
-    // the ring it is standing in and no other.
-    constexpr int kRings = 4;
-    constexpr float kRingDepth = 34.0f;
-    std::vector<std::vector<Matrix>> parkedAt(heroes.size() * kRings);
-    const auto ringOf = [&](float z) {
-        return std::min(kRings - 1, static_cast<int>(std::fabs(z) / kRingDepth));
-    };
+    // One placement list per model. The seventh pass dealt each model into
+    // four rings of the street so a level of detail chosen once per instance
+    // group could not promote every copy of a model the length of the street
+    // when one stood three metres away; the level of detail is now per
+    // instance -- a near group culled at 45 m and a far group that starts
+    // there, see InstanceGroup::minDistance -- so the rings, and the four
+    // times the draws they cost when all were in view, are gone.
+    std::vector<std::vector<Matrix>> parkedAt(heroes.size());
     std::size_t dealt = 0;
     std::size_t lastOnSide[4] = {SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX};
     for (const std::size_t index : bays)
@@ -3490,8 +3704,7 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         }
         if (pick == SIZE_MAX) continue;
         lastOnSide[side] = pick;
-        parkedAt[pick * kRings + static_cast<std::size_t>(ringOf(vehicle.parkedAt.Y))]
-            .push_back(vehicle.transform(traffic_.lanes()));
+        parkedAt[pick].push_back(vehicle.transform(traffic_.lanes()));
         vehicleReplaced_[index] = true;
         // The loft is not drawn any more but it is still the solid the
         // walking camera meets, so it takes the size of the car that stands
@@ -3503,30 +3716,33 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
 
     const float cull  = settings.propCullDistance;
     const float shade = settings.propShadowDistance;
+    constexpr float kParkedDetailDistance = 45.0f;
     for (std::size_t h = 0; h < heroes.size(); ++h)
-        for (int ring = 0; ring < kRings; ++ring)
+    {
+        const std::vector<Matrix>& at = parkedAt[h];
+        if (at.empty()) continue;
+        const HeroVehicleMesh& hero = heroes[h];
+        if (hero.far.empty())
         {
-            std::vector<Matrix>& at = parkedAt[h * kRings + static_cast<std::size_t>(ring)];
-            if (at.empty()) continue;
-            // The near model's own shadow, off: an authored car's far copy
-            // is a differently-merged model rather than the same materials at
-            // fewer triangles (seven parts against three, on the Civic), so
-            // placeProp's index-matched LOD swap cannot use it for the
-            // *drawn* body -- but a shadow caster does not draw materials,
-            // only positions, and the far copy's silhouette is the same car.
-            // `--frames` measured the parked fleet's own near-mesh shadows at
-            // over a million triangles a frame; the far copy underneath is a
-            // few hundred thousand for the same shape.
-            placeProp(heroes[h].whole, at,
-                      "hero-" + heroes[h].name + "-r" + std::to_string(ring), cull * 0.75f, shade,
-                      /*castsShadow=*/false, heroes[h].far.empty() ? nullptr : &heroes[h].far,
-                      45.0f);
-            if (!heroes[h].far.empty())
-                placeShadowProxy(heroes[h].far, at,
-                                 "hero-" + heroes[h].name + "-r" + std::to_string(ring)
-                                     + "-shadow",
-                                 shade);
+            placeProp(hero.parked, at, "hero-" + hero.name, cull * 0.75f, shade);
+            continue;
         }
+        // Inside forty-five metres the merged parked copy; beyond it the far
+        // copy, per instance, each group culled on the far side or the near
+        // side of the same distance. An authored car's far copy is a
+        // differently-merged model rather than the same materials at fewer
+        // triangles, so the index-matched swap `placeProp` offers cannot use
+        // it, and until this pass no parked car ever reached its far level of
+        // detail at all: the Astra drew its hundred and fifty thousand
+        // triangles at any distance inside 158 m. The far group carries the
+        // shadow for every copy, near and far -- a caster reads positions,
+        // not materials, and the far copy's silhouette is the same car -- which
+        // is what the seventh pass's separate shadow proxy did.
+        placeProp(hero.parked, at, "hero-" + hero.name, kParkedDetailDistance, 0.0f,
+                  /*castsShadow=*/false);
+        placeProp(hero.far, at, "hero-" + hero.name + "-far", cull * 0.75f, shade,
+                  /*castsShadow=*/true, nullptr, 0.0f, kParkedDetailDistance);
+    }
 
     // --- the moving traffic --------------------------------------------------
     // Every moving loft is drawn as an authored car of the nearest class: a

@@ -134,6 +134,14 @@ struct InstanceGroup
     const GpuMesh* lodMesh = nullptr;
     float lodDistance   = 0.0f;
     float cullDistance  = 0.0f;
+    /// Nearer than this an instance is not drawn. 0 means "from the eye".
+    /// The other half of a per-instance level of detail: a group of near
+    /// copies culled at a distance and a group of far copies culled inside
+    /// it draw each instance at the detail its own distance deserves, where
+    /// @ref lodMesh decides once for the whole group. Shadows ignore it: a
+    /// group that casts, casts every copy, so the far group of such a pair
+    /// is the one that carries the shadow.
+    float minDistance   = 0.0f;
     float shadowDistance = 0.0f;
     bool  castsShadow   = true;
     /// This group exists only to be a shadow proxy for another one -- see
