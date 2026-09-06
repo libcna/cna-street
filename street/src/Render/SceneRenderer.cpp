@@ -378,8 +378,22 @@ void SceneRenderer::addInstances(InstanceGroup group)
     groups_.push_back(std::move(group));
 }
 
+InstancedRendererEXT& SceneRenderer::instancedFor(const GpuMesh* mesh)
+{
+    auto found = instancedByMesh_.find(mesh);
+    if (found == instancedByMesh_.end())
+    {
+        auto renderer = std::make_unique<InstancedRendererEXT>(device_, mesh->part());
+        renderer->setFallbackEnabled(true);
+        found = instancedByMesh_.emplace(mesh, std::move(renderer)).first;
+    }
+    return *found->second;
+}
+
 void SceneRenderer::clearScene()
 {
+    // The renderers hold a part pointer into a mesh the scene owns.
+    instancedByMesh_.clear();
     items_.clear();
     groups_.clear();
     dynamic_.clear();
@@ -1062,8 +1076,7 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
 
         applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
                       nullptr);
-        InstancedRendererEXT instanced(device_, mesh->part());
-        instanced.setFallbackEnabled(true);
+        InstancedRendererEXT& instanced = instancedFor(mesh);
         instanced.setInstances(visible);
         instanced.draw(*effect_);
         stats_.instancedDrawCalls += instanced.getLastDrawCallCount();
@@ -1108,8 +1121,7 @@ void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& 
         if (mesh == nullptr) continue;
         applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
                       nullptr);
-        InstancedRendererEXT instanced(device_, mesh->part());
-        instanced.setFallbackEnabled(true);
+        InstancedRendererEXT& instanced = instancedFor(mesh);
         instanced.setInstances(visible);
         instanced.draw(*effect_);
         stats_.drawCalls += instanced.getLastDrawCallCount();

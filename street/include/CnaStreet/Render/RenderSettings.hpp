@@ -200,6 +200,16 @@ struct RenderSettings
     /// is still there, and the fifty who were four pixels at the vanishing
     /// point are not.
     float pedestrianCullDistance = 130.0f;
+    /// Distance past which a person casts no shadow.
+    ///
+    /// Its own number rather than @ref propShadowDistance, which it used to
+    /// share: a person's rigid shadow stand-in is three parts, written once
+    /// into every cascade its bounds reach, and on the flagship view that
+    /// was 272 shadow draws a frame -- an eighth of the whole pass -- for
+    /// figures whose shadows past forty metres are a pixel of grey under a
+    /// pixel of person. Everybody on the near footway and everybody on the
+    /// crossing in front of the camera still grounds.
+    float pedestrianShadowDistance = 38.0f;
     /// Distance past which a person is drawn with the collapsed material set:
     /// head, coat and legs in three draws rather than six. About the width of
     /// this street, so everybody on the near footway is fully detailed.

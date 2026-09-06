@@ -1326,8 +1326,9 @@ void CityScene::submitPeople(const RenderSettings& settings)
             item.bones    = &player.GetSkinTransforms();
             renderer_.submitSkinned(std::move(item));
         }
-        // The rigid stand-in, for the shadow pass only.
-        if (distance < settings.propShadowDistance)
+        // The rigid stand-in, for the shadow pass only, and only near: see
+        // RenderSettings::pedestrianShadowDistance.
+        if (distance < settings.pedestrianShadowDistance)
             submitProp(character.shadowProxy, world, nullptr, true);
     }
 }
