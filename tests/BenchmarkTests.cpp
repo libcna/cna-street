@@ -50,7 +50,8 @@ BenchmarkResult Sample()
     r.what = "a \"quoted\" description, with a comma";
     r.version = "0.1.0";
     r.renderer = "OPENGL33";
-    r.adapter = "AMD Radeon 780M";
+    r.adapter = "Dell Inc. 27\"";
+    r.gpu = "AMD Radeon 780M";
     r.content = "compiled";
     r.width = 1600; r.height = 900; r.seed = 20260903u;
     r.warmupFrames = 12; r.measuredFrames = 60;

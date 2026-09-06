@@ -67,7 +67,12 @@ struct BenchmarkResult
     std::string what;
     std::string version;
     std::string renderer;
+    /// What the device calls its adapter, which on this machine is the
+    /// monitor: CNA has no way to ask for the GPU's own name.
     std::string adapter;
+    /// The GPU as the environment names it -- `CNA_STREET_GPU`, which
+    /// `scripts/benchmark.sh` fills from `glxinfo` -- or empty.
+    std::string gpu;
     std::string content;   ///< "compiled" or "generated"
     int width = 0, height = 0;
     std::uint32_t seed = 0;

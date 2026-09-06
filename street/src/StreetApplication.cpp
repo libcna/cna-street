@@ -885,7 +885,10 @@ void StreetApplication::writeBenchmark(double meanMs, double medianMs, double p9
     r.version = CNA_STREET_VERSION;
     GraphicsDevice& device = getGraphicsDeviceProperty();
     r.renderer = std::string(device.GetGraphicsRendererName());
+    // The adapter's description is the display's, not the GPU's, and the
+    // device has no way to name the GPU; the environment can.
     r.adapter  = device.getAdapterProperty().getDescriptionProperty();
+    if (const char* gpu = std::getenv("CNA_STREET_GPU")) r.gpu = gpu;
     r.content  = content_ != nullptr ? "compiled" : "generated";
     r.width    = device.getViewportProperty().getWidthProperty();
     r.height   = device.getViewportProperty().getHeightProperty();
