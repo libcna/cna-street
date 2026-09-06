@@ -1352,8 +1352,16 @@ void SceneRenderer::bakeReflectionProbes(std::vector<Vector3> positions,
     // size and there are thirty of them, and the reflection of a parked car
     // does not need the sky's smoothness.
     const int prefilterSamples = size >= 64 ? 32 : 24;
+    std::size_t captured = 0;
     for (const Vector3& position : probePositions_)
     {
+        // The longest single stage of a start-up, and the one that used to
+        // leave the window black longest: twenty-nine captures at seven
+        // seconds the lot. Reported per probe so the bar moves.
+        if (bakeProgress_)
+            bakeProgress_(static_cast<float>(captured)
+                          / static_cast<float>(probePositions_.size()));
+        ++captured;
         auto probe = std::make_unique<ReflectionProbe>();
         probe->position = position;
         try

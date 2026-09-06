@@ -37,11 +37,29 @@ int main()
             CHECK(lane.stopLine > 0.0f);
             CHECK(lane.stopLine < lane.length);
         }
-        // Northbound keeps to the east side, southbound to the west.
+        // The rule, rather than four hand-written signs: every lane sits on
+        // its own *right* of the street's centre line. It used to sit on its
+        // left -- the lanes were laid out for left-hand traffic under a
+        // comment saying right-hand -- so a street of left-hand-drive models
+        // drove on the wrong side and every driver sat in the passenger seat.
+        // Written through TrafficSystem::rightOf so the layout, the parking
+        // bays, the signal kerbs and this check cannot drift apart again.
+        for (const Lane& lane : lanes)
+        {
+            const Vector2 mid = lane.at(lane.length * 0.5f);
+            const float along = mid.X * lane.direction.X + mid.Y * lane.direction.Y;
+            const Vector2 offset(mid.X - lane.direction.X * along,
+                                 mid.Y - lane.direction.Y * along);
+            const Vector2 right = TrafficSystem::rightOf(lane.direction);
+            CHECK_MSG(offset.X * right.X + offset.Y * right.Y > 0.5f,
+                      "a travel lane sits on the wrong side of the centre line");
+        }
+        // And, spelled out for the one direction a reader will check by hand:
+        // northbound is +Z, whose right is -X.
         const Lane& north = lanes[0];
         const Lane& south = lanes[1];
-        CHECK(north.direction.Y > 0.5f && north.start.X > 0.0f);
-        CHECK(south.direction.Y < -0.5f && south.start.X < 0.0f);
+        CHECK(north.direction.Y > 0.5f && north.start.X < 0.0f);
+        CHECK(south.direction.Y < -0.5f && south.start.X > 0.0f);
         // Every travel lane sits inside the carriageway.
         for (const Lane& lane : lanes)
             for (const float s : {0.0f, lane.length * 0.5f, lane.length})
@@ -161,12 +179,17 @@ int main()
             if (!vehicle.parked) continue;
             ++parked;
             CHECK_NEAR(std::fabs(vehicle.parkedAt.X), bayCentre, 0.25);
-            // Facing along the street, one way on each side.
+            // Facing along the street, one way on each side -- and the kerb
+            // it is against is the one on its own right, because that is
+            // which way round parking works where the traffic keeps right.
             const float heading = vehicle.parkedHeading;
             const bool northbound = std::fabs(heading) < 0.2f;
             const bool southbound = std::fabs(std::fabs(heading) - 3.14159265f) < 0.2f;
             CHECK(northbound || southbound);
-            CHECK((vehicle.parkedAt.X > 0.0f) == northbound);
+            const Vector2 forward(std::sin(heading), std::cos(heading));
+            const Vector2 right = TrafficSystem::rightOf(forward);
+            CHECK_MSG(vehicle.parkedAt.X * right.X > 0.0f,
+                      "a parked car is against the kerb on its left");
         }
         CHECK(parked == traffic.parkedCount());
         CHECK(parked > 20);

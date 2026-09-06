@@ -56,6 +56,17 @@ public:
     /// A one-line summary for the window title and the log.
     [[nodiscard]] std::string summary(const SceneRenderer& renderer) const;
 
+    /// Paints the whole window while the city is being built.
+    ///
+    /// The scene takes twenty seconds to generate and the reflection probes
+    /// another seven, and until this existed the window was black for all of
+    /// it -- which from outside is indistinguishable from a program that has
+    /// hung. @p stage says what is happening and @p progress how far through
+    /// it is, and both are drawn on a plain ground with a bar, once per stage.
+    /// Cheap enough to call from inside the build: one clear, a few dozen
+    /// sprites and a present.
+    void drawLoading(const std::string& stage, float progress, int width, int height);
+
 private:
     void drawPanel(int x, int y, int width, int height, float alpha);
 

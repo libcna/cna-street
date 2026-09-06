@@ -14,6 +14,8 @@
 #include "Microsoft/Xna/Framework/Graphics/VertexElement.hpp"
 #include "Microsoft/Xna/Framework/Graphics/VertexDeclaration.hpp"
 #include "Microsoft/Xna/Framework/Graphics/VertexBuffer.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexElementFormat.hpp"
+#include "Microsoft/Xna/Framework/Graphics/VertexElementUsage.hpp"
 #include "Microsoft/Xna/Framework/Graphics/AnimationPlayer.hpp"
 #include "CnaStreet/Render/SkinnedGpuMesh.hpp"
 #include "Microsoft/Xna/Framework/Graphics/PbrEffect.hpp"
@@ -23,6 +25,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstring>
+#include <cstdint>
+#include <vector>
 
 using namespace Microsoft::Xna::Framework;
 using namespace Microsoft::Xna::Framework::Graphics;
@@ -42,6 +47,71 @@ Matrix AbsoluteTransform(const ModelMesh& mesh)
          bone = bone->getParentProperty())
         out = out * bone->getTransformProperty();
     return out;
+}
+
+/// The axis-aligned box one mesh part's vertices actually occupy.
+///
+/// CNA's `ModelMesh` publishes a bounding *sphere* and no box, so this used to
+/// take a cube of side 2r around it -- and a cube of the diagonal is not a box.
+/// On these cars that is 73 per cent too wide and 73 per cent too tall: every
+/// authored car reported its own length as its width and its height, which put
+/// a driver on the bonnet, gave a walking camera a four-and-a-half-metre cube
+/// to bump into round every parked car, scaled every prop fitted to a
+/// real-world height by the wrong factor, and made every imported model cull
+/// as though it were its own diagonal.
+///
+/// The vertices are right there. `VertexBuffer` keeps a CPU shadow of what was
+/// written into it and `GetDataRawEXT` hands back a window of it, so the box
+/// is measured from the positions rather than inferred from a sphere. This is
+/// a read of already-resident memory, not a GPU read-back: it costs a memcpy
+/// per part at load and nothing per frame. See docs/cna-findings.md CNA-F18.
+///
+/// Returns false when the buffer will not give its bytes up -- a write-only
+/// buffer, a declaration with no position element -- and the caller keeps the
+/// sphere's cube, which is wrong but never too small.
+bool PartBounds(ModelMeshPart& part, BoundingBox& out)
+{
+    VertexBuffer* buffer = part.getVertexBufferProperty();
+    if (buffer == nullptr) return false;
+    const int count = part.getNumVerticesProperty();
+    if (count <= 0) return false;
+
+    const VertexDeclaration& declaration = buffer->getVertexDeclarationProperty();
+    const int stride = declaration.getVertexStrideProperty();
+    if (stride <= 0) return false;
+
+    int offset = -1;
+    for (const VertexElement& element : declaration.GetVertexElements())
+        if (element.getVertexElementUsageProperty() == VertexElementUsage::Position
+            && element.getUsageIndexProperty() == 0
+            && element.getVertexElementFormatProperty() == VertexElementFormat::Vector3)
+            offset = element.getOffsetProperty();
+    if (offset < 0 || offset + 12 > stride) return false;
+
+    std::vector<std::uint8_t> bytes(static_cast<std::size_t>(count)
+                                    * static_cast<std::size_t>(stride));
+    try
+    {
+        buffer->GetDataRawEXT(part.getVertexOffsetProperty() * stride, bytes.data(), count, stride);
+    }
+    catch (const std::exception&)
+    {
+        return false;
+    }
+
+    Vector3 lo(1e30f, 1e30f, 1e30f), hi(-1e30f, -1e30f, -1e30f);
+    for (int i = 0; i < count; ++i)
+    {
+        float p[3];
+        std::memcpy(p, bytes.data() + static_cast<std::size_t>(i) * static_cast<std::size_t>(stride)
+                                    + static_cast<std::size_t>(offset), sizeof(p));
+        if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) continue;
+        lo = Vector3(std::min(lo.X, p[0]), std::min(lo.Y, p[1]), std::min(lo.Z, p[2]));
+        hi = Vector3(std::max(hi.X, p[0]), std::max(hi.Y, p[1]), std::max(hi.Z, p[2]));
+    }
+    if (lo.X > hi.X) return false;
+    out = BoundingBox(lo, hi);
+    return true;
 }
 
 BoundingBox TransformBox(const BoundingBox& box, const Matrix& transform)
@@ -101,6 +171,7 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
     Vector3 hi(-1e30f, -1e30f, -1e30f);
     int index = 0;
     int blankOcclusion = 0;
+    int looseBounds = 0;
 
     const ModelMeshCollection& meshes = model->getMeshesProperty();
     for (int m = 0; m < meshes.getCountProperty(); ++m)
@@ -109,8 +180,11 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
         if (mesh == nullptr) continue;
         const Matrix bone = AbsoluteTransform(*mesh);
         const BoundingSphere sphere = mesh->getBoundingSphereProperty();
-        const BoundingBox local(sphere.Center - Vector3(sphere.Radius, sphere.Radius, sphere.Radius),
-                                sphere.Center + Vector3(sphere.Radius, sphere.Radius, sphere.Radius));
+        // The mesh's whole sphere, as a cube, is the fallback; every part
+        // measures its own box off its vertices below.
+        const BoundingBox meshBox(
+            sphere.Center - Vector3(sphere.Radius, sphere.Radius, sphere.Radius),
+            sphere.Center + Vector3(sphere.Radius, sphere.Radius, sphere.Radius));
 
         const ModelMeshPartCollection& parts = mesh->getMeshPartsProperty();
         for (int p = 0; p < parts.getCountProperty(); ++p)
@@ -211,6 +285,13 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
             const Material* installed = materials_.add(material.name, {}, material);
             if (installed == nullptr) continue;
 
+            BoundingBox local = meshBox;
+            if (!PartBounds(*part, local))
+            {
+                local = meshBox;
+                ++looseBounds;
+            }
+
             try
             {
                 auto mesh2 = std::make_unique<GpuMesh>(*part, local, material.name);
@@ -270,7 +351,10 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
                                          : std::string(", every map with a mip chain"))
                       + (blankOcclusion > 0 ? ", " + std::to_string(blankOcclusion)
                                                   + " material(s) with a blank occlusion channel ignored"
-                                            : std::string()));
+                                            : std::string())
+                      + (looseBounds > 0 ? ", " + std::to_string(looseBounds)
+                                               + " part(s) bounded by the mesh sphere"
+                                         : std::string()));
     return result;
 }
 

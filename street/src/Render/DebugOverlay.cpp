@@ -139,6 +139,46 @@ std::string DebugOverlay::summary(const SceneRenderer& renderer) const
                   static_cast<double>(smoothedMs_), stats.drawCalls, stats.triangles);
 }
 
+void DebugOverlay::drawLoading(const std::string& stage, float progress, int width, int height)
+{
+    if (!ready_) return;
+
+    // A ground the colour of the street's own asphalt in shade, so the window
+    // reads as this program starting rather than as a black rectangle.
+    device_.Clear(Color(28, 30, 34, 255));
+
+    const float bar = std::clamp(progress, 0.0f, 1.0f);
+    const int barWidth  = std::max(240, std::min(width - 160, 640));
+    const int barHeight = 6;
+    const int barX = (width - barWidth) / 2;
+    const int barY = height / 2 + 26;
+
+    batch_->Begin();
+    const std::string title = "cna-street";
+    const Vector2 titleSize = font_->MeasureString(title);
+    batch_->DrawString(*font_, title,
+                       Vector2(static_cast<float>(width) * 0.5f - titleSize.X * 0.5f,
+                               static_cast<float>(barY - 86)),
+                       Color(232, 228, 220, 255));
+    const Vector2 stageSize = font_->MeasureString(stage);
+    batch_->DrawString(*font_, stage,
+                       Vector2(static_cast<float>(width) * 0.5f - stageSize.X * 0.5f,
+                               static_cast<float>(barY - 44)),
+                       Color(168, 172, 178, 255));
+    // The bar in the same batch: the panel texture is a single white texel
+    // stretched, so it costs one flush between the two textures and nothing
+    // else.
+    batch_->Draw(*panel_, Rectangle(barX, barY, barWidth, barHeight),
+                 std::optional<Rectangle>(), Color(58, 62, 68, 255));
+    batch_->Draw(*panel_,
+                 Rectangle(barX, barY, static_cast<int>(static_cast<float>(barWidth) * bar),
+                           barHeight),
+                 std::optional<Rectangle>(), Color(206, 186, 132, 255));
+    batch_->End();
+
+    device_.Present();
+}
+
 void DebugOverlay::draw(const SceneRenderer& renderer, const CityScene& scene, const Camera& camera,
                         const CameraController& controller, const RenderSettings& settings,
                         const GameTime& gameTime)

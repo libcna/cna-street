@@ -147,23 +147,45 @@ void TrafficSystem::buildLanes()
 
     const float mainEnd = M::kMainStreetHalfLength;
     const float sideEnd = M::kSideStreetHalfLength;
-    // Right-hand traffic: a vehicle travelling north keeps to the east side.
-    // Northbound.
-    lanes_.push_back(Lane{Vector2(mainLaneCentre, -mainEnd), Vector2(0.0f, 1.0f), 2.0f * mainEnd,
+
+    // Right-hand traffic, and this is the sign that was wrong.
+    //
+    // A vehicle keeps to *its own right*, and which world direction that is
+    // follows from the frame rather than from a compass. This project's own
+    // convention, stated by `Geometry::AlongFrame`, is that the left of a
+    // heading (ux,uz) on the ground is (uz,-ux) with +Y up -- so the left of
+    // a car facing +Z is +X and its right is -X. The lanes used to put the
+    // +Z-bound traffic at +mainLaneCentre, which is that car's *left*: the
+    // street was laid out for left-hand traffic while every one of the eight
+    // authored car models is left-hand drive, with the steering wheel at +X.
+    // `vehicle_steering` is the test that measures the wheels rather than
+    // taking that on trust, and `traffic_system_tests` checks the rule below.
+    //
+    // Northbound (+Z) therefore keeps to -X.
+    lanes_.push_back(Lane{Vector2(-mainLaneCentre, -mainEnd), Vector2(0.0f, 1.0f), 2.0f * mainEnd,
                           mainEnd - (M::kSideStreetHalfWidth + 1.4f + M::kZebraDepth + 1.0f),
                           mainEnd + M::kSideCarriagewayWidth * 0.5f + 1.0f, SignalAxis::Main});
-    // Southbound.
-    lanes_.push_back(Lane{Vector2(-mainLaneCentre, mainEnd), Vector2(0.0f, -1.0f), 2.0f * mainEnd,
+    // Southbound (-Z) keeps to +X.
+    lanes_.push_back(Lane{Vector2(mainLaneCentre, mainEnd), Vector2(0.0f, -1.0f), 2.0f * mainEnd,
                           mainEnd - (M::kSideStreetHalfWidth + 1.4f + M::kZebraDepth + 1.0f),
                           mainEnd + M::kSideCarriagewayWidth * 0.5f + 1.0f, SignalAxis::Main});
-    // Eastbound keeps to the south side.
-    lanes_.push_back(Lane{Vector2(-sideEnd, -sideLaneCentre), Vector2(1.0f, 0.0f), 2.0f * sideEnd,
+    // Eastbound (+X): the right of a heading (1,0) is (0,1), so +Z.
+    lanes_.push_back(Lane{Vector2(-sideEnd, sideLaneCentre), Vector2(1.0f, 0.0f), 2.0f * sideEnd,
                           sideEnd - (M::kMainStreetHalfWidth + 1.2f + M::kZebraDepth + 1.0f),
                           sideEnd + M::kMainCarriagewayWidth * 0.5f + 1.0f, SignalAxis::Side});
-    // Westbound.
-    lanes_.push_back(Lane{Vector2(sideEnd, sideLaneCentre), Vector2(-1.0f, 0.0f), 2.0f * sideEnd,
+    // Westbound (-X) keeps to -Z.
+    lanes_.push_back(Lane{Vector2(sideEnd, -sideLaneCentre), Vector2(-1.0f, 0.0f), 2.0f * sideEnd,
                           sideEnd - (M::kMainStreetHalfWidth + 1.2f + M::kZebraDepth + 1.0f),
                           sideEnd + M::kMainCarriagewayWidth * 0.5f + 1.0f, SignalAxis::Side});
+}
+
+Vector2 TrafficSystem::rightOf(const Vector2& heading)
+{
+    // The right of a ground heading, with +Y up and the left at (uz,-ux):
+    // the opposite of `Geometry::AlongFrame`'s left. One place, because the
+    // lane layout, the parking bays, the signal kerbs and the test that
+    // checks all three have to agree about which side of a street is which.
+    return Vector2(-heading.Y, heading.X);
 }
 
 void TrafficSystem::spawnMoving(Rng& rng, int count)
@@ -230,10 +252,11 @@ void TrafficSystem::spawnParked(Rng& rng, int count)
         for (const float half : {-1.0f, 1.0f})
             for (float z = from; z < to; z += pitch)
             {
-                // Parked vehicles face the direction of travel of the lane they
-                // are beside, which on a right-hand-drive street means the two
-                // sides face opposite ways.
-                const float heading = side > 0.0f ? 0.0f : MathHelper::Pi;
+                // Parked vehicles face the direction of travel of the lane
+                // they are beside, so the two sides face opposite ways. With
+                // the traffic keeping right, the +X parking lane is beside
+                // the southbound carriageway and its cars face -Z.
+                const float heading = side > 0.0f ? MathHelper::Pi : 0.0f;
                 bays.push_back(Bay{side * bayCentre, half * (z + pitch * 0.5f), heading});
             }
 

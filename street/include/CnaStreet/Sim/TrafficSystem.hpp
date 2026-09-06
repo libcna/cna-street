@@ -126,6 +126,15 @@ public:
     void buildLineup(std::uint32_t seed);
     /// Where the nth line-up vehicle stands.
     [[nodiscard]] static Microsoft::Xna::Framework::Vector2 lineupPlace(int index);
+
+    /// The right-hand side of a ground heading, with +Y up.
+    ///
+    /// The one place this project answers "which way is right", because the
+    /// lane layout, the parking bays, the signal kerbs and the test over all
+    /// three have to agree -- and when they did not, the street was laid out
+    /// for left-hand traffic while every car model in it was left-hand drive.
+    [[nodiscard]] static Microsoft::Xna::Framework::Vector2 rightOf(
+        const Microsoft::Xna::Framework::Vector2& heading);
     void update(float deltaSeconds, const TrafficSignalController& signals);
 
     [[nodiscard]] const std::vector<Lane>& lanes() const { return lanes_; }

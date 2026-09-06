@@ -11,6 +11,7 @@
 #include "Microsoft/Xna/Framework/Matrix.hpp"
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -217,6 +218,12 @@ public:
     /// off or the renderer has no image-based lighting to feed them into.
     void bakeReflectionProbes(std::vector<Microsoft::Xna::Framework::Vector3> positions,
                               const RenderSettings& settings);
+    /// Called once per probe during a bake with the fraction done, so a
+    /// loading screen can move while seven seconds pass.
+    void setBakeProgress(std::function<void(float)> reporter)
+    {
+        bakeProgress_ = std::move(reporter);
+    }
     /// Captures the same positions again -- after the sun has moved.
     void rebakeReflectionProbes(const RenderSettings& settings);
     [[nodiscard]] const ReflectionProbe* nearestProbe(
@@ -329,6 +336,7 @@ private:
     std::vector<std::unique_ptr<ReflectionProbe>> probes_;
     std::vector<Microsoft::Xna::Framework::Vector3> probePositions_;
     float probeBakeSeconds_ = 0.0f;
+    std::function<void(float)> bakeProgress_;
     /// Which environment the effect currently carries, so a run of draws
     /// sharing a probe uploads it once. Reset whenever the lighting is.
     const ReflectionProbe* boundProbe_ = nullptr;
