@@ -534,6 +534,7 @@ void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
             const BoundingSphere& sphere = group.spheres[i];
             const float distance = Vector3::Distance(eye, sphere.Center) - sphere.Radius;
             if (distance > limit) continue;
+            if (group.minDistance > 0.0f && distance < group.minDistance) continue;
             if (frustum.Contains(sphere) == ContainmentType::Disjoint) continue;
             visible.push_back(group.transforms[i]);
             nearest = std::min(nearest, distance);
@@ -1348,6 +1349,7 @@ void SceneRenderer::drawProbeFace(const Vector3& eye, const Matrix& view, const 
             const BoundingSphere& sphere = group.spheres[i];
             const float distance = Vector3::Distance(eye, sphere.Center) - sphere.Radius;
             if (distance > limit) continue;
+            if (group.minDistance > 0.0f && distance < group.minDistance) continue;
             if (frustum.Contains(sphere) == ContainmentType::Disjoint) continue;
             visible.push_back(group.transforms[i]);
             nearest = std::min(nearest, distance);
