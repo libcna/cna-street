@@ -610,6 +610,74 @@ on the foot; the birds are in whichever tree is nearest, because that is
 where birds are. The one unplaced sound is the wind, which is nowhere in
 particular and so does not pan or fall off.
 
+## A cascade is a depth slice, and a caster belongs where its shadow lands
+
+The far cascade was half the shadow pass, and its fit sphere -- 250 m
+across -- contained most of the near street, so every bollard, person and
+parked car beside the camera was rasterised into it as well as into its own
+cascade. The receiver never read those texels: it picks a cascade by *view
+depth*, and a shadow that lands eight metres from the camera is read from
+the cascade that covers eight metres and no other. So the question a
+cascade should ask of a caster is not "are you near my slice" but "does
+anything you can shade lie at the depths I am read for" -- and everything a
+caster can shade lies in the sphere swept from it along the light until its
+top has passed below the ground. `casterShadowReachesSlice` tests that
+swept volume's depth range against the cascade's, padded by the receiver's
+blend band, and says yes to everything when the sun is on the horizon,
+because then a shadow is as long as the world. On the flagship view it
+halved the shadow draws and took the far cascade from 916 draws to 365 with
+no pixel of shadow moved. The rule is the seventh pass's again: **the
+shadow map is a viewer with its own budget**, and this time the waste was
+not in what it drew but in how many times.
+
+## The district is plots, not blocks
+
+A block of the windowed district was one building: one render, one frame
+colour, one storey count for twenty-five metres of street, one flat cross
+for a window frame, and a blank wall wherever a cross street opened a view
+of its end. From forty metres that reads; from twenty it says where the
+modelling stopped. A real perimeter block is a terrace of plots eight to
+fourteen metres wide, each built by somebody else in a slightly different
+decade, and so is the district now: each plot picks its own render, frame
+and door colour, its own storey count within one of its neighbours', its
+own roof; the windows carry a real reveal, a framed sash, a sill and a
+head; the rendered plots carry shutters, a string course, a balcony or two,
+and quoins at a block's corners; a plot without a shop has a door in a
+recess; and an end that faces a cross street is a windowed elevation too.
+What it does not have is the hero corridor's cost -- no rooms behind the
+glass, no bevelled arrises, no weathering, no fittings on the wall --
+because every feature here was chosen for what it buys at twenty to sixty
+metres, which is silhouette, parallax and a line of shade. The other half
+of the change is that the district is batched a *strip* at a time rather
+than a block at a time: a strip of street is in view or out of it from
+almost anywhere, its blocks are a few hundred triangles each, and the draw
+calls per block per material were most of what the district cost the frame.
+
+## A level of detail per instance, from two groups
+
+An instance group chooses its level of detail once, for all its copies,
+from the nearest of them. That is why the seventh pass dealt the parked
+cars into four rings of the street: so one car at three metres could not
+promote every copy of its model to a hundred and fifty thousand triangles
+down the whole length of it. But the rings cost draws -- a model's parts
+times the rings in view -- and they never reached the far level of detail
+at all, because the swap is index-matched and an authored car's far copy
+is a differently merged model. The answer was not a smarter group but two
+plain ones: the near copy in a group culled *beyond* forty-five metres and
+the far copy in a group culled *inside* it (`InstanceGroup::minDistance`),
+so every copy draws at the detail its own distance deserves and the far
+group, which casts, carries every copy's shadow. The near copy was to be
+the model merged by material (`CityScene::mergedByMaterial`, reading the
+buffers back through the same CPU shadow the bounding boxes come from):
+nothing on a parked car moves, so the nineteen wheel-node parts the moving
+Punto needs are nineteen draws the parked Punto need not pay. The merge is
+written and dormant: CNA's compiled-model loader gives every part its own
+texture objects, so no two parts of any car compare equal by content
+(CNA-F20), and it logs that once per model rather than hashing pixels to
+recover an identity the loader threw away. The rule stands: **a mechanism
+that exists so a moving thing can move is a cost a still thing should not
+pay** -- and the day the loader shares, the parked Punto is four draws.
+
 ## A wheel turns about its own axle, which is not always X
 
 The wheel splitter centres each wheel on its axle and the scene rolls it

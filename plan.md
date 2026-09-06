@@ -432,6 +432,54 @@ Everything below is in `docs/visual-overhaul-7/`.
   packs, derived by `scripts/prepare-audio.py`.
 * **A loading screen**, in place of twenty-five seconds of black window.
 
+## The eighth visual pass
+
+Finish the distant city, remove the application-side waste that could be
+removed cleanly, turn the street into a reproducible benchmark, and write
+down what now belongs in CNA. Everything below is in
+`docs/visual-overhaul-8/`.
+
+* **A caster is written only into the cascades its shadow can reach.**
+  The receiver picks a cascade by view depth; the caster cull now asks
+  whether anything the caster can shade lies at the depths a cascade is
+  read for, by sweeping its sphere along the light to the ground
+  (`SceneRenderer::casterShadowReachesSlice`, `shadow_cull_tests`). The
+  flagship view's shadow pass went from 1 899 draws and 5.9 M triangles to
+  874 and 2.2 M, the far cascade from 916 draws to 365, and the GPU shadow
+  time from 10.4 to 6.6 ms, with fourteen of eighteen viewpoints pixel-
+  identical and the rest differing only under the hydrant, which now
+  casts from its generated twin instead of 6 200 scanned triangles.
+* **The draw cost measured to the microsecond.** The opaque pass is timed
+  in two halves: this side's material setters and `Apply` are 1.0 ms
+  (0.8 us a call) and the framework's draws 34.8 ms (27 us a draw) on the
+  flagship view; a tenth of the applies repeat the previous material, so a
+  state cache here would save a tenth of a millisecond. Where the time goes
+  is `BindDrawParams`, and it is recorded as CNA-F19.
+* **The district as plots.** Each windowed block is a terrace of plots
+  with its own render, frame and door colour, storey count and roof;
+  windows with reveals, framed sashes, sills and heads; shutters, string
+  courses, balconies and quoins on the rendered plots; doors in recesses;
+  and windowed elevations on the ends that face a cross street. Batched a
+  strip at a time. The painted rows carry a cornice and pilasters; the
+  skyline scatter batches by sector.
+* **A level of detail per parked car.** The four rings the seventh pass
+  dealt the parked hero cars into are gone: a near group culled beyond
+  45 m and a far group culled inside it (`InstanceGroup::minDistance`)
+  give every copy the detail its own distance deserves, and the parked
+  fleet reaches its far copies for the first time. The merge of a parked
+  copy's parts by material is written and dormant -- CNA's loader gives
+  every part its own texture objects (CNA-F20).
+* **A benchmark mode.** `--benchmark <preset>`: six fixed workloads --
+  baseline, shadow, traffic, crowd, city, post -- each a camera, a sun and
+  a measurement window at a fixed clock step, written out as one line of
+  JSON or a CSV row with the renderer, the load average, both clocks per
+  stage, the post passes, the draws, the cascades and the memory.
+  `scripts/benchmark.sh` runs them all into one file per revision;
+  `benchmark_tests` holds the presets and the writers.
+* **The post chain's two dials exposed.** `ssaoSamples` and
+  `bloomIterations`, in the settings and on the command line, measured
+  per variant in `performance.md`.
+
 ## Next
 
 * **Brake lights on the authored cars.** A driven authored car shows no lit
@@ -471,19 +519,28 @@ Everything below is in `docs/visual-overhaul-7/`.
   one means either putting the 2k skin through an atlas cell, which is the
   face, or alpha-testing the hair against the same atlas. It is the largest
   remaining draw-call item by a factor of four.
-* **The context district, walked.** Its blocks carry real openings, the
-  street's own trees and cars, and now a city behind them; standing among
-  them the facades are still one plane of render with a shopfront band,
-  and the rows behind are painted. Balconies, quoins and shutters on the
-  windowed blocks, and a third tier between them and the painted rows,
-  are the next step.
-* **The far cascade.** Half the shadow pass is cascade 3, whose fit sphere
-  contains most of the near street; a caster reach that tests shadow
-  extent against the slice rather than distance from its centre is the
-  next shadow win. And the hydrant is 6 200 triangles a copy.
+* **The district's last tier of cost.** The plots stand up to fifteen
+  metres; inside that they show undressed windows behind one pane and
+  flat shutters. A dressed-window variant for the plots nearest the end of
+  the modelled street would take the mid tier to the footway; a single
+  pane for the whole shopfront is the other tell.
+* **A shadow caster mesh for the frontage.** With the slice test in, what
+  the far cascade still draws is content whose shadow is on screen, and
+  half of it is the frontage's window frames, ashlar and zinc: a caster
+  copy of each plot without reveals, frames and mouldings would halve the
+  far cascade again. Content work, on this side.
 * **The bolted wheel parts.** The arch liners, calipers and mudflaps the
   wheel splitter swept up now sit still, at a draw each; folding them
   into the body node in `scripts/blender-vehicles.py` gives those back.
+* **The parked-copy merge, when CNA shares textures.** `mergedByMaterial`
+  is written and dormant on CNA-F20; the day the compiled-model loader
+  hands parts sharing an image one `Texture2D`, the parked Punto is five
+  draws instead of nineteen, with no change here.
+* **Performance work moves into CNA.** The frame is 1 200 draws at 22 -
+  27 us of driver time each (CNA-F19), 150 skinned draws that cannot be
+  fewer (CNA-F14), 900 shadow draws that cannot be instanced (CNA-F6). The
+  benchmark presets are the handover; `docs/visual-overhaul-8/benchmark/`
+  is the baseline to diff against.
 * **A skinned shadow caster in CNA.** CNA-F14. Every character currently casts
   with a rigid stand-in in its bind pose.
 * **Sound, further.** The engines are four loops chosen by speed; a

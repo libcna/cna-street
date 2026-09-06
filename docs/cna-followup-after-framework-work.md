@@ -131,6 +131,20 @@ redo it against the new baseline (section 5, step 2).
 No sharp-runtime defects were ever recorded. `docs/cna-findings.md` mentions
 sharp-runtime only in its baseline line. **sharp-runtime needs no work.**
 
+Three findings were added after this table was written and are not
+revalidated in section 2; each is written up in full in `cna-findings.md`:
+
+| ID | Title | Category | Severity | Blocker? |
+| --- | --- | --- | --- | --- |
+| CNA-F15 | an imported single-sided glTF mesh draws inside out under the default cull | Bug | Medium | no |
+| CNA-F18 | `ModelMesh` publishes a bounding sphere and no box | Missing capability | Medium | no |
+| CNA-F19 | the stock-effect draw path re-uploads every parameter and rebinds every texture per draw | Performance | **High** | no |
+| CNA-F20 | the compiled-model loader gives every mesh part its own `Texture2D` objects | Missing capability | Medium | no |
+
+CNA-F19 is the one that matters for the frame. It is where the opaque pass's
+submission time goes, it is measured from the application side in the
+eighth pass, and nothing on that side can move it further -- see section 3.
+
 ---
 
 ### GLTF-208 / `CNASTREET-SKINDRAW` — an imported skinned mesh part draws nothing
@@ -953,8 +967,21 @@ does not prevent anything. Fix it when convenient.
 
 ### Strong CNA improvements — not blockers, high value
 
-* **CNA-F6 — instanced shadow casting.** The largest measurable performance win
-  available: 2 819 shadow draws for 1 356 visible objects.
+* **CNA-F19 — per-draw parameter upload in the stock-effect draw path.** The
+  largest measurable performance item left, and the one this side has run
+  out of levers against: the opaque pass on the Radeon 780M is ~1 300 draws
+  at ~27 us of driver time each (35 ms of submission for 21 - 24 ms of GPU
+  execution), and the eighth pass measured this side's own material setters
+  and `Apply` at 0.8 us of that. `BindDrawParams` re-uploads every uniform
+  and rebinds every texture unit on every draw with no redundancy check;
+  fewer draws is the only application-side remedy and the street has been
+  batched, instanced and culled to about 1 300 - 1 600 of them. Added in the
+  eighth pass; see `cna-findings.md` CNA-F19 for the measurement.
+* **CNA-F6 — instanced shadow casting.** Still the shape of the shadow pass:
+  the eighth pass's per-cascade caster culling took the flagship view from
+  1 900 shadow draws to about 870 without a visible change, and every one of
+  those is still a `SetUniformMat4` and a draw. It was 2 819 shadow draws
+  for 1 356 visible objects when this document was first written.
 * **CNA-F8 — the sRGB-encode default.** The single most expensive-to-diagnose
   class of bug in the whole project.
 * **CNA-F7 — the mirrored sky.** One line, visibly wrong output.

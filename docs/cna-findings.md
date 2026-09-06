@@ -607,6 +607,155 @@ every consumer, and correct there in a way a sphere's cube can never be.
 
 ---
 
+## CNA-F19 — the stock-effect draw path re-uploads every parameter and rebinds every texture on every draw
+
+**Severity:** high for a scene of more than a few hundred draws (it is the
+whole of this project's opaque-pass submission time)
+**Affected:** every stock effect drawn through the EasyGL renderer --
+`PbrEffect`, `SkinnedPbrEffect`, `BasicEffect` -- via
+`EasyGLRenderer::DrawIndexedPrimitivesEx` / `BindDrawParams`; and the
+cascade caster through `ShaderEffect` via `BindCustomEffectMatrices`
+
+**What happens.** `PbrEffect::Apply` itself is cheap: `OnApply` recomputes
+the world-view-projection, the fog vector and the diffuse colour under
+dirty flags and nothing else. The cost is at the draw. `DrawIndexedPrimitivesEx`
+fills a `GpuDrawParams` from the effect and calls `BindDrawParams`, which
+selects a program, then sets every uniform the program declares -- the
+matrices, the normal matrix it derives, the lights, the material factors,
+the fog, the shadow and environment parameters, the texture-transform
+matrices -- and rebinds all six texture units, on every draw, with no
+comparison against what the previous draw left bound. Two consecutive draws
+of the same material differing only in their world matrix pay the same as
+two draws of different materials with different textures. Around the draw
+itself sit `ConfigureDeclarationForStockProgramEXT` and
+`RestoreDeclarationLayoutEXT`, which re-describe the vertex layout to GL per
+draw as well.
+
+**Measured here.** The eighth pass timed the opaque pass in two halves from
+this side: the material setters plus `Apply` in one, the framework's draw in
+the other (`SceneRenderer::Stats::opaqueApplyMs` / `opaqueDrawMs`,
+`--frames` prints the split). Flagship view, Radeon 780M, 1600 x 900, the
+machine under a load average of six to ten:
+
+| | per frame | per call |
+|---|---:|---:|
+| this side: ~25 property setters and `Apply`, 1 285 calls | 1.0 ms | 0.8 us |
+| the framework's draw, 1 285 calls | 34.8 ms | 27 us |
+| of which draws repeating the previous material and environment | 134 | -- |
+
+So a material-state cache on this side would collapse 134 applies and save
+about a tenth of a millisecond; the remaining thirty-four are inside the
+draw, and only fewer draws moves them. The GPU executes the same pass in
+21 - 24 ms. The shadow caster path is the same shape at about 8 us a draw
+(`BindCustomEffectMatrices` and a program bind per caster, 1 900 casters a
+frame before this pass's culling).
+
+**Reproduction.** Any scene that draws the same material a few hundred
+times with different world matrices; time `DrawIndexedPrimitives` against
+the same draws issued with a different material each. They cost the same.
+
+**Workaround here.** Fewer draws: material-and-cell batching of the static
+street, instancing of every repeated prop, the district batched a strip at
+a time (this pass), per-cascade caster culling (this pass). The count is
+what this project can move; the per-draw cost is not.
+
+**Proposed fix.** Redundancy elimination in `BindDrawParams`: keep the last
+bound `GpuDrawParams` per program and upload only the fields that changed,
+and skip texture binds whose unit already holds the texture. The world
+matrix and its derived normal matrix are the only things that change
+between most consecutive draws in a sorted scene. A per-material uniform
+block bound rather than re-uploaded, or a persistent VAO per vertex buffer
+so the declaration is not re-described per draw, would each take a further
+share. Instanced shadow casters (CNA-F6) and a bone-palette buffer for the
+skinned effect (CNA-F14's neighbour) would remove draws that this side
+cannot merge.
+
+---
+
+## CNA-F20 — the compiled-model loader gives every mesh part its own `Texture2D` objects
+
+**Severity:** medium (a consumer cannot tell that two parts share an image,
+and may be paying for the image more than once)
+**Affected:** `ContentManager::Load<Model>` for compiled `.cnb` models, in
+`BuildPartEffectEXT` (`ContentManager.cpp`), which resolves each part's
+material references and then does
+`std::make_unique<Graphics::Texture2D>(cm.Load<Graphics::Texture2D>(asset))`
+-- a *copy* of the content manager's cached texture -- for every part, every
+map
+
+**What happens.** A model whose parts share an image -- every part of an
+atlased car references the same three atlas maps -- comes back with a
+distinct `Texture2D` object on every part's `PbrEffect`, with no name set
+(`getNameProperty()` is empty), so nothing on the consumer's side can
+recognise two parts as drawing from the same image short of reading their
+pixels back and hashing them. Whether the copy also duplicates the GPU
+storage was not established from outside; the object identity alone is the
+problem here.
+
+**What it cost here.** The eighth pass merges a parked authored car's parts
+by material at load (`CityScene::mergedByMaterial`), because nothing on a
+parked car moves and the wheel nodes the moving copy needs -- nineteen
+parts on the Punto, fourteen on the Logan and the Mini -- are nineteen
+draws a copy for a car standing still. The merge compares materials by
+content (maps, factors, blend, cull) and found no two parts of any of the
+eight cars equal, because every part's maps are objects of their own. So
+the merge is in place and dormant: it logs once per model that no two parts
+share a material, and the parked cars keep their eight to nineteen draws a
+copy inside forty-five metres. On the flagship view that is about a hundred
+draws that a shared texture would let this side remove.
+
+**Reproduction.** Compile any glTF whose primitives share a material to
+`.cnb`, `Load<Model>` it, and compare `getTextureProperty()` across the
+parts' effects: distinct pointers, empty names.
+
+**Workaround here.** None taken. Hashing texture contents at load to
+recover the identity the loader discarded would work and would be the wrong
+kind of code to keep.
+
+**Proposed fix.** Share the cached `Texture2D` between parts (a
+`shared_ptr` or a per-model map from asset name to texture) instead of
+copy-constructing one per part, and set the texture's `Name` to its asset
+name so a consumer can see what it is. Both make the atlas do for the
+runtime what it already does for the file.
+
+---
+
+## Eighth visual pass (2026-09-06): environment notes and behaviour
+
+**Two new defects, CNA-F19 and CNA-F20 above. Nothing in CNA,
+sharp-runtime, easy-gl or meta-gl was modified.** Three behaviours are
+worth knowing.
+
+**A `GpuTimer` on an APU is not independent of the CPU load.** The seventh
+pass leaned on the GPU timers as the clock that did not care what the other
+sessions were doing. On the Radeon 780M that is only mostly true: the GPU
+shares the package's power budget with the CPU, and the same view's GPU
+stage sum moved between 38.9 and 50.6 ms across runs whose one-minute load
+average moved between 5 and 14, with the counts identical. Not a CNA
+matter -- the timer reports what the hardware took -- but a comparison on
+this machine wants the load average recorded beside every GPU number,
+which the benchmark result now carries, and the counts read first.
+
+**The cascade blend band is in view-depth metres.** `setBlendBand(0.12)`
+cross-fades the receiver over the twelve centimetres of depth before each
+split, in the shader as `viewDepth > split - uCascadeBlend`, with
+`viewDepth` the fragment's view-space Z (`-dot(worldPos, uCascadeViewZ)`).
+Both facts matter to an application that culls casters per cascade: the
+receiver never reads a cascade for a fragment outside `[previous split -
+band, split]`, and "depth" is the perpendicular distance, not the range.
+The header says "view-depth units"; the number is metres.
+
+**`RenderPipelineSettings` already carries the two post-process dials
+worth having.** `setSSAOSampleCount` (clamped 8..64, default 16) and
+`setBloomIterations` (1..8, default 4) exist and were simply not being set
+by this project, so SSAO -- a third of the post chain -- ran at the default
+on every preset. `applyRenderQualityPresetEXT` derives the bloom depth from
+`RenderQuality` but nothing else yet, and `setRenderQuality` alone changes
+nothing, which the header says and is easy to miss. The light-shaft pass's
+sample count is still not settable (CNA-F13).
+
+---
+
 ## Seventh visual pass (2026-09-06): environment notes and behaviour
 
 **One new defect, CNA-F18 above. Nothing in CNA, sharp-runtime, easy-gl or
