@@ -122,6 +122,7 @@ std::string benchmarkToJson(const BenchmarkResult& r)
     str("version", r.version);
     str("renderer", r.renderer);
     str("adapter", r.adapter);
+    str("gpu", r.gpu);
     str("content", r.content);
     integer("width", r.width);
     integer("height", r.height);
@@ -185,7 +186,7 @@ std::string benchmarkToJson(const BenchmarkResult& r)
 std::string benchmarkCsvHeader(const BenchmarkResult& shape)
 {
     std::string header =
-        "preset,version,renderer,adapter,content,width,height,seed,warmupFrames,measuredFrames,"
+        "preset,version,renderer,adapter,gpu,content,width,height,seed,warmupFrames,measuredFrames,"
         "loadAverage,cpuMeanMs,cpuMedianMs,cpuP95Ms,cpuMinMs,cpuMaxMs,fps,"
         "cullMs,shadowMs,prepassMs,skyMs,opaqueMs,postMs,opaqueApplyMs,opaqueDrawMs,skinnedMs,"
         "gpuFrameMs,gpuShadowMs,gpuPrepassMs,gpuSkyMs,gpuOpaqueMs,gpuPostMs,"
@@ -210,7 +211,8 @@ std::string benchmarkToCsv(const BenchmarkResult& r)
         return q + "\"";
     };
     out << quoted(r.preset) << ',' << quoted(r.version) << ',' << quoted(r.renderer) << ','
-        << quoted(r.adapter) << ',' << quoted(r.content) << ',' << r.width << ',' << r.height << ','
+        << quoted(r.adapter) << ',' << quoted(r.gpu) << ',' << quoted(r.content) << ',' << r.width
+        << ',' << r.height << ','
         << r.seed << ',' << r.warmupFrames << ',' << r.measuredFrames << ','
         << Number(r.loadAverage, 2) << ',' << Number(r.cpuMeanMs) << ',' << Number(r.cpuMedianMs)
         << ',' << Number(r.cpuP95Ms) << ',' << Number(r.cpuMinMs) << ',' << Number(r.cpuMaxMs)

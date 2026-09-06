@@ -32,6 +32,14 @@ mkdir -p "$(dirname "$output")"
 presets="${PRESETS:-$("$street" --benchmark-list | awk '{print $1}')}"
 runs="${RUNS:-1}"
 
+# The GPU's own name, for the result's `gpu` column: the device can only
+# name its display adapter. From glxinfo where there is one, else whatever
+# the caller exported.
+if [[ -z "${CNA_STREET_GPU:-}" ]] && command -v glxinfo >/dev/null 2>&1; then
+    CNA_STREET_GPU="$(glxinfo -B 2>/dev/null | sed -n 's/^OpenGL renderer string: //p' | head -1)"
+fi
+export CNA_STREET_GPU="${CNA_STREET_GPU:-}"
+
 echo "benchmark: $(git -C "$here" rev-parse --short HEAD 2>/dev/null || echo unknown) -> $output"
 echo "benchmark: load average $(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null || echo n/a)"
 for preset in $presets; do
