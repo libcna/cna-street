@@ -143,6 +143,7 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"traffic", &s.traffic}, {"pedestrians", &s.pedestrians},
         {"vegetation", &s.vegetation}, {"streetFurniture", &s.streetFurniture},
         {"debugOverlay", &s.debugOverlay},
+        {"audio", &s.audio}, {"audioVolume", &s.audioVolume},
         {"propCullDistance", &s.propCullDistance},
         {"propShadowDistance", &s.propShadowDistance},
         {"architectureShadowDistance", &s.architectureShadowDistance},

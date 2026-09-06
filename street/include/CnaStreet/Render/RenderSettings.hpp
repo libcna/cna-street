@@ -152,6 +152,11 @@ struct RenderSettings
     bool vegetation = true;
     bool streetFurniture = true;
     bool debugOverlay = true;
+    /// Whether the street makes a sound: engines, footsteps, horns, voices
+    /// and the wind, through CNA's own XNA audio. See `SoundScape`.
+    bool  audio = true;
+    /// The master volume, 0 to 1.
+    float audioVolume = 0.8f;
     /// Development mode: one of every vehicle variant parked in a row, nothing
     /// moving, and a viewpoint aimed at each. Not a preset and not in the
     /// settings file -- `--lineup` on the command line and nothing else.

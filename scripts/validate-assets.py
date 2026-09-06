@@ -89,6 +89,7 @@ def main() -> int:
     assets = manifest.get("assets", [])
     surfaces = manifest.get("surfaces", [])
     tools = manifest.get("tools", [])
+    audio = manifest.get("audio", [])
     if not assets and not surfaces:
         print("validate-assets: the manifest declares nothing", file=sys.stderr)
         return 1
@@ -203,6 +204,28 @@ def main() -> int:
             check_file(name, path, digest, size, bool(surface.get("redistributionAllowed")))
         declared_files.add(f"{surface.get('folder', '')}/info.json")
 
+    # Sound sets. The same licence gate as a model, and the same declaration
+    # of what may stand in downloads/; the difference is that a sound pack
+    # is acquired by hand -- `acquisition: manual` -- so there is no URL to
+    # fetch and no digest to verify, only the derived files
+    # scripts/prepare-audio.py writes, whose presence is optional.
+    for entry in audio:
+        name = entry.get("name", "<unnamed sound set>")
+        check_common(entry, ("title", "author", "source", "licence", "licenceUrl",
+                             "retrieved", "originalFormat", "role", "acquisition"), "sound set")
+        if entry.get("acquisition") not in ("manual", "fetched"):
+            problems.append(f"{name}: acquisition must be 'manual' or 'fetched'")
+        if entry.get("acquisition") == "manual" and not entry.get("acquisitionNote"):
+            problems.append(f"{name}: a manual acquisition needs an 'acquisitionNote' saying how")
+        for derived in entry.get("derived", []):
+            if not derived.get("name") or not (derived.get("file") or derived.get("folder")):
+                problems.append(f"{name}: a derived entry needs a 'name' and a 'file' or 'folder'")
+                continue
+            if derived.get("folder"):
+                declared_folders.append(derived["folder"].rstrip("/") + "/")
+            else:
+                declared_files.add(derived["file"])
+
     for tool in tools:
         name = tool.get("name", "<unnamed tool>")
         for field in TOOL_REQUIRED:
@@ -229,8 +252,8 @@ def main() -> int:
                 )
 
     print(
-        f"validate-assets: {len(assets)} model(s), {len(surfaces)} surface(s) and "
-        f"{len(tools)} tool(s) declared, "
+        f"validate-assets: {len(assets)} model(s), {len(surfaces)} surface(s), "
+        f"{len(audio)} sound set(s) and {len(tools)} tool(s) declared, "
         f"{checked} file(s) present and verified, {len(problems)} problem(s)"
     )
     for problem in problems:

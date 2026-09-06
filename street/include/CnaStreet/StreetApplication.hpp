@@ -26,6 +26,7 @@ namespace CnaStreet {
 
 class CityScene;
 class DebugOverlay;
+class SoundScape;
 class MaterialLibrary;
 class ModelLibrary;
 class SceneRenderer;
@@ -93,6 +94,7 @@ private:
     std::unique_ptr<SceneRenderer> renderer_;
     std::unique_ptr<CityScene>     scene_;
     std::unique_ptr<DebugOverlay>  overlay_;
+    std::unique_ptr<SoundScape>    sound_;
 
     RenderSettings   settings_;
     Camera           camera_;

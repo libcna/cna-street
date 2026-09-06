@@ -56,6 +56,13 @@ def main() -> int:
                 page = entry.get("origin") or entry["source"]
                 print(f"* \"{entry['title']}\" by {entry['author']}, {entry['licence']}, {page}")
             print()
+    if manifest.get("audio"):
+        print("### Sounds\n")
+        print("| Sound set | Author | Licence | Acquired | Used for |\n| --- | --- | --- | --- | --- |")
+        for entry in manifest["audio"]:
+            print(f"| {entry['title']} | {entry['author']} | {entry['licence']} | "
+                  f"{entry.get('acquisition', 'fetched')} | {entry['role']} |")
+        print()
     if manifest.get("tools"):
         print("### Tools\n")
         print("| Tool | Licence | Used for |\n| --- | --- | --- |")
