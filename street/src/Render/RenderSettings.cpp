@@ -136,6 +136,7 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"bloom", &s.bloom}, {"bloomIntensity", &s.bloomIntensity},
         {"bloomThreshold", &s.bloomThreshold},
         {"ssao", &s.ssao}, {"ssaoRadius", &s.ssaoRadius}, {"ssaoIntensity", &s.ssaoIntensity},
+        {"ssaoSamples", &s.ssaoSamples}, {"bloomIterations", &s.bloomIterations},
         {"fxaa", &s.fxaa},
         {"heightFog", &s.heightFog}, {"fogDensity", &s.fogDensity},
         {"fogFalloff", &s.fogFalloff},

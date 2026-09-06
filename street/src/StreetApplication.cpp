@@ -2,6 +2,7 @@
 #include "CnaStreet/StreetApplication.hpp"
 
 #include "CnaStreet/Audio/SoundScape.hpp"
+#include "CnaStreet/Bench/Benchmark.hpp"
 #include "CnaStreet/Render/DebugOverlay.hpp"
 #include "CnaStreet/Assets/ModelLibrary.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
@@ -112,6 +113,12 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --lineup                          park one of every vehicle in a row, and\n"
                 "                                    add a side and a front viewpoint for each\n"
                 "  --frames <n>                      render n frames and exit\n"
+                "  --benchmark <preset>              a fixed camera, sun and clock; render the\n"
+                "                                    preset's warm-up and measured frames and\n"
+                "                                    print the profile (see --benchmark-list)\n"
+                "  --benchmark-output <file>         append the result as a row of a .csv, or\n"
+                "                                    as one JSON object per line otherwise\n"
+                "  --benchmark-list                  the presets and what each one stresses\n"
                 "  --screenshot <file.png>           write one frame and exit\n"
                 "  --capture <dir>                   write every viewpoint into dir and exit\n"
                 "  --supersample <n>                 render stills at n times the size and\n"
@@ -119,6 +126,9 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --exposure <v>                    exposure multiplier\n"
                 "  --shadow-debug                    tint each shadow cascade\n"
                 "  --no-shadows --no-bloom --no-ssao --no-fog --no-clouds --no-ibl\n"
+                "  --no-light-shafts                 leave the light-shaft pass out\n"
+                "  --ssao-samples <n>                SSAO samples per pixel (8-64, default 16)\n"
+                "  --bloom-iterations <n>            bloom pyramid depth (1-8, default 4)\n"
                 "  --no-probes                       sky-only reflections, no local probes\n"
                 "  --dump-probes <dir>               write each reflection probe as a face strip\n"
                 "  --no-traffic --no-pedestrians --no-vegetation --no-overlay\n"
@@ -168,6 +178,24 @@ bool StreetApplication::configure(int argc, char** argv)
                                           settings_.verticalFovDegrees * 0.0174532925f};
         }
         else if (arg == "--frames")     { const char* v = next(i); if (v) frameBudget_ = std::atoi(v); }
+        else if (arg == "--benchmark")
+        {
+            const char* v = next(i);
+            if (v == nullptr || (benchmark_ = findBenchmarkPreset(v)) == nullptr)
+            {
+                std::fprintf(stderr, "--benchmark needs one of: %s\n",
+                             benchmarkPresetNames().c_str());
+                return false;
+            }
+        }
+        else if (arg == "--benchmark-output") { const char* v = next(i); if (v) benchmarkOutput_ = v; }
+        else if (arg == "--benchmark-list")
+        {
+            for (const BenchmarkPreset& preset : benchmarkPresets())
+                std::printf("%-10s %s%s\n", preset.name, preset.what,
+                            preset.diagnostic ? "  [diagnostic]" : "");
+            return false;
+        }
         else if (arg == "--screenshot") { const char* v = next(i); if (v) screenshotPath_ = v; }
         else if (arg == "--supersample") { const char* v = next(i); if (v) supersample_ = std::clamp(std::atoi(v), 1, 4); }
         else if (arg == "--capture")    { const char* v = next(i); if (v) captureDirectory_ = v; }
@@ -184,6 +212,9 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--no-shadows")     settings_.shadows = false;
         else if (arg == "--no-bloom")       settings_.bloom = false;
         else if (arg == "--no-ssao")        settings_.ssao = false;
+        else if (arg == "--no-light-shafts") settings_.lightShafts = false;
+        else if (arg == "--ssao-samples")   { const char* v = next(i); if (v) settings_.ssaoSamples = std::atoi(v); }
+        else if (arg == "--bloom-iterations") { const char* v = next(i); if (v) settings_.bloomIterations = std::atoi(v); }
         else if (arg == "--no-fog")         settings_.heightFog = false;
         else if (arg == "--no-clouds")      settings_.clouds = false;
         else if (arg == "--no-traffic")     settings_.traffic = false;
@@ -248,6 +279,28 @@ bool StreetApplication::configure(int argc, char** argv)
         // A capture run has no user to look at an overlay, and the overlay would
         // be baked into every screenshot.
         settings_.debugOverlay = false;
+    }
+    if (benchmark_ != nullptr)
+    {
+        // Everything a frame's cost depends on that the settings do not, fixed
+        // by the preset: the camera, the sun where the preset has one, no
+        // overlay (its sprite batch is not the renderer's cost), no sound, no
+        // vsync, and the frame count unless the command line gave one. The
+        // clock is fixed too -- see Update -- so the traffic and the crowd are
+        // in the same places on frame N of every run.
+        settings_.debugOverlay = false;
+        settings_.audio        = false;
+        settings_.vsync        = false;
+        cameraOverride_   = true;
+        cameraOverrideAt_ = benchmark_->camera;
+        if (benchmark_->sunElevationDegrees > -90.0f)
+        {
+            settings_.sunElevationDegrees = benchmark_->sunElevationDegrees;
+            settings_.sunAzimuthDegrees   = benchmark_->sunAzimuthDegrees;
+        }
+        profileWarmup_ = benchmark_->warmupFrames;
+        if (frameBudget_ <= 0) frameBudget_ = benchmark_->warmupFrames + benchmark_->measuredFrames;
+        else if (frameBudget_ <= profileWarmup_) profileWarmup_ = std::max(0, frameBudget_ / 4);
     }
     return true;
 }
@@ -493,7 +546,7 @@ void StreetApplication::Update(GameTime& gameTime)
     // the pixels in a view of the sky differed between runs of an unchanged
     // build.
     const bool deterministic = !captureDirectory_.empty() || !screenshotPath_.empty()
-                               || !walkDirectory_.empty();
+                               || !walkDirectory_.empty() || benchmark_ != nullptr;
     const float dt = deterministic
                          ? 1.0f / 60.0f
                          : static_cast<float>(
@@ -587,7 +640,7 @@ void StreetApplication::Draw(const GameTime& gameTime)
 
 void StreetApplication::recordFrame()
 {
-    if (frameBudget_ <= 0 || framesDrawn_ <= kProfileWarmup) return;
+    if (frameBudget_ <= 0 || framesDrawn_ <= profileWarmup_) return;
     const SceneRenderer::Stats& stats = renderer_->stats();
     profile_.frameMs.push_back(stats.frameMs);
     profile_.cullMs    += static_cast<double>(stats.cullMs);
@@ -817,6 +870,93 @@ void StreetApplication::reportProfile()
          renderer_->visibleReport(16));
     dump("the shadow pass's own triangles, by family, last frame:",
          renderer_->shadowReport(14));
+
+    if (benchmark_ != nullptr)
+        writeBenchmark(mean, at(0.5), at(0.95), sorted.front(), sorted.back());
+}
+
+void StreetApplication::writeBenchmark(double meanMs, double medianMs, double p95Ms, double minMs,
+                                       double maxMs)
+{
+    const double n = static_cast<double>(std::max(1, profile_.samples));
+    BenchmarkResult r;
+    r.preset  = benchmark_->name;
+    r.what    = benchmark_->what;
+    r.version = CNA_STREET_VERSION;
+    GraphicsDevice& device = getGraphicsDeviceProperty();
+    r.renderer = std::string(device.GetGraphicsRendererName());
+    r.adapter  = device.getAdapterProperty().getDescriptionProperty();
+    r.content  = content_ != nullptr ? "compiled" : "generated";
+    r.width    = device.getViewportProperty().getWidthProperty();
+    r.height   = device.getViewportProperty().getHeightProperty();
+    r.seed     = settings_.seed;
+    r.warmupFrames   = profileWarmup_;
+    r.measuredFrames = profile_.samples;
+    // The machine's one-minute load, where the platform publishes it: on a
+    // shared machine it is the first thing to look at when two runs of the
+    // same build disagree on the wall clock and agree on the GPU.
+    if (std::ifstream load("/proc/loadavg"); load) load >> r.loadAverage;
+
+    r.cpuMeanMs = meanMs;  r.cpuMedianMs = medianMs;  r.cpuP95Ms = p95Ms;
+    r.cpuMinMs  = minMs;   r.cpuMaxMs = maxMs;
+    r.cullMs    = profile_.cullMs / n;    r.shadowMs = profile_.shadowMs / n;
+    r.prepassMs = profile_.prepassMs / n; r.skyMs    = profile_.skyMs / n;
+    r.opaqueMs  = profile_.opaqueMs / n;  r.postMs   = profile_.postMs / n;
+    if (profile_.splitSamples > 0)
+    {
+        const double s = static_cast<double>(profile_.splitSamples);
+        r.opaqueApplyMs = profile_.opaqueApplyMs / s;
+        r.opaqueDrawMs  = profile_.opaqueDrawMs / s;
+        r.skinnedMs     = profile_.skinnedMs / s;
+    }
+    if (profile_.gpuSamples > 0)
+    {
+        const double g = static_cast<double>(profile_.gpuSamples);
+        r.gpuShadowMs  = profile_.gpuShadowMs / g;
+        r.gpuPrepassMs = profile_.gpuPrepassMs / g;
+        r.gpuSkyMs     = profile_.gpuSkyMs / g;
+        r.gpuOpaqueMs  = profile_.gpuOpaqueMs / g;
+        r.gpuPostMs    = profile_.gpuPostMs / g;
+        r.gpuFrameMs   = r.gpuShadowMs + r.gpuPrepassMs + r.gpuSkyMs + r.gpuOpaqueMs + r.gpuPostMs;
+        for (const auto& pass : profile_.postPassMs)
+            r.gpuPostPasses.emplace_back(pass.first, pass.second / g);
+    }
+    r.draws          = static_cast<double>(profile_.draws) / n;
+    r.shadowDraws    = static_cast<double>(profile_.shadowDraws) / n;
+    r.skinnedDraws   = static_cast<double>(profile_.skinnedDraws) / n;
+    r.triangles      = static_cast<double>(profile_.triangles) / n;
+    r.instancedDraws = static_cast<double>(renderer_->stats().instancedDrawCalls);
+    r.materialApplies         = static_cast<double>(profile_.materialApplies) / n;
+    r.repeatedMaterialApplies = static_cast<double>(profile_.repeatedMaterialApplies) / n;
+    for (const auto& cascade : profile_.cascades)
+    {
+        r.cascades.push_back({cascade.draws / n, cascade.triangles / n, cascade.split});
+        r.shadowTriangles += cascade.triangles / n;
+    }
+    r.visibleCharacters    = static_cast<double>(renderer_->stats().visibleCharacters);
+    r.vehicleDraws         = static_cast<double>(profile_.vehicleDraws) / n;
+    r.driverDraws          = static_cast<double>(profile_.driverDraws) / n;
+    r.characterShadowDraws = static_cast<double>(profile_.characterShadowDraws) / n;
+    const CityScene::BuildStats& built = scene_->buildStats();
+    r.staticBatches  = built.staticBatches;
+    r.instanceGroups = built.instanceGroups;
+    r.instances      = built.instances;
+    r.meshBytes      = built.meshBytes;
+    r.textureBytes   = materials_->textureBytes();
+
+    // One line of JSON on stdout whatever else was asked for, so a script that
+    // runs the presets has something to collect without a file argument.
+    std::printf("%s\n", benchmarkToJson(r).c_str());
+    std::fflush(stdout);
+    if (!benchmarkOutput_.empty())
+    {
+        std::string error;
+        if (appendBenchmarkResult(benchmarkOutput_, r, error))
+            CNA::Logger::Info("cna-street: benchmark '" + r.preset + "' appended to "
+                              + benchmarkOutput_);
+        else
+            CNA::Logger::Error("cna-street: " + error);
+    }
 }
 
 void StreetApplication::runCaptureScript()
