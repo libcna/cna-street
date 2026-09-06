@@ -15,7 +15,10 @@ bark -- are photogrammetry scans, and so are the hydrants, the cabinets, the
 benches, the cafe tables, the covered car and the trees nearest the showcase
 viewpoints: sixty-nine models and fourteen texture sets, every one CC0 or
 CC-BY, every one with its licence and its digest recorded, every one fetched
-rather than committed and standing in for a generated fallback. The cars in
+rather than committed and standing in for a generated fallback. It has a
+sound: engines that drop in pitch as they pass, footsteps, a horn now and
+then, voices at the crossings, wind and birds, from twenty-two CC0 samples
+through CNA's own XNA audio. The cars in
 the bays the cameras look at are authored models under CC-BY, and the people
 on the footway are built from MakeHuman's CC0 base mesh and wardrobe in
 Blender and driven by this project's own skeleton and clips.
@@ -385,6 +388,7 @@ The command line, in full, is `--help`. The ones that matter:
 | `--no-probes` | Sky-only reflections: no local probes are captured |
 | `--dump-probes <dir>` | Write every reflection probe's cube as a strip of six faces, which is how a capture that came out mirrored gets seen to be |
 | `--no-traffic`, `--no-pedestrians`, `--no-vegetation`, `--no-overlay` | Leave one thing out |
+| `--no-audio`, `--volume <0..1>` | Silence the street, or set its master volume; the sounds come from `scripts/prepare-audio.py` (see Assets) and a tree that has derived none runs silent |
 | `--dump-settings` | Print the effective settings as JSON and exit |
 | `--dump-shadow <file.png>` | Write the cascade atlas, which is the only way to tell an empty shadow map from a misplaced one |
 
@@ -731,6 +735,16 @@ and verifies its SHA-256 before it is used. A tree that has not run it has
 generated surfaces and generated props everywhere: every scanned thing has the
 generated stand-in it replaced.
 
+The sounds are the one exception to fetching. NOX Sound's Essentials packs
+are CC0 but come from a download behind a form rather than a URL, so
+`scripts/prepare-audio.py` derives the twenty-two samples the street plays
+-- engines, a horn, wind, birds, footsteps and voices -- from an unpacked
+copy of the packs (`--pack`, or `CNA_STREET_NOX_SOUND`) into
+`assets/external/downloads/derived/audio/`, 16-bit and cut to length. The
+manifest declares them as a sound set acquired by hand, `validate-assets.py`
+gates them like everything else, and a tree that has derived none runs
+silent and says so once in the log.
+
 The manifest is the part worth keeping. It records, per asset: the local name,
 the original title, the author, the copyright line, the source URL and
 repository, the exact licence and its URL, whether attribution is required,
@@ -898,6 +912,22 @@ for tuning — it once read 214 ms on a frame that took 778.
 | Frame, 1600×900 (Radeon 780M) | — | — | — | — | 81.3 ms (12.3 fps) | 59–63 ms (15.9–16.9 fps) |
 | Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 | 76 ms | not re-measured | not re-measured |
 | Frame, `--night` | 34 ms | 47 ms | unchanged by this pass | 56 ms | not re-measured | not re-measured |
+
+The seventh pass added a second clock. Every table above is a CPU stopwatch
+round each stage, which measures how long the driver took to *accept* the
+work; `--frames` now also prints a `GpuTimer` per stage, the post chain's own
+per-pass timers, the shadow pass per cascade and attributed by content
+family, and the frame's draws by family. On the Radeon 780M at 1600×900 the
+flagship view is 48.8 ms best-of-three (20.5 fps), 1 436 draws, 1 892 shadow
+draws, 7.55 M triangles, measured on a machine whose other sessions kept the
+load average between six and twenty; the GPU timers, which do not care, say
+shadow 9.8 ms, prepass 1.2, sky 1.7, opaque 20.0 and post 7.4, against
+submission times of 16.0, 5.8, 0.1, 32.1 and 3.7. The opaque pass is
+CPU-bound by twelve milliseconds of `PbrEffect::Apply`; the shadow pass was
+13.2 M triangles of which the three scanned tree species were 7.3 M, and is
+6.5 M now that trees and props cast from their far level of detail and the
+parked fleet from a shadow-only proxy. `docs/visual-overhaul-7/performance.md`
+has the whole of it.
 
 The sixth pass is the first that made the frame *shorter*. It did it by
 submitting less rather than by drawing less: a car went from thirty-three
