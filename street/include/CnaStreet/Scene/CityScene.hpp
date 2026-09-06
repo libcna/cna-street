@@ -130,7 +130,10 @@ private:
     /// Uploads one mesh and keeps it alive.
     const GpuMesh* upload(const Geometry::MeshData& data, const std::string& name);
 
-    void buildContext(GeometryCollector& collector, Rng& rng, const RenderSettings& settings);
+    /// @p infill takes the rows behind the street-facing blocks, which are
+    /// published with a shadow policy of their own.
+    void buildContext(GeometryCollector& collector, GeometryCollector& infill, Rng& rng,
+                      const RenderSettings& settings);
     void buildViewpoints();
 
     /// A prop built once and placed many times: one GPU mesh per material it

@@ -194,14 +194,20 @@ void CityScene::build(const RenderSettings& settings)
     stage("closing the skyline", 0.92f);
     {
         GeometryCollector collector;
+        GeometryCollector infill;
         Rng rng = Rng::derive(settings.seed, "context");
-        buildContext(collector, rng, settings);
+        buildContext(collector, infill, rng, settings);
         // The district beyond the modelled frontage had no shadow distance
         // cap at all -- silhouette blocks visible only as a haze were casters
         // at the cascades' full reach. See
         // RenderSettings::contextShadowDistance.
         publish(collector, 0.0f,
                std::min(settings.contextShadowDistance, settings.shadowDistance));
+        // The rows behind the frontage cast only when the camera is nearly on
+        // top of them. From the street they stand behind a row of buildings
+        // and their shadows land where nothing can see them; from above, the
+        // near ones still shade their neighbours' roofs.
+        publish(infill, 0.0f, std::min(60.0f, settings.shadowDistance));
     }
 
     buildViewpoints();
@@ -220,8 +226,8 @@ void CityScene::build(const RenderSettings& settings)
     renderer_.bakeReflectionProbes(probePositions(settings), settings);
 }
 
-void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
-                             const RenderSettings& settings)
+void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& infill,
+                             Rng& rng, const RenderSettings& settings)
 {
     // Everything outside the modelled block. Two jobs: give the street a ground
     // to stand on so the horizon is not empty, and close the view down each arm
@@ -342,17 +348,17 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
     // A roof for a block: pitched with stacks, or flat with plant. A district
     // of flat roofs seen from above is a district of grey rectangles; the
     // pitched ones are what give a roofscape its texture.
-    auto roof = [&](float cx, float cz, float halfX, float halfZ, float height,
-                    const Material* gableMaterial, float storey) {
+    auto roof = [&](GeometryCollector& into, float cx, float cz, float halfX, float halfZ,
+                    float height, const Material* gableMaterial, float storey) {
         if (rng.chance(0.45f))
         {
-            MeshBuilder& tiles = collector.builder(&materials_.get(MaterialId::RoofTile));
+            MeshBuilder& tiles = into.builder(&materials_.get(MaterialId::RoofTile));
             tiles.setTileSize(1.4f);
             const bool alongX = halfX >= halfZ;
             const float rise = std::min(alongX ? halfZ : halfX, 4.2f) * 0.85f;
             const float x0 = cx - halfX - 0.25f, x1 = cx + halfX + 0.25f;
             const float z0 = cz - halfZ - 0.25f, z1 = cz + halfZ + 0.25f;
-            MeshBuilder& gable = collector.builder(gableMaterial);
+            MeshBuilder& gable = into.builder(gableMaterial);
             gable.setTileSize(storey * 1.35f, storey);
             if (alongX)
             {
@@ -383,7 +389,7 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
                                   Vector3(mx, height + rise, z1));
             }
             // A stack or two, because a pitched roof without chimneys is a tent.
-            MeshBuilder& stack = collector.builder(&materials_.get(MaterialId::BrickRed));
+            MeshBuilder& stack = into.builder(&materials_.get(MaterialId::BrickRed));
             stack.setTileSize(0.9f);
             const int stacks = rng.intRange(1, 3);
             for (int i = 0; i < stacks; ++i)
@@ -397,7 +403,7 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
         }
         else
         {
-            MeshBuilder& felt = collector.builder(&materials_.get(MaterialId::RoofFelt));
+            MeshBuilder& felt = into.builder(&materials_.get(MaterialId::RoofFelt));
             felt.setTileSize(4.0f);
             felt.addBox(Vector3(cx - halfX - 0.1f, height, cz - halfZ - 0.1f),
                         Vector3(cx + halfX + 0.1f, height + 0.9f, cz + halfZ + 0.1f),
@@ -405,7 +411,7 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
             // Roof furniture: plant, a lift overrun, a couple of vents. Flat
             // roofs are never empty and from any camera above the eaves that is
             // the difference between a city and a set of boxes.
-            MeshBuilder& plant = collector.builder(&materials_.get(MaterialId::GalvanisedSteel));
+            MeshBuilder& plant = into.builder(&materials_.get(MaterialId::GalvanisedSteel));
             plant.setTileSize(1.2f);
             const int units = rng.intRange(1, 4);
             for (int i = 0; i < units; ++i)
@@ -423,10 +429,22 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
     };
 
     // A far block: a box carrying a tiling image of a storey.
-    auto paintedBlock = [&](float cx, float cz, float halfX, float halfZ, float height) {
-        collector.setRegion(cx, cz);
-        const Material* material = &materials_.get(walls[rng.index(std::size(walls))]);
-        MeshBuilder& builder = collector.builder(material);
+    auto paintedBlock = [&](GeometryCollector& into, float cx, float cz, float halfX,
+                            float halfZ, float height, int regionKey = -1, int wallPick = -1) {
+        // A block of its own cell, or a caller's coarser one. The rows behind
+        // the frontage are batched a whole strip at a time (see infillRows):
+        // at thirty triangles a block, what they cost the frame is draw
+        // calls, not geometry, and a 34 m cell per block would be one draw
+        // per block per material.
+        if (regionKey >= 0) into.setRegionKey(regionKey);
+        else                into.setRegion(cx, cz);
+        // A caller may narrow the choice of facade -- see infillRows -- so a
+        // batch of blocks shares fewer materials and so fewer draws.
+        const std::size_t pick = wallPick >= 0
+                                     ? static_cast<std::size_t>(wallPick) % std::size(walls)
+                                     : rng.index(std::size(walls));
+        const Material* material = &materials_.get(walls[pick]);
+        MeshBuilder& builder = into.builder(material);
         // One tile is one storey. Setting it to anything else is what makes a
         // painted façade read as wallpaper: the windows come out the wrong size
         // for the building and the eye finds it instantly.
@@ -438,7 +456,7 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
         builder.addBox(Vector3(cx - halfX, 0.0f, cz - halfZ),
                        Vector3(cx + halfX, height, cz + halfZ), BoxFaces::allButBottom());
         builder.setUvOffset(Vector2::Zero);
-        roof(cx, cz, halfX, halfZ, height, material, storey);
+        roof(into, cx, cz, halfX, halfZ, height, material, storey);
     };
 
     // A near block: a rendered or brick box with real openings on the face that
@@ -640,7 +658,7 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
                                    at(frame.width, v1, 0.0f), at(cursor, v1, 0.0f), frame.out);
         }
 
-        roof(cx, cz, halfX, halfZ, eaves, wallMaterial, storeyH);
+        roof(collector, cx, cz, halfX, halfZ, eaves, wallMaterial, storeyH);
     };
 
     // Down both arms of the main street, past the modelled frontage. Every
@@ -660,7 +678,7 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
             z += depth + ((count++ % 3 == 2) ? rng.range(12.0f, 16.0f) : rng.range(1.5f, 4.0f));
         }
         // The block that closes the view down the street.
-        paintedBlock(0.0f, sign * 345.0f, 46.0f, 22.0f, rng.range(18.0f, 30.0f));
+        paintedBlock(collector, 0.0f, sign * 345.0f, 46.0f, 22.0f, rng.range(18.0f, 30.0f));
     }
     // And down the side street.
     for (const float sign : {-1.0f, 1.0f})
@@ -676,8 +694,80 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
                               Vector3(0.0f, 0.0f, -side));
             x += depth + ((count++ % 3 == 2) ? rng.range(10.0f, 14.0f) : rng.range(1.5f, 4.0f));
         }
-        paintedBlock(sign * 224.0f, 0.0f, 20.0f, 40.0f, rng.range(15.0f, 26.0f));
+        paintedBlock(collector, sign * 224.0f, 0.0f, 20.0f, 40.0f, rng.range(15.0f, 26.0f));
     }
+
+    // --- the blocks behind the frontage --------------------------------
+    // Everything above faces a street; nothing yet stands *behind* it. A real
+    // city block is not one plate thick, and without this the district was a
+    // single row of buildings backed by bare ground -- a checkerboard of grass
+    // and dirt reaching all the way to the scattered skyline at 240 m and
+    // beyond, invisible from the footway but the first thing any elevated or
+    // tilted view shows, including this project's own `06-above-the-junction`
+    // screenshot. Two more rows behind the street-facing one, cheaper than it
+    // -- `paintedBlock`, no window geometry, because nobody ever stands close
+    // enough to one of these to ask for a real opening -- each separated from
+    // its neighbour by a service lane's width so the massing still reads as
+    // blocks and not a slab, and thinning to bigger, plainer boxes in the
+    // second row so the skyline scatter beyond it is not a visible step up in
+    // both height and density at once.
+    auto infillRows = [&](bool alongMain) {
+        const float streetHalfWidth = alongMain ? M::kMainStreetHalfWidth : M::kSideStreetHalfWidth;
+        const float streetHalfLength = alongMain ? M::kMainStreetHalfLength : M::kSideStreetHalfLength;
+        const float reach = alongMain ? 300.0f : 190.0f;
+        // The street-facing row above is 11 m deep from the back of its own
+        // footway; a lane, then two rows of increasing depth and size.
+        const float frontageBack = streetHalfWidth + 22.0f + 2.0f;
+        struct Row { float near, far, minSpan, maxSpan, minHeight, maxHeight; };
+        const Row rows[] = {
+            {frontageBack + 3.0f, frontageBack + 32.0f, 14.0f, 24.0f, 9.0f, 20.0f},
+            {frontageBack + 38.0f, frontageBack + 78.0f, 20.0f, 34.0f, 10.0f, 26.0f},
+        };
+        int strip = 0;
+        for (const float sign : {-1.0f, 1.0f})
+            for (const float side : {-1.0f, 1.0f})
+            {
+                // Both rows of a strip in one batch per 150 m per material, in
+                // a key space of its own above the ground plane's, and each
+                // 150 m of strip drawing on three of the six facades rather
+                // than all of them. A strip is either in view or not from
+                // almost anywhere a camera stands, and its blocks are thirty
+                // triangles apiece, so the cull granularity given up here
+                // costs nothing measurable; the draws it saves are most of
+                // what an extra row of buildings costs at all. Measured on the
+                // flagship view: one 34 m cell per block was +156 draws, this
+                // is +55.
+                const int stripKey = 2000000 + (alongMain ? 0 : 64) + strip * 8;
+                ++strip;
+                for (const Row& row : rows)
+                {
+                    const float depth = (row.far - row.near) * 0.5f;
+                    const float cxBase = side * (row.near + depth);
+                    // Starting a little past the junction rather than at it,
+                    // so the crossroads itself keeps an open corner instead of
+                    // a block looming over the signal heads.
+                    float pos = streetHalfLength * 0.35f;
+                    while (pos < reach)
+                    {
+                        const float span = rng.range(row.minSpan, row.maxSpan);
+                        const int segment = static_cast<int>(pos / 150.0f);
+                        const int key = stripKey + segment;
+                        const int wallPick = (stripKey + segment * 5) % 6 + rng.intRange(0, 2);
+                        if (alongMain)
+                            paintedBlock(infill, cxBase, sign * (pos + span * 0.5f), depth,
+                                        span * 0.5f, rng.range(row.minHeight, row.maxHeight),
+                                        key, wallPick);
+                        else
+                            paintedBlock(infill, sign * (pos + span * 0.5f), cxBase, span * 0.5f,
+                                        depth, rng.range(row.minHeight, row.maxHeight),
+                                        key, wallPick);
+                        pos += span + rng.range(3.0f, 7.0f);
+                    }
+                }
+            }
+    };
+    infillRows(true);
+    infillRows(false);
 
     // A far skyline: a scatter of taller blocks well beyond the district, which
     // is what stops the horizon being a clean line of identical parapets.
@@ -687,7 +777,8 @@ void CityScene::buildContext(GeometryCollector& collector, Rng& rng,
         const float radius = rng.range(240.0f, 430.0f);
         const float cx = std::cos(angle) * radius;
         const float cz = std::sin(angle) * radius * 1.35f;
-        paintedBlock(cx, cz, rng.range(9.0f, 26.0f), rng.range(9.0f, 26.0f), rng.range(12.0f, 44.0f));
+        paintedBlock(collector, cx, cz, rng.range(9.0f, 26.0f), rng.range(9.0f, 26.0f),
+                     rng.range(12.0f, 44.0f));
     }
 
     // --- what stands in the far street ------------------------------------
