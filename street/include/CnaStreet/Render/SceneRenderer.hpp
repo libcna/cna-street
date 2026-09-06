@@ -10,10 +10,14 @@
 #include "Microsoft/Xna/Framework/Graphics/CubeMapFace.hpp"
 #include "Microsoft/Xna/Framework/Matrix.hpp"
 
+#include <array>
 #include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
+#include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace Microsoft::Xna::Framework::Graphics {
@@ -54,6 +58,10 @@ struct SkinnedItem
     /// Bone-space-to-model-space for every bone, as
     /// `AnimationPlayer::GetSkinTransforms()` produces it.
     const std::vector<Microsoft::Xna::Framework::Matrix>* bones = nullptr;
+    /// Whether this figure is on the footway or behind a windscreen. The two
+    /// are the same mesh and the same clip machinery and cost the frame
+    /// differently, so the profile counts them apart.
+    bool driver = false;
 };
 
 /**
@@ -84,6 +92,15 @@ struct ReflectionProbe
     int prefilteredMips = 5;
 };
 
+/// Which part of the street issued a draw, so a frame's cost can be
+/// attributed to content and not only to stages. A stage table says the
+/// opaque pass costs 27 ms; this says how much of that is cars.
+enum class DrawFamily : std::uint8_t
+{
+    Other,
+    Vehicle,
+};
+
 /// One piece of static geometry in the world.
 struct SceneItem
 {
@@ -102,6 +119,7 @@ struct SceneItem
     bool shadowOnly = false;
     /// The local environment this item reflects, or null for the sky's.
     const ReflectionProbe* probe = nullptr;
+    DrawFamily family = DrawFamily::Other;
 };
 
 /// A set of copies of one mesh, drawn with one instanced call.
@@ -117,6 +135,13 @@ struct InstanceGroup
     float cullDistance  = 0.0f;
     float shadowDistance = 0.0f;
     bool  castsShadow   = true;
+    /// This group exists only to be a shadow proxy for another one -- see
+    /// `CityScene::placeShadowProxy`. It draws nowhere the opaque or
+    /// transparent pass looks, and it exists because a lower level of detail
+    /// often does not share its higher one's part count (a merged shadow
+    /// proxy is fewer materials, not the same materials at fewer triangles),
+    /// so @ref lodMesh's part-for-part matching cannot swap it in.
+    bool  shadowOnly    = false;
     std::string name;
 };
 
@@ -167,6 +192,48 @@ public:
         /// time step.
         float frameMs = 0.0f;
         double gpuFrameMs = -1.0;
+
+        /// What the **GPU** spent on each stage, in the same order and with
+        /// the same boundaries as the CPU numbers above, or -1 where the
+        /// renderer has no timer query.
+        ///
+        /// Two clocks rather than one, because a frame this size has two
+        /// possible shapes and the CPU numbers alone cannot tell them apart.
+        /// If the GPU times are far below the CPU times the frame is bound by
+        /// *submission* -- the driver taking the calls -- and the answer is
+        /// fewer draws. If they match, the frame is bound by the GPU and the
+        /// answer is less work per pixel or per vertex. Every optimisation in
+        /// the last two passes was chosen on the first hypothesis without
+        /// anybody measuring the second.
+        double gpuShadowMs = -1.0;
+        double gpuPrepassMs = -1.0;
+        double gpuSkyMs = -1.0;
+        double gpuOpaqueMs = -1.0;
+        double gpuPostMs = -1.0;
+        /// One entry per post-process pass, from the pipeline's own timers.
+        std::vector<std::pair<std::string, double>> gpuPostPasses;
+
+        /// What the shadow pass did, per cascade: how many draws went into
+        /// it, how many triangles they carried, and how far down the camera's
+        /// own view the cascade reaches. A cascade full of window frames whose
+        /// shadows land on nothing is invisible in a total and obvious here.
+        struct CascadeWork
+        {
+            int       draws = 0;
+            long long triangles = 0;
+            float     split = 0.0f;
+            float     radius = 0.0f;
+        };
+        std::vector<CascadeWork> cascades;
+
+        /// Draw calls by the family that issued them, so the frame budget can
+        /// be attributed to content rather than to stages alone.
+        int vehicleDrawCalls = 0;
+        int vehicleShadowDrawCalls = 0;
+        int driverDrawCalls = 0;
+        int characterShadowDrawCalls = 0;
+        std::size_t vehicleTriangles = 0;
+        std::size_t characterTriangles = 0;
     };
 
     SceneRenderer(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
@@ -196,7 +263,8 @@ public:
     /// Clears the dynamic list. Call before submitting this frame's movers.
     void beginFrame();
     void submitDynamic(const GpuMesh* mesh, const Material* material,
-                       const Microsoft::Xna::Framework::Matrix& world, bool shadowOnly = false);
+                       const Microsoft::Xna::Framework::Matrix& world, bool shadowOnly = false,
+                       DrawFamily family = DrawFamily::Other);
     void submitSkinned(SkinnedItem item);
 
     void render(const Camera& camera, const RenderSettings& settings, float timeSeconds);
@@ -260,6 +328,19 @@ public:
     /// @p limit 0 means every family.
     [[nodiscard]] std::vector<BatchCost> costReport(std::size_t limit) const;
 
+    /// Turns on the by-name shadow-draw breakdown @ref shadowReport reads.
+    /// Off by default: it is a hash-map insert per shadow draw call, which is
+    /// not something a frame anybody is timing should pay for free.
+    void setShadowReportEnabled(bool enabled) { shadowReportEnabled_ = enabled; }
+    /// What the *last frame's shadow pass* drew, by the name each caster was
+    /// registered under, heaviest first -- across every cascade, since a
+    /// caster near the camera is often written into more than one. This is
+    /// the table that answers "where do the shadow pass's triangles actually
+    /// come from", which a per-cascade total cannot: a cascade's triangle
+    /// count says how much a slice of the frustum cost, not which content
+    /// family is paying for it.
+    [[nodiscard]] std::vector<BatchCost> shadowReport(std::size_t limit) const;
+
     /// The same breakdown over the set that survived the *last* frame's cull,
     /// which is the one that actually cost anything. `batches` is draw calls
     /// and `copies` is instances; the registered report says how heavy the
@@ -318,7 +399,19 @@ private:
     std::unique_ptr<CNA::Graphics::RenderPipeline>     pipeline_;
     std::unique_ptr<CNA::Graphics::CascadedShadowMap>  shadows_;
     std::unique_ptr<CNA::Graphics::DepthNormalPrepass> prepass_;
-    std::unique_ptr<CNA::Graphics::GpuTimer>           gpuTimer_;
+    /// One timer per stage. They are opened and closed in sequence and never
+    /// nested, because `GL_TIME_ELAPSED` allows exactly one open query at a
+    /// time; the post-process chain measures its own passes, so the frame's
+    /// post stage is the sum of those rather than a timer wrapped round them.
+    enum class GpuStage { Shadow, Prepass, Sky, Opaque, Count };
+    std::array<std::unique_ptr<CNA::Graphics::GpuTimer>,
+               static_cast<std::size_t>(GpuStage::Count)> gpuStage_;
+    std::array<double, static_cast<std::size_t>(GpuStage::Count)> gpuStageMs_{};
+    bool gpuTimingAvailable_ = false;
+    /// Triangles written into the cascade atlas this frame, for the per-
+    /// cascade table: a cascade's cost is its draws and its triangles, and
+    /// the two do not move together.
+    long long shadowTriangles_ = 0;
 
     std::vector<SceneItem>    items_;
     std::vector<InstanceGroup> groups_;
@@ -357,6 +450,9 @@ private:
 
     Stats stats_;
     std::vector<std::string> limitations_;
+
+    bool shadowReportEnabled_ = false;
+    mutable std::unordered_map<std::string, BatchCost> shadowByName_;
 };
 
 }  // namespace CnaStreet

@@ -160,6 +160,30 @@ struct RenderSettings
     float propCullDistance = 210.0f;
     /// Distance past which a prop stops being written into the shadow map.
     float propShadowDistance = 74.0f;
+    /// Distance from the camera past which static architecture -- buildings,
+    /// the road -- stops being written into the shadow map.
+    ///
+    /// Every wall, window reveal, cornice and kerb used to cast at the full
+    /// @ref shadowDistance with no cap of its own, because a building is not
+    /// a "prop" and never went through the distance policy props have had
+    /// since the third pass. That made the far cascade's real cost the whole
+    /// modelled street re-rasterised into it: on the flagship view, the
+    /// architecture alone was 1.3M+ triangles a frame written into a cascade
+    /// whose ground sample is metres wide there. A facade's shadow at 150 m
+    /// from the camera lands on ground the cascade cannot resolve to begin
+    /// with; capping the caster is free the same way capping a hydrant's was.
+    /// Longer than @ref propShadowDistance on purpose -- a wall throws a
+    /// shadow across the whole street canyon and a hydrant does not, so
+    /// architecture keeps casting well past where small props stop.
+    float architectureShadowDistance = 150.0f;
+    /// Distance past which the district beyond the modelled frontage -- the
+    /// procedural filler blocks `buildContext` plants -- stops casting a
+    /// shadow at all. It used to have no cap whatsoever (0 means "unlimited"
+    /// to the caster loop), so silhouette buildings hundreds of metres away,
+    /// visible only as a haze, were shadow casters at the full 190 m the
+    /// cascades reach. Their own shadows fall on other silhouette buildings
+    /// nobody is looking at closely enough to miss the contact shadow.
+    float contextShadowDistance = 90.0f;
     /// Distance past which a person is not drawn.
     ///
     /// Its own number rather than @ref propCullDistance, because a person is

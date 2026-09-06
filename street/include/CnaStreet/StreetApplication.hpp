@@ -11,6 +11,7 @@
 
 #include <memory>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace Microsoft::Xna::Framework {
@@ -120,6 +121,23 @@ private:
         double skyMs = 0.0, opaqueMs = 0.0, postMs = 0.0;
         long long draws = 0, shadowDraws = 0, triangles = 0;
         int samples = 0;
+
+        /// The GPU's own answers, summed over the frames that carried one.
+        /// Counted separately because a timer result lands a frame or two
+        /// after the range closed, so the first settled frames have none and
+        /// dividing by `samples` would understate every stage.
+        double gpuShadowMs = 0.0, gpuPrepassMs = 0.0, gpuSkyMs = 0.0;
+        double gpuOpaqueMs = 0.0, gpuPostMs = 0.0;
+        int gpuSamples = 0;
+        std::vector<std::pair<std::string, double>> postPassMs;
+
+        /// Per-cascade shadow work, summed over the settled frames.
+        struct Cascade { double draws = 0.0, triangles = 0.0, radius = 0.0; float split = 0.0f; };
+        std::vector<Cascade> cascades;
+
+        long long vehicleDraws = 0, driverDraws = 0, skinnedDraws = 0;
+        long long characterShadowDraws = 0;
+        long long vehicleTriangles = 0, characterTriangles = 0;
     };
     FrameProfile profile_;
     /// How many frames to discard before measuring. Three is what the screenshot

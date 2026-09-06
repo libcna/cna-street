@@ -120,7 +120,8 @@ void CityScene::build(const RenderSettings& settings)
         roads.build(collector, rng);
         crossings_ = roads.crossings();
         manholes_  = roads.manholes();
-        publish(collector, 0.0f, settings.shadowDistance);
+        publish(collector, 0.0f,
+               std::min(settings.architectureShadowDistance, settings.shadowDistance));
     }
 
     stage("raising the buildings", 0.22f);
@@ -138,7 +139,12 @@ void CityScene::build(const RenderSettings& settings)
         for (std::size_t i = 0; i < plots.size(); ++i)
             buildings.build(plots[i], static_cast<int>(i), collector, interiors, rng, anchors_,
                             displays_);
-        publish(collector, 0.0f, settings.shadowDistance);
+        // Architecture used to have no distance policy of its own and cast at
+        // the cascades' full reach: every window reveal, cornice and quoin on
+        // the modelled street, every frame, however far down it the camera
+        // was looking. See RenderSettings::architectureShadowDistance.
+        publish(collector, 0.0f,
+               std::min(settings.architectureShadowDistance, settings.shadowDistance));
         // The rooms behind the glass, on a short leash and casting nothing: a
         // shop interior is invisible from the far pavement and its shadow is
         // invisible from anywhere. 34 m rather than the 54 it started at,
@@ -190,7 +196,12 @@ void CityScene::build(const RenderSettings& settings)
         GeometryCollector collector;
         Rng rng = Rng::derive(settings.seed, "context");
         buildContext(collector, rng, settings);
-        publish(collector, 0.0f, 0.0f);
+        // The district beyond the modelled frontage had no shadow distance
+        // cap at all -- silhouette blocks visible only as a haze were casters
+        // at the cascades' full reach. See
+        // RenderSettings::contextShadowDistance.
+        publish(collector, 0.0f,
+               std::min(settings.contextShadowDistance, settings.shadowDistance));
     }
 
     buildViewpoints();
@@ -874,13 +885,35 @@ void CityScene::placeProp(const PropMesh& prop, const std::vector<Matrix>& trans
     buildStats_.instances += static_cast<int>(transforms.size());
 }
 
+void CityScene::placeShadowProxy(const PropMesh& proxy, const std::vector<Matrix>& transforms,
+                                 const std::string& name, float shadowDistance)
+{
+    if (proxy.empty() || transforms.empty()) return;
+    for (std::size_t i = 0; i < proxy.parts.size(); ++i)
+    {
+        const PropMesh::Part& part = proxy.parts[i];
+        InstanceGroup group;
+        group.mesh           = part.mesh;
+        group.material       = part.material;
+        group.transforms     = transforms;
+        if (part.local != Matrix::getIdentityProperty())
+            for (Matrix& transform : group.transforms) transform = part.local * transform;
+        group.shadowDistance = shadowDistance;
+        group.castsShadow    = true;
+        group.shadowOnly     = true;
+        group.name           = name;
+        renderer_.addInstances(std::move(group));
+        ++buildStats_.instanceGroups;
+    }
+}
+
 void CityScene::submitProp(const PropMesh& prop, const Matrix& transform,
-                           const Material* overrideMaterial, bool shadowOnly)
+                           const Material* overrideMaterial, bool shadowOnly, DrawFamily family)
 {
     for (const PropMesh::Part& part : prop.parts)
         renderer_.submitDynamic(part.mesh,
                                 overrideMaterial != nullptr ? overrideMaterial : part.material,
-                                part.local * transform, shadowOnly);
+                                part.local * transform, shadowOnly, family);
 }
 
 void CityScene::update(float deltaSeconds, const RenderSettings& settings)
@@ -979,10 +1012,10 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
                 // twelve draws a frame the welded copy does not pay.
                 if (distance >= 32.0f && !hero.far.empty())
                 {
-                    submitProp(hero.far, world);
+                    submitProp(hero.far, world, nullptr, false, DrawFamily::Vehicle);
                     continue;
                 }
-                submitProp(hero.body, world);
+                submitProp(hero.body, world, nullptr, false, DrawFamily::Vehicle);
                 const float rolled = vehicle.odometer / hero.wheelRadius;
                 for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
                 {
@@ -990,10 +1023,12 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
                     Matrix steer = Matrix::getIdentityProperty();
                     if (wheel.steered && vehicle.steerAngle != 0.0f)
                         steer = Matrix::CreateRotationY(vehicle.steerAngle);
-                    submitProp(wheel.mesh, Matrix::CreateRotationX(rolled) * steer * axle);
+                    submitProp(wheel.mesh, Matrix::CreateRotationX(rolled) * steer * axle,
+                               nullptr, false, DrawFamily::Vehicle);
                     // The caliper, the upright and the arch liner turn with
                     // the stub axle and stand still otherwise.
-                    if (!wheel.hub.empty()) submitProp(wheel.hub, steer * axle);
+                    if (!wheel.hub.empty())
+                        submitProp(wheel.hub, steer * axle, nullptr, false, DrawFamily::Vehicle);
                 }
                 continue;
             }
@@ -1007,7 +1042,8 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
             // silhouette at a third of the stations, which is three pixels of
             // difference and two thirds of the triangles.
             const bool near = distance < 38.0f;
-            submitProp(near ? mesh.body : mesh.distantBody, world);
+            submitProp(near ? mesh.body : mesh.distantBody, world, nullptr, false,
+                       DrawFamily::Vehicle);
             if (vehicle.braking && brakeLit_ != nullptr && distance < 90.0f)
                 submitProp(mesh.brakeLamps, world, brakeLit_);
 
@@ -1025,8 +1061,8 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
                 if (place.steered && vehicle.steerAngle != 0.0f)
                     local = local * Matrix::CreateRotationY(vehicle.steerAngle);
                 if (place.side < 0.0f) local = local * Matrix::CreateScale(-1.0f, 1.0f, 1.0f);
-                submitProp(wheel,
-                           local * Matrix::CreateTranslation(place.centre) * world);
+                submitProp(wheel, local * Matrix::CreateTranslation(place.centre) * world,
+                           nullptr, false, DrawFamily::Vehicle);
             }
         }
     }
@@ -1091,6 +1127,7 @@ void CityScene::submitDriver(std::size_t index, const Vehicle& vehicle,
         item.material = part.material;
         item.world    = world3;
         item.bones    = &player.GetSkinTransforms();
+        item.driver   = true;
         renderer_.submitSkinned(std::move(item));
     }
     (void)distance;
@@ -2938,10 +2975,24 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         {
             std::vector<Matrix>& at = parkedAt[h * kRings + static_cast<std::size_t>(ring)];
             if (at.empty()) continue;
+            // The near model's own shadow, off: an authored car's far copy
+            // is a differently-merged model rather than the same materials at
+            // fewer triangles (seven parts against three, on the Civic), so
+            // placeProp's index-matched LOD swap cannot use it for the
+            // *drawn* body -- but a shadow caster does not draw materials,
+            // only positions, and the far copy's silhouette is the same car.
+            // `--frames` measured the parked fleet's own near-mesh shadows at
+            // over a million triangles a frame; the far copy underneath is a
+            // few hundred thousand for the same shape.
             placeProp(heroes[h].whole, at,
                       "hero-" + heroes[h].name + "-r" + std::to_string(ring), cull * 0.75f, shade,
-                      /*castsShadow=*/true, heroes[h].far.empty() ? nullptr : &heroes[h].far,
+                      /*castsShadow=*/false, heroes[h].far.empty() ? nullptr : &heroes[h].far,
                       45.0f);
+            if (!heroes[h].far.empty())
+                placeShadowProxy(heroes[h].far, at,
+                                 "hero-" + heroes[h].name + "-r" + std::to_string(ring)
+                                     + "-shadow",
+                                 shade);
         }
 
     // --- the moving traffic --------------------------------------------------

@@ -251,15 +251,25 @@ void SceneRenderer::initialise(const RenderSettings& settings)
         }
     }
 
-    gpuTimer_ = std::make_unique<GpuTimer>(device_);
-    if (!gpuTimer_->isSupported())
+    // One timer per stage. The frame's CPU breakdown has been the only clock
+    // this project had, and a CPU clock round a run of draw calls measures how
+    // long the *driver* took to accept them -- which is the right number when
+    // a frame is submission-bound and says nothing at all when it is not.
+    // These say which it is.
+    gpuTimingAvailable_ = false;
+    for (auto& timer : gpuStage_)
     {
-        // Not a limitation worth showing the user: the overlay simply reports
-        // CPU time only.
-        CNA::Logger::Info("cna-street: GPU timing unavailable -- "
-                          + gpuTimer_->getUnsupportedReason());
-        gpuTimer_.reset();
+        timer = std::make_unique<GpuTimer>(device_);
+        if (!timer->isSupported())
+        {
+            CNA::Logger::Info("cna-street: GPU timing unavailable -- "
+                              + timer->getUnsupportedReason());
+            for (auto& other : gpuStage_) other.reset();
+            break;
+        }
+        gpuTimingAvailable_ = true;
     }
+    gpuStageMs_.fill(-1.0);
 
     if (!device_.SupportsCapability(CNA::GraphicsCapability::Instancing))
         limitations_.emplace_back("no hardware instancing; repeated props fall back to a loop");
@@ -383,10 +393,11 @@ void SceneRenderer::beginFrame()
 }
 
 void SceneRenderer::submitDynamic(const GpuMesh* mesh, const Material* material,
-                                  const Matrix& world, bool shadowOnly)
+                                  const Matrix& world, bool shadowOnly, DrawFamily family)
 {
     if (mesh == nullptr || material == nullptr) return;
     SceneItem item;
+    item.family      = family;
     item.shadowOnly  = shadowOnly;
     item.mesh        = mesh;
     item.material    = material;
@@ -492,8 +503,13 @@ void SceneRenderer::cull(const Camera& camera, const RenderSettings& settings)
         const InstanceGroup& group = groups_[g];
         std::vector<Matrix>& visible = visibleGroupTransforms_[g];
         visible.clear();
-        stats_.totalInstances += static_cast<int>(group.transforms.size());
         visibleGroupMesh_[g] = group.mesh;
+        // A shadow-only group draws nowhere the opaque or transparent pass
+        // looks -- see InstanceGroup::shadowOnly -- so it is left with no
+        // visible instances and skipped by both, leaving drawCasters as the
+        // only thing that ever reads its transform list.
+        if (group.shadowOnly) continue;
+        stats_.totalInstances += static_cast<int>(group.transforms.size());
 
         const float limit = group.cullDistance > 0.0f
                                 ? std::min(group.cullDistance, settings.propCullDistance)
@@ -749,13 +765,23 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
     device_.setDepthStencilStateProperty(DepthStencilState::Default);
     device_.setBlendStateProperty(BlendState::Opaque);
 
+    stats_.cascades.assign(static_cast<std::size_t>(shadows_->getCascadeCount()),
+                           Stats::CascadeWork{});
     float near = settings.nearPlane;
     for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
     {
         const float far = shadows_->getSplitDistance(cascade);
+        const int drawsBefore = stats_.shadowDrawCalls;
+        const long long trianglesBefore = shadowTriangles_;
+        const CascadeVolume volume = cascadeVolume(camera, near, far);
         shadows_->begin(cascade);
-        drawCasters(cascadeVolume(camera, near, far), propShadowLimit);
+        drawCasters(volume, propShadowLimit);
         shadows_->end();
+        Stats::CascadeWork& work = stats_.cascades[static_cast<std::size_t>(cascade)];
+        work.draws     = stats_.shadowDrawCalls - drawsBefore;
+        work.triangles = shadowTriangles_ - trianglesBefore;
+        work.split     = far;
+        work.radius    = volume.radius;
         near = far;
     }
 
@@ -766,6 +792,18 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
 {
     ShaderEffect* caster = shadows_->getCasterEffect();
     if (caster == nullptr) return;
+
+    // Diagnostic only: attributes this cascade's draws to the name each
+    // caster was registered under. See setShadowReportEnabled.
+    const auto record = [this](const std::string& fullName, long long triangles) {
+        if (!shadowReportEnabled_) return;
+        const std::size_t hash = fullName.find('#');
+        const std::string name = hash == std::string::npos ? fullName : fullName.substr(0, hash);
+        BatchCost& cost = shadowByName_[name];
+        if (cost.name.empty()) cost.name = name;
+        ++cost.batches;
+        cost.triangles += triangles;
+    };
 
     // Everything a cascade could cast into it, and nothing else. A cascade
     // covers *a slice of the camera frustum*, not a disc around the camera,
@@ -797,6 +835,8 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
         caster->SetUniformMat4("uWorld", &item.world.M11);
         item.mesh->draw(device_);
         ++stats_.shadowDrawCalls;
+        shadowTriangles_ += item.mesh->triangleCount();
+        record(item.mesh->name(), item.mesh->triangleCount());
     }
 
     for (const SceneItem& item : dynamic_)
@@ -809,6 +849,10 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
         caster->SetUniformMat4("uWorld", &item.world.M11);
         item.mesh->draw(device_);
         ++stats_.shadowDrawCalls;
+        shadowTriangles_ += item.mesh->triangleCount();
+        if (item.shadowOnly) ++stats_.characterShadowDrawCalls;
+        if (item.family == DrawFamily::Vehicle) ++stats_.vehicleShadowDrawCalls;
+        record(item.mesh->name(), item.mesh->triangleCount());
     }
 
     // Instanced props are drawn one at a time here. CNA's shadow caster
@@ -823,14 +867,30 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
         const float limit = std::min(group.shadowDistance > 0.0f ? group.shadowDistance
                                                                  : propShadowLimit,
                                      volume.split);
+        // The far level of detail, if this group has one, unconditionally --
+        // not only past the opaque pass's own switch distance. A shadow is a
+        // soft-edged silhouette on the ground, filtered by PCF and quantised
+        // to a cascade texel that is centimetres wide even in the nearest
+        // cascade; the leaf-level geometry a tree three metres away is drawn
+        // with for the eye to see contributes nothing to the shape its shadow
+        // casts. This project already draws its *far-ring* trees' shadows
+        // from exactly this mesh (`CityScene::buildVegetation`'s "-far"
+        // groups); this is that same choice applied to the near ring's
+        // shadow only, with the opaque draw untouched. Measured on the
+        // flagship viewpoint: the three hero tree species alone were 7.3M of
+        // the shadow pass's typical 13M triangles, more than half of it, for
+        // a silhouette a viewer never resolves at cascade resolution.
+        const GpuMesh* casterMesh = group.lodMesh != nullptr ? group.lodMesh : group.mesh;
         for (std::size_t i = 0; i < group.transforms.size(); ++i)
         {
             const BoundingSphere& sphere = group.spheres[i];
             if (Vector3::Distance(volume.eye, sphere.Center) - sphere.Radius > limit) continue;
             if (!reaches(sphere.Center, sphere.Radius)) continue;
             caster->SetUniformMat4("uWorld", &group.transforms[i].M11);
-            group.mesh->draw(device_);
+            casterMesh->draw(device_);
             ++stats_.shadowDrawCalls;
+            shadowTriangles_ += casterMesh->triangleCount();
+            record(group.name, casterMesh->triangleCount());
         }
     }
 }
@@ -920,7 +980,9 @@ void SceneRenderer::drawSkinned(const Camera& camera, const RenderSettings& sett
         item.mesh->draw(device_);
         ++stats_.skinnedDrawCalls;
         ++stats_.drawCalls;
+        if (item.driver) ++stats_.driverDrawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
+        stats_.characterTriangles += static_cast<std::size_t>(item.mesh->triangleCount());
     }
 }
 
@@ -982,6 +1044,11 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
         item.mesh->draw(device_);
         ++stats_.drawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
+        if (item.family == DrawFamily::Vehicle)
+        {
+            ++stats_.vehicleDrawCalls;
+            stats_.vehicleTriangles += static_cast<std::size_t>(item.mesh->triangleCount());
+        }
     }
 
     for (std::size_t g = 0; g < groups_.size(); ++g)
@@ -1359,8 +1426,13 @@ void SceneRenderer::bakeReflectionProbes(std::vector<Vector3> positions,
         // leave the window black longest: twenty-nine captures at seven
         // seconds the lot. Reported per probe so the bar moves.
         if (bakeProgress_)
+        {
+            // Off the probe's target first: the previous capture left one
+            // bound, and a present with a render target bound is refused.
+            device_.SetRenderTarget(nullptr);
             bakeProgress_(static_cast<float>(captured)
                           / static_cast<float>(probePositions_.size()));
+        }
         ++captured;
         auto probe = std::make_unique<ReflectionProbe>();
         probe->position = position;
@@ -1450,6 +1522,15 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     stats_.shadowDrawCalls = 0;
     stats_.instancedDrawCalls = 0;
     stats_.triangles = 0;
+    stats_.characterShadowDrawCalls = 0;
+    stats_.characterTriangles = 0;
+    stats_.vehicleDrawCalls = 0;
+    stats_.vehicleShadowDrawCalls = 0;
+    stats_.driverDrawCalls = 0;
+    stats_.vehicleTriangles = 0;
+    stats_.skinnedDrawCalls = 0;
+    if (shadowReportEnabled_) shadowByName_.clear();
+    shadowTriangles_ = 0;
 
     // One clock for the whole frame, and every stage a slice of it. The stages
     // used to be timed by separate stopwatches whose spans overlapped, so
@@ -1458,14 +1539,43 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     // five times the frame they were measuring.
     Stopwatch watch = Stopwatch::StartNew();
 
+    // Last frame's GPU answers, collected before this frame opens a range.
+    // `poll` never blocks -- a result arrives a frame or two after the range
+    // closed, which is the whole reason it is worth having.
+    const auto openStage = [this](GpuStage stage) {
+        auto& timer = gpuStage_[static_cast<std::size_t>(stage)];
+        if (timer == nullptr) return;
+        // Collect *last* frame's answer before reopening the query, not after
+        // closing it: a timer object holds one result, `poll` never blocks,
+        // and polling immediately after `end` asks the GPU for a number it
+        // cannot have yet -- which is how the first version of this reported
+        // "GPU timing unavailable" on a card that has it.
+        if (timer->poll())
+            gpuStageMs_[static_cast<std::size_t>(stage)] = timer->getLastMilliseconds();
+        timer->begin();
+    };
+    const auto closeStage = [this](GpuStage stage) {
+        auto& timer = gpuStage_[static_cast<std::size_t>(stage)];
+        if (timer != nullptr) timer->end();
+    };
+
     cull(camera, settings);
     const float afterCull = Milliseconds(watch);
+    openStage(GpuStage::Shadow);
     drawShadows(camera, settings);
+    closeStage(GpuStage::Shadow);
     const float afterShadow = Milliseconds(watch);
+    openStage(GpuStage::Prepass);
     drawPrepass(camera, settings);
+    closeStage(GpuStage::Prepass);
     const float afterPrepass = Milliseconds(watch);
 
-    if (gpuTimer_ != nullptr) pipeline_->setGpuTimingEnabledEXT(true);
+    // The post chain times its own passes, which is finer than one number for
+    // the lot: bloom, the SSAO resolve, the tone map and FXAA are four
+    // different decisions and they cost four different amounts. No timer of
+    // this class wraps `pipeline_->end()`, because a GL_TIME_ELAPSED query
+    // inside another is not a query.
+    if (gpuTimingAvailable_) pipeline_->setGpuTimingEnabledEXT(true);
 
     pipeline_->setTransparentScene([&] { drawTransparent(camera, settings); });
     pipeline_->begin(Color::Black);
@@ -1475,10 +1585,14 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     // takes a cubemap and this sky is a shader.
     device_.setDepthStencilStateProperty(DepthStencilState::None);
     device_.setBlendStateProperty(BlendState::Opaque);
+    openStage(GpuStage::Sky);
     sky_.draw(camera.view(), camera.projection(), width_, height_, timeSeconds);
+    closeStage(GpuStage::Sky);
 
     const float afterSky = Milliseconds(watch);
+    openStage(GpuStage::Opaque);
     drawOpaque(camera, settings);
+    closeStage(GpuStage::Opaque);
     const float afterOpaque = Milliseconds(watch);
     pipeline_->end();
 
@@ -1493,6 +1607,35 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     stats_.opaqueMs  = afterOpaque - afterSky;
     stats_.postMs    = Milliseconds(watch) - afterOpaque;
     stats_.frameMs   = Milliseconds(watch);
+
+    stats_.gpuShadowMs  = gpuStageMs_[static_cast<std::size_t>(GpuStage::Shadow)];
+    stats_.gpuPrepassMs = gpuStageMs_[static_cast<std::size_t>(GpuStage::Prepass)];
+    stats_.gpuSkyMs     = gpuStageMs_[static_cast<std::size_t>(GpuStage::Sky)];
+    stats_.gpuOpaqueMs  = gpuStageMs_[static_cast<std::size_t>(GpuStage::Opaque)];
+    stats_.gpuPostPasses.clear();
+    stats_.gpuPostMs = -1.0;
+    if (pipeline_->isGpuTimingEnabledEXT())
+    {
+        double post = 0.0;
+        for (const auto& pass : pipeline_->getPassTimingsEXT())
+        {
+            stats_.gpuPostPasses.emplace_back(pass.Name, pass.Milliseconds);
+            post += pass.Milliseconds;
+        }
+        if (!stats_.gpuPostPasses.empty()) stats_.gpuPostMs = post;
+    }
+    stats_.gpuFrameMs = -1.0;
+    if (gpuTimingAvailable_)
+    {
+        // The sum of the ranges, not a range round the frame: the frame's own
+        // range would have to contain the others, and it cannot.
+        double total = 0.0;
+        bool any = false;
+        for (const double stage : gpuStageMs_)
+            if (stage >= 0.0) { total += stage; any = true; }
+        if (stats_.gpuPostMs >= 0.0) { total += stats_.gpuPostMs; any = true; }
+        if (any) stats_.gpuFrameMs = total;
+    }
 }
 
 
@@ -1553,6 +1696,18 @@ std::vector<SceneRenderer::BatchCost> SceneRenderer::costReport(std::size_t limi
     return report;
 }
 
+
+std::vector<SceneRenderer::BatchCost> SceneRenderer::shadowReport(std::size_t limit) const
+{
+    std::vector<BatchCost> report;
+    report.reserve(shadowByName_.size());
+    for (const auto& entry : shadowByName_) report.push_back(entry.second);
+    std::sort(report.begin(), report.end(), [](const BatchCost& a, const BatchCost& b) {
+        return a.triangles > b.triangles;
+    });
+    if (limit > 0 && report.size() > limit) report.resize(limit);
+    return report;
+}
 
 std::vector<SceneRenderer::BatchCost> SceneRenderer::visibleReport(std::size_t limit) const
 {

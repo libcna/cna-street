@@ -44,6 +44,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             multiSample = 0;   renderScale = 0.72f;
             shadows = true;    shadowCascades = 2;  shadowQuality = 0;
             shadowDistance = 70.0f;  propShadowDistance = 34.0f;
+            architectureShadowDistance = 70.0f;  contextShadowDistance = 45.0f;
             hdr = false;  bloom = false;  ssao = false;  fxaa = false;
             heightFog = true;  lightShafts = false;  ssr = false;  depthOfField = false;
             clouds = true;
@@ -55,6 +56,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             multiSample = 0;   renderScale = 1.0f;
             shadows = true;    shadowCascades = 2;  shadowQuality = 1;
             shadowDistance = 120.0f; propShadowDistance = 52.0f;
+            architectureShadowDistance = 100.0f;  contextShadowDistance = 60.0f;
             hdr = true;   bloom = true;   ssao = false;  fxaa = true;
             heightFog = true;  lightShafts = false;  ssr = false;  depthOfField = false;
             reflectionProbes = true;  probeFaceSize = 32;  probeSpacing = 32.0f;
@@ -65,6 +67,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             multiSample = 4;   renderScale = 1.0f;
             shadows = true;    shadowCascades = 3;  shadowQuality = 2;
             shadowDistance = 175.0f; propShadowDistance = 74.0f;
+            architectureShadowDistance = 150.0f;  contextShadowDistance = 90.0f;
             hdr = true;   bloom = true;   ssao = true;   fxaa = true;
             heightFog = true;  lightShafts = true;  ssr = false;  depthOfField = false;
             reflectionProbes = true;  probeFaceSize = 64;  probeSpacing = 24.0f;
@@ -75,6 +78,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             multiSample = 4;   renderScale = 1.0f;
             shadows = true;    shadowCascades = 4;  shadowQuality = 3;
             shadowDistance = 240.0f; propShadowDistance = 110.0f;
+            architectureShadowDistance = 220.0f;  contextShadowDistance = 140.0f;
             hdr = true;   bloom = true;   ssao = true;   fxaa = true;
             heightFog = true;  lightShafts = true;  ssr = true;   depthOfField = false;
             ssaoIntensity = 0.85f;
@@ -141,6 +145,8 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"debugOverlay", &s.debugOverlay},
         {"propCullDistance", &s.propCullDistance},
         {"propShadowDistance", &s.propShadowDistance},
+        {"architectureShadowDistance", &s.architectureShadowDistance},
+        {"contextShadowDistance", &s.contextShadowDistance},
         {"pedestrianCullDistance", &s.pedestrianCullDistance},
         {"pedestrianDetailDistance", &s.pedestrianDetailDistance},
 
