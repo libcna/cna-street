@@ -32,6 +32,7 @@ namespace CNA::Graphics {
     class CascadedShadowMap;
     class DepthNormalPrepass;
     class GpuTimer;
+    class InstancedRendererEXT;
     class RenderPipeline;
 }
 
@@ -453,6 +454,17 @@ private:
 
     bool shadowReportEnabled_ = false;
     mutable std::unordered_map<std::string, BatchCost> shadowByName_;
+
+    /// One instanced renderer per mesh, kept across frames. It used to be
+    /// built on the stack for every group every frame, and a fresh one has
+    /// no instance buffer: its first `setInstances` allocates a
+    /// `DynamicVertexBuffer`, uploads into it, and the destructor frees it
+    /// at the end of the loop body -- fifty-odd GPU buffer allocations and
+    /// frees a frame for transform lists that mostly did not change size.
+    /// Kept, the buffer is reused and only grows.
+    [[nodiscard]] CNA::Graphics::InstancedRendererEXT& instancedFor(const GpuMesh* mesh);
+    std::unordered_map<const GpuMesh*, std::unique_ptr<CNA::Graphics::InstancedRendererEXT>>
+        instancedByMesh_;
 };
 
 }  // namespace CnaStreet

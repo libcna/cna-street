@@ -51,6 +51,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             reflectionProbes = false;
             propCullDistance = 105.0f;
             pedestrianCullDistance = 70.0f;  pedestrianDetailDistance = 12.0f;
+            pedestrianShadowDistance = 22.0f;
             break;
         case QualityPreset::Medium:
             multiSample = 0;   renderScale = 1.0f;
@@ -62,6 +63,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             reflectionProbes = true;  probeFaceSize = 32;  probeSpacing = 32.0f;
             propCullDistance = 160.0f;
             pedestrianCullDistance = 100.0f;  pedestrianDetailDistance = 16.0f;
+            pedestrianShadowDistance = 30.0f;
             break;
         case QualityPreset::High:
             multiSample = 4;   renderScale = 1.0f;
@@ -73,6 +75,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             reflectionProbes = true;  probeFaceSize = 64;  probeSpacing = 24.0f;
             propCullDistance = 215.0f;
             pedestrianCullDistance = 130.0f;  pedestrianDetailDistance = 20.0f;
+            pedestrianShadowDistance = 38.0f;
             break;
         case QualityPreset::Ultra:
             multiSample = 4;   renderScale = 1.0f;
@@ -85,6 +88,7 @@ void RenderSettings::applyPreset(QualityPreset preset)
             reflectionProbes = true;  probeFaceSize = 96;  probeSpacing = 18.0f;
             propCullDistance = 320.0f;
             pedestrianCullDistance = 185.0f;  pedestrianDetailDistance = 28.0f;
+            pedestrianShadowDistance = 60.0f;
             break;
     }
 }
@@ -149,6 +153,7 @@ std::vector<Binding> Bindings(RenderSettings& s)
         {"architectureShadowDistance", &s.architectureShadowDistance},
         {"contextShadowDistance", &s.contextShadowDistance},
         {"pedestrianCullDistance", &s.pedestrianCullDistance},
+        {"pedestrianShadowDistance", &s.pedestrianShadowDistance},
         {"pedestrianDetailDistance", &s.pedestrianDetailDistance},
 
         {"seed", &s.seed},
