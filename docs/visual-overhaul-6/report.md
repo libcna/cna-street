@@ -264,6 +264,15 @@ standing in a live lane it is pushed twelve metres clear and never carried.
 
 The frames are in `walkthrough/`.
 
+The application was also run in a window on the machine's own display, on
+its own GPU, with the overlay on -- `live-on-the-desktop.png`. Driving it
+from a script there was not possible: the desktop is Wayland, the window is
+an Xwayland client, and the compositor will not let `xdotool` take its
+focus, so synthetic keystrokes never reach the process. Every interactive
+claim in this report is therefore made from `--walkthrough`, which exercises
+the same code a keyboard does and reports numbers instead of impressions,
+and from the `--frames` profiles taken on that window.
+
 ## 9. Tried and rejected
 
 - **A fixed margin on the shadow slice.** A cascade only needs casters that

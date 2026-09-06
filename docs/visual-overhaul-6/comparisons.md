@@ -85,6 +85,22 @@ person walking the street meets rather than what a camera on a tripod sees:
 | ![](walkthrough/06-at-the-crossing.png) | ![](lineup/driver-saloon.png) |
 | a queue at the kerb, not a heap | somebody at the wheel |
 
+## On the desktop
+
+![](live-on-the-desktop.png)
+
+`live-on-the-desktop.png` is the application running in a window on the
+machine's own display, on its own Radeon 780M, with the overlay on: 1 280 ×
+720, twenty frames a second, 1 442 draws, 2 551 shadow draws, 7.72 million
+triangles, 1 721 batches, 447 textures, 882 MiB, built in 22 seconds.
+
+Driving it from a script was not possible in this session -- the desktop is
+Wayland, the window is an Xwayland client, and the compositor will not let
+`xdotool` take its focus, so synthetic keystrokes never reach it. That is
+what `--walkthrough` is for: it drives the walking camera through the same
+`moveWithCollision` and `escapeSolids` that WASD goes through, at a fixed
+step, and reports numbers rather than impressions.
+
 ## The line-up
 
 | before | after | |
