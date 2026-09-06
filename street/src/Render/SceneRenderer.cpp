@@ -302,10 +302,12 @@ void SceneRenderer::applySettings(const RenderSettings& settings)
     p.setBloomEnabled(settings.bloom);
     p.setBloomIntensity(settings.bloomIntensity);
     p.setBloomThreshold(settings.bloomThreshold);
+    p.setBloomIterations(settings.bloomIterations);
 
     p.setSSAOEnabled(settings.ssao && prepass_ != nullptr);
     p.setSSAORadius(settings.ssaoRadius);
     p.setSSAOIntensity(settings.ssaoIntensity);
+    p.setSSAOSampleCount(settings.ssaoSamples);
 
     p.setFXAAEnabled(settings.fxaa);
     p.setSSREnabled(settings.ssr);

@@ -110,6 +110,14 @@ struct RenderSettings
     bool  ssao = true;
     float ssaoRadius = 0.28f;
     float ssaoIntensity = 0.72f;
+    /// Samples per pixel in the SSAO pass; the pass clamps to 8..64. 16 is
+    /// the framework's default and what every earlier measurement ran at.
+    /// SSAO is the most expensive pass in the post chain -- a third of it on
+    /// the Radeon -- and its cost is close to linear in this.
+    int   ssaoSamples = 16;
+    /// How many half-resolution steps the bloom pyramid takes; the pass clamps
+    /// to 1..8. 4 is the framework's default.
+    int   bloomIterations = 4;
     bool  fxaa = true;
     bool  heightFog = true;
     float fogDensity = 0.016f;

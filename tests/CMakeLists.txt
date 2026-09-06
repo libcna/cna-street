@@ -26,6 +26,8 @@ cna_street_test(gait_tests GaitTests.cpp)
 # The per-cascade caster test: a caster is written into a cascade only if the
 # volume its shadow can occupy overlaps the cascade's own depth slice.
 cna_street_test(shadow_cull_tests ShadowCullTests.cpp)
+# The benchmark presets and the machine-readable result writers.
+cna_street_test(benchmark_tests BenchmarkTests.cpp)
 
 # The licence gate as a test, where Python is available: every fetched asset
 # declared, every declared licence on the allow-list, every digest matching.

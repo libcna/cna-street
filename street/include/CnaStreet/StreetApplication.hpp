@@ -24,6 +24,7 @@ namespace Microsoft::Xna::Framework::Content {
 
 namespace CnaStreet {
 
+struct BenchmarkPreset;
 class CityScene;
 class DebugOverlay;
 class SoundScape;
@@ -150,11 +151,19 @@ private:
         long long shadowSliceSkips = 0, shadowTexelSkips = 0;
     };
     FrameProfile profile_;
-    /// How many frames to discard before measuring. Three is what the screenshot
-    /// path already treats as settled.
+    /// How many frames to discard before measuring. Six for a plain `--frames`
+    /// run; a benchmark preset brings its own.
     static constexpr int kProfileWarmup = 6;
+    int profileWarmup_ = kProfileWarmup;
     void recordFrame();
     void reportProfile();
+    /// `--benchmark <preset>`: a fixed camera, a fixed sun, a fixed clock, and
+    /// the profile written out in a form a comparison can read. See
+    /// `Bench/Benchmark.hpp` for why the presets are their own table.
+    const BenchmarkPreset* benchmark_ = nullptr;
+    std::string benchmarkOutput_;
+    void writeBenchmark(double meanMs, double medianMs, double p95Ms, double minMs,
+                        double maxMs);
 
     /// `--capture DIR` renders every named viewpoint into DIR and exits. This is
     /// the mechanism behind the screenshot set in the README and the visual
