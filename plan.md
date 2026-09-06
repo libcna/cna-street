@@ -343,6 +343,55 @@ after frames.
   leg, the legs are half a cycle apart, the three walks differ), and cases
   for companions, strides, the lineup and the odometer.
 
+## The sixth visual pass
+
+A seventh pass, and the first one that began with somebody *walking* through
+the street rather than looking at it. Six live-play defects, and the
+draw-call consolidation that paid for fixing them. Everything below is in
+`docs/visual-overhaul-6/`.
+
+* **A car drove backwards.** Two faults: `rotation_euler` is an unused field
+  on an object in quaternion mode, which Blender's glTF importer leaves
+  every imported object in, so the turn the script wrote never happened and
+  reported success; and which end of a car is its nose was a claim in a
+  table that nothing checked. It is now measured from the body's own shape
+  by a rule shared between the script that decides the pose and the CTest
+  that verifies the exported files (`scripts/vehicle_pose.py`,
+  `scripts/vehicle-orientation.py`).
+* **A walk with the legs a third of a metre apart.** MakeHuman's A-posed rig
+  diverges the legs all the way down -- hips 16 to 23 cm apart, ankles 29 to
+  42 -- and nothing in a gait built in the sagittal plane brought them in.
+  Each figure's thigh is now adducted by what that figure's own skeleton
+  needs, and `gait_tests` evaluates the clips through both rigs and refuses
+  feet more than 30 cm apart.
+* **Four people in one body volume at a crossing.** Kerb queue slots chosen
+  by position rather than by number, a staggered step-off on green, lanes by
+  direction of travel, a follower-only pace rule and one ordered separation
+  pass a frame. `pedestrian_tests` runs 120 people through four minutes of
+  signal cycles and checks every pair at every sampled step.
+* **A camera that walked through cars.** Vehicles are oriented boxes of the
+  size of the model drawn for them; the street furniture and the tree trunks
+  are solids; and a car that drives into the camera eases it out at walking
+  pace instead of carrying it.
+* **Thirty cars with nobody at the wheel.** Six rigid seated drivers, two
+  draws each, inside thirty metres, in moving cars only.
+* **The lofts among the authored cars.** Every parking bay within 126 m
+  carries one of the eight models, dealt into four distance rings so a near
+  car cannot promote the whole street's level of detail; the district beyond
+  parks their far copies. Every tree pit carries one of the three scans.
+* **Half the draw calls.** `scripts/vehicle-atlas.py` and
+  `scripts/people-atlas.py` merge what can be merged -- a car from
+  thirty-three primitives to eight, a person from six draws to three -- and
+  the shadow pass is fitted to each cascade's slice of the camera frustum
+  rather than to a disc around the camera. 81.3 ms to 59-63 on the machine's
+  own Radeon 780M, with a third more triangles in the frame.
+* **A face with relief in it.** A normal map derived from the skin albedo's
+  own high frequencies, a cornea at 0.12 roughness, and a wrist turned so
+  the palm faces the thigh.
+* **`--walkthrough`**, which drives the walking camera along a scripted route
+  through the same collision code a person's WASD goes through and reports
+  what it met.
+
 ## Next
 
 * **Brake lights on the authored cars.** A driven authored car shows no lit
@@ -376,9 +425,16 @@ after frames.
   the mesh renders nothing. Index element size is now ruled out — the models
   that do draw use 16-bit indices too. What is left, and the experiment worth
   running first, is in `docs/cna-followup-after-framework-work.md`.
-* **A character texture atlas.** Skinned figures cannot be instanced, so a
-  person costs three draws at any distance. One material per figure would make
-  it one, and it is the largest remaining draw-call item.
+* **One material per figure.** Skinned figures cannot be instanced, so a
+  person costs three draws at any distance -- down from six, since
+  `scripts/people-atlas.py` merged the parts that could be merged. Going to
+  one means either putting the 2k skin through an atlas cell, which is the
+  face, or alpha-testing the hair against the same atlas. It is the largest
+  remaining draw-call item by a factor of four.
+* **The context district, walked.** Its blocks carry real openings and now
+  the street's own trees and cars, but standing among them the facades are
+  plainly cheaper than the modelled frontage: one plane of render with a
+  shopfront band.
 * **A skinned shadow caster in CNA.** CNA-F14. Every character currently casts
   with a rigid stand-in in its bind pose.
 * **Audio.** CNA's audio module works; the demo has nothing to play through it.

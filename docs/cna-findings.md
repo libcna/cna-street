@@ -685,3 +685,40 @@ the same way, and a glTF-convention scan laid on those meshes renders inside
 out until its green channel is inverted. Imported models carry their own
 tangents and are unaffected. The finding and the test that settled it are in
 `docs/design-notes.md`.
+
+## Sixth visual pass (2026-09-06): environment notes and behaviour
+
+**No new CNA defect was found in this pass, and nothing in CNA, sharp-runtime,
+easy-gl or meta-gl was modified.** Two behaviours already recorded here came
+up again and are worth annotating with what they cost this time; one further
+behaviour is new to this file and is not a defect.
+
+**CNA-F6, one shadow draw per instance, is still the shape of the frame.** The
+shadow pass was 3 503 draws at the start of this pass and 2 531 at the end,
+and every one of them is a `SetUniformMat4` and a `draw`. What this pass did
+about it is on this side: `SceneRenderer::drawCasters` now takes the bounding
+sphere of the cascade's own slice of the camera frustum rather than a disc
+around the camera, so a caster has to be able to reach the ground the cascade
+covers before it is submitted. That is a 42 per cent shorter shadow pass and,
+over the eighteen screenshot viewpoints, at most one hundredth of one per cent
+of the pixels changed. An instanced caster program in CNA would remove the
+draw calls rather than the wasted ones, and is still the framework-side fix.
+
+**GLTF-206's workaround now carries a second load.** Every image a model
+refers to is compiled under its own full name with a mip chain, which is what
+lets this pass put *atlases* into the imported cars and people: an atlas is a
+texture whose cells bleed into one another at every mip level unless the
+chain is built with padding, and building it on this side is the only way to
+know it was built at all.
+
+**Glass is a reflection layer, not a filter.** `PbrEffect` blends a
+transparent surface as `lit + behind * (1 - alpha)` -- the reason is recorded
+above under the second pass, and it is the right decision for a windscreen
+seen from outside. The consequence, met for the first time when this pass put
+drivers in the cars, is that *anything behind glass is lit as though the glass
+were not there*: a head behind a windscreen gets the full sky, with none of
+the loss a real screen and a roof would impose, and reads as a bright egg.
+Not a defect -- there is no absorption term in the model to apply -- but the
+thing to know is that a material meant to be seen through glass has to carry
+that loss in its own colour. The driver tints here are about a stop darker
+than the crowd's for exactly that reason.
