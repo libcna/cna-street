@@ -252,12 +252,14 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
         {
             const float x1 = std::min(x + kStep, kReach);
             const float z1 = std::min(z + kStep, kReach);
-            // Varied at 38 m and batched at 152 m. The variation has to be fine
+            // Varied at 38 m and batched at 230 m. The variation has to be fine
             // or the surroundings read as a chequerboard of fields from any
             // camera above the roofline; the batching has to be coarse or the
             // ground plane alone is five hundred draw calls of two triangles
-            // each.
-            constexpr float kBatch = 152.0f;
+            // each. It was 152 m, and from a camera on the footway that was
+            // still twenty-one draws of a flat plane a frame: a ground cell is
+            // in view from almost anywhere, so culling it finely buys nothing.
+            constexpr float kBatch = 230.0f;
             const int coarseX = static_cast<int>(std::floor((x + x1) * 0.5f / kBatch));
             const int coarseZ = static_cast<int>(std::floor((z + z1) * 0.5f / kBatch));
             collector.setRegionKey(1000000 + coarseX * 64 + coarseZ);
@@ -281,6 +283,29 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
     const Material* asphalt = &materials_.get(MaterialId::AsphaltMain);
     const Material* paving  = &materials_.get(MaterialId::ConcretePaving);
     const Material* kerb    = &materials_.get(MaterialId::GraniteKerb);
+
+    // The district is batched a *strip* at a time: one cell per arm of each
+    // street, per side, per ninety-five metres of it, in a key space of its
+    // own above the ground plane's and the infill rows'. A strip of district
+    // is in view or out of it from almost anywhere a camera stands, and its
+    // blocks are a few hundred triangles apiece, so the cull granularity
+    // given up here costs nothing measurable -- and what it saves is most of
+    // what the district cost the frame at all: one 34 m cell per block was a
+    // draw per block per material, forty blocks of twelve materials, and on
+    // the flagship view the roof tiles alone were thirty-eight draws for
+    // seventeen hundred triangles.
+    constexpr float kStripLength = 95.0f;
+    constexpr int   kDistrictKey = 3000000;
+    const auto districtKey = [](bool main, bool positiveArm, bool positiveSide, int segment,
+                                int part) {
+        return kDistrictKey + (main ? 0 : 4096) + (positiveArm ? 2048 : 0)
+               + (positiveSide ? 1024 : 0) + std::clamp(segment, 0, 63) * 8 + part;
+    };
+    const auto segmentOf = [&](bool main, float along) {
+        const float start = main ? M::kMainStreetHalfLength : M::kSideStreetHalfLength;
+        return static_cast<int>(std::max(0.0f, std::fabs(along) - start) / kStripLength);
+    };
+
     auto street = [&](bool alongZ, float from, float to, float halfRoad, float line) {
         const float sign = to > from ? 1.0f : -1.0f;
         for (float s0 = from; sign * (to - s0) > 0.5f; s0 += sign * GeometryCollector::kCellSize)
@@ -288,7 +313,9 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
             const float s1 = sign > 0.0f ? std::min(s0 + GeometryCollector::kCellSize, to)
                                          : std::max(s0 - GeometryCollector::kCellSize, to);
             const float a = std::min(s0, s1), b = std::max(s0, s1);
-            collector.setRegion(alongZ ? 0.0f : (a + b) * 0.5f, alongZ ? (a + b) * 0.5f : 0.0f);
+            // The carriageway and both footways of one strip in one cell.
+            collector.setRegionKey(districtKey(alongZ, sign > 0.0f, false,
+                                               segmentOf(alongZ, (a + b) * 0.5f), 1));
             MeshBuilder& road = collector.builder(asphalt);
             road.setTileSize(5.0f);
             MeshBuilder& slab = collector.builder(paving);
@@ -348,13 +375,19 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
     // A roof for a block: pitched with stacks, or flat with plant. A district
     // of flat roofs seen from above is a district of grey rectangles; the
     // pitched ones are what give a roofscape its texture.
+    // @p pitchedMode: -1 decides from the seed, 0 flat, 1 pitched. @p ridge:
+    // -1 puts the ridge along the longer side, 0 along X, 1 along Z -- the
+    // windowed rows want it along the street whatever the plot's proportions,
+    // because a perimeter block presents its eaves to the road.
     auto roof = [&](GeometryCollector& into, float cx, float cz, float halfX, float halfZ,
-                    float height, const Material* gableMaterial, float storey) {
-        if (rng.chance(0.45f))
+                    float height, const Material* gableMaterial, float storey,
+                    int pitchedMode = -1, int ridge = -1) {
+        const bool pitched = pitchedMode < 0 ? rng.chance(0.45f) : pitchedMode == 1;
+        if (pitched)
         {
             MeshBuilder& tiles = into.builder(&materials_.get(MaterialId::RoofTile));
             tiles.setTileSize(1.4f);
-            const bool alongX = halfX >= halfZ;
+            const bool alongX = ridge < 0 ? halfX >= halfZ : ridge == 0;
             const float rise = std::min(alongX ? halfZ : halfX, 4.2f) * 0.85f;
             const float x0 = cx - halfX - 0.25f, x1 = cx + halfX + 0.25f;
             const float z0 = cz - halfZ - 0.25f, z1 = cz + halfZ + 0.25f;
@@ -428,9 +461,13 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
         }
     };
 
-    // A far block: a box carrying a tiling image of a storey.
+    // A far block: a box carrying a tiling image of a storey. With @p relief,
+    // a cornice band round the eaves and a pilaster or two dividing a long
+    // face: the cheapest thing that stops a painted elevation reading as one
+    // printed plane when a cross street opens a view of it from the footway.
     auto paintedBlock = [&](GeometryCollector& into, float cx, float cz, float halfX,
-                            float halfZ, float height, int regionKey = -1, int wallPick = -1) {
+                            float halfZ, float height, int regionKey = -1, int wallPick = -1,
+                            bool relief = false) {
         // A block of its own cell, or a caller's coarser one. The rows behind
         // the frontage are batched a whole strip at a time (see infillRows):
         // at thirty triangles a block, what they cost the frame is draw
@@ -456,182 +493,115 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
         builder.addBox(Vector3(cx - halfX, 0.0f, cz - halfZ),
                        Vector3(cx + halfX, height, cz + halfZ), BoxFaces::allButBottom());
         builder.setUvOffset(Vector2::Zero);
+        if (relief)
+        {
+            MeshBuilder& band = into.builder(&materials_.get(MaterialId::RenderWhite));
+            band.setTileSize(1.0f);
+            band.addBox(Vector3(cx - halfX - 0.20f, height - 0.42f, cz - halfZ - 0.20f),
+                        Vector3(cx + halfX + 0.20f, height, cz + halfZ + 0.20f),
+                        BoxFaces::sides());
+            // A pilaster every nine metres or so along a face longer than
+            // eighteen, up to the cornice: the block reads as two or three
+            // buildings sharing a roofline rather than one.
+            const auto pilasters = [&](bool alongZ) {
+                const float half = alongZ ? halfZ : halfX;
+                if (half < 9.0f) return;
+                const int n = static_cast<int>(half / 4.5f);
+                for (int i = 1; i < n; ++i)
+                {
+                    const float s = -half + static_cast<float>(i) * (2.0f * half / static_cast<float>(n));
+                    for (const float face : {-1.0f, 1.0f})
+                    {
+                        const float across = face * ((alongZ ? halfX : halfZ) + 0.06f);
+                        const Vector3 c = alongZ ? Vector3(cx + across, 0.0f, cz + s)
+                                                 : Vector3(cx + s, 0.0f, cz + across);
+                        band.addBox(Vector3(c.X - (alongZ ? 0.06f : 0.18f), 0.0f,
+                                            c.Z - (alongZ ? 0.18f : 0.06f)),
+                                    Vector3(c.X + (alongZ ? 0.06f : 0.18f), height - 0.42f,
+                                            c.Z + (alongZ ? 0.18f : 0.06f)),
+                                    BoxFaces::sides());
+                    }
+                }
+            };
+            pilasters(true);
+            pilasters(false);
+        }
         roof(into, cx, cz, halfX, halfZ, height, material, storey);
     };
 
-    // A near block: a rendered or brick box with real openings on the face that
-    // fronts the street. Every window is a recess with reveals, a dark room
-    // behind it and a pane in front, a shopfront runs along the ground floor
-    // under a fascia, and a plinth and a cornice close the elevation top and
-    // bottom. About six quads a window, which over the forty blocks that line
-    // the two streets is twenty thousand triangles: less than one modelled
-    // plot on the street itself.
-    auto windowedBlock = [&](float cx, float cz, float halfX, float halfZ, float height,
-                             const Vector3& streetNormal) {
-        collector.setRegion(cx, cz);
-        const Material* wallMaterial = &materials_.get(renders[rng.index(std::size(renders))]);
-        const Material* trim = &materials_.get(rng.chance(0.5f) ? MaterialId::RenderWhite
-                                                                : MaterialId::Ashlar);
-        const Material* frameMaterial = &materials_.get(rng.chance(0.7f) ? MaterialId::FrameWhite
-                                                                         : MaterialId::FrameDark);
-        const Material* glass    = &materials_.get(MaterialId::Glazing);
-        const Material* interior = &materials_.get(MaterialId::Interior);
-        const Material* shopGlass = &materials_.get(MaterialId::ShopGlazing);
-        const Material* screen   = &materials_.get(MaterialId::ShopScreen);
-        const Material* fascia   = &materials_.get(MaterialId::ShopFascia);
+    // --- the windowed rows: the mid tier -------------------------------------
+    // The blocks that continue the two streets past the modelled frontage are
+    // what a viewer at the end of the modelled street looks at from forty
+    // metres, and what a viewer who keeps walking stands beside. They used to
+    // be one building per block -- one render, one frame colour, one storey
+    // count for twenty-five metres of street -- with a flat cross for a
+    // window frame and a blank wall wherever a cross street opened a view of
+    // their ends, and from closer than about thirty metres that is what gave
+    // the district away. Now each block is a row of *plots*, eight to fourteen
+    // metres wide, each with its own render, its own frame colour, its own
+    // storey count and roof, so a block reads as a terrace of buildings; the
+    // windows carry a real reveal, a framed sash, a sill and a head; the
+    // rendered plots carry shutters, a string course, a balcony or two and,
+    // at a block's corners, quoins; a plot without a shop has a door in a
+    // recess; and an end that faces a cross street is a windowed elevation
+    // too, because a building corner with one blank side is a box.
+    //
+    // What it deliberately does not have is the hero corridor's cost: no
+    // interior rooms, no bevelled arrises, no weathering decals, no fittings
+    // on the wall, no dressed windows behind the glass. Every feature here
+    // was chosen for what it buys at twenty to sixty metres -- silhouette,
+    // parallax and a line of shade -- and the whole district is a fraction
+    // of one modelled plot's triangles.
+    const Material* glass     = &materials_.get(MaterialId::Glazing);
+    const Material* interior  = &materials_.get(MaterialId::Interior);
+    const Material* shopGlass = &materials_.get(MaterialId::ShopGlazing);
+    const Material* screen    = &materials_.get(MaterialId::ShopScreen);
+    const Material* fascia    = &materials_.get(MaterialId::ShopFascia);
+    const Material* railing   = &materials_.get(MaterialId::PaintedSteelDark);
+    const MaterialId doorColours[] = {MaterialId::DoorGreen, MaterialId::DoorRed,
+                                      MaterialId::DoorBlue, MaterialId::DoorOak};
+    constexpr float kGroundFloor = 4.0f;
+    constexpr float kStoreyH     = 3.15f;
 
-        // The storey grid the elevation is set out on.
-        const float groundFloor = 4.0f;
-        const float storeyH = 3.15f;
-        const int storeys = std::max(1, static_cast<int>((height - groundFloor) / storeyH));
-        const float eaves = groundFloor + static_cast<float>(storeys) * storeyH;
+    struct DistrictPlot
+    {
+        float u0 = 0.0f, u1 = 0.0f;
+        int   storeys = 4;
+        float eaves = 0.0f;
+        const Material* wall  = nullptr;
+        const Material* trim  = nullptr;
+        const Material* frame = nullptr;
+        const Material* door  = nullptr;
+        bool shop = false, shutters = false, quoins = false, balconies = false;
+        bool classical = false, pitched = false;
+    };
 
-        // The mass, minus its street face, which is built as panels around the
-        // openings below.
-        const Vector3 lo(cx - halfX, 0.0f, cz - halfZ);
-        const Vector3 hi(cx + halfX, eaves, cz + halfZ);
-        MeshBuilder& wall = collector.builder(wallMaterial);
-        wall.setTileSize(2.0f);
-        BoxFaces faces = BoxFaces::allButBottom();
-        if (streetNormal.X > 0.5f) faces.posX = false;
-        if (streetNormal.X < -0.5f) faces.negX = false;
-        if (streetNormal.Z > 0.5f) faces.posZ = false;
-        if (streetNormal.Z < -0.5f) faces.negZ = false;
-        wall.addBox(lo, hi, faces);
+    // A box in a facade's own coordinates without the face against the wall:
+    // the primitive every projecting element below is made of. The corner
+    // orders are BuildingBuilder's, for the same frame convention.
+    const auto facadeBox = [](MeshBuilder& b, const FacadeFrame& f, float u0, float v0, float d0,
+                              float u1, float v1, float d1, bool back = false) {
+        const Vector3 c000 = f.at(u0, v0, d0), c100 = f.at(u1, v0, d0);
+        const Vector3 c110 = f.at(u1, v1, d0), c010 = f.at(u0, v1, d0);
+        const Vector3 c001 = f.at(u0, v0, d1), c101 = f.at(u1, v0, d1);
+        const Vector3 c111 = f.at(u1, v1, d1), c011 = f.at(u0, v1, d1);
+        if (back) b.addQuad(c100, c000, c010, c110);
+        b.addQuad(c001, c101, c111, c011);   // front
+        b.addQuad(c000, c001, c011, c010);   // left
+        b.addQuad(c101, c100, c110, c111);   // right
+        b.addQuad(c010, c011, c111, c110);   // top
+        b.addQuad(c000, c100, c101, c001);   // bottom
+    };
+    const auto panel = [](MeshBuilder& b, const FacadeFrame& f, float u0, float v0, float u1,
+                          float v1, float d) {
+        b.addQuadFacing(f.at(u0, v0, d), f.at(u1, v0, d), f.at(u1, v1, d), f.at(u0, v1, d), f.out);
+    };
 
-        // A facade frame on the street face: u along it, v up, depth outward.
-        FacadeFrame frame;
-        frame.up = Vector3::Up;
-        frame.out = streetNormal;
-        frame.right = Vector3::Cross(frame.up, frame.out);
-        const bool alongZ = std::fabs(streetNormal.X) > 0.5f;
-        frame.width = alongZ ? halfZ * 2.0f : halfX * 2.0f;
-        frame.height = eaves;
-        // The frame's origin is the left end of the face seen from the street.
-        const Vector3 faceCentre(cx + streetNormal.X * halfX, 0.0f, cz + streetNormal.Z * halfZ);
-        frame.origin = faceCentre - frame.right * (frame.width * 0.5f);
-        const auto at = [&](float u, float v, float d) { return frame.at(u, v, d); };
-
-        // Plinth and cornice.
-        MeshBuilder& trimBuilder = collector.builder(trim);
-        trimBuilder.setTileSize(1.0f);
-        trimBuilder.addQuadFacing(at(0.0f, 0.0f, 0.06f), at(frame.width, 0.0f, 0.06f),
-                                  at(frame.width, 0.6f, 0.06f), at(0.0f, 0.6f, 0.06f), frame.out);
-        trimBuilder.addQuadFacing(at(0.0f, eaves - 0.35f, 0.30f), at(frame.width, eaves - 0.35f, 0.30f),
-                                  at(frame.width, eaves, 0.30f), at(0.0f, eaves, 0.30f), frame.out);
-        trimBuilder.addQuadFacing(at(0.0f, eaves - 0.35f, 0.0f), at(frame.width, eaves - 0.35f, 0.0f),
-                                  at(frame.width, eaves - 0.35f, 0.30f), at(0.0f, eaves - 0.35f, 0.30f),
-                                  frame.up * -1.0f);
-        trimBuilder.addQuadFacing(at(0.0f, eaves, 0.0f), at(frame.width, eaves, 0.0f),
-                                  at(frame.width, eaves, 0.30f), at(0.0f, eaves, 0.30f), frame.up);
-
-        // The ground floor: a shopfront on most, a plain wall with a door on the rest.
-        const bool shops = rng.chance(0.7f);
-        std::vector<Opening> openings;
-        if (shops)
-        {
-            const float sill = 0.5f, head = groundFloor - 0.75f;
-            openings.push_back(Opening{0.6f, 0.0f, frame.width - 0.6f, head + 0.05f});
-            // A dark room behind the glass: a recessed panel two metres back
-            // reads as an interior at this distance and costs one quad.
-            MeshBuilder& dark = collector.builder(screen);
-            dark.setTileSize(1.0f);
-            dark.addQuadFacing(at(0.6f, 0.0f, -1.8f), at(frame.width - 0.6f, 0.0f, -1.8f),
-                               at(frame.width - 0.6f, head, -1.8f), at(0.6f, head, -1.8f), frame.out);
-            for (const float u : {0.6f, frame.width - 0.6f})
-                dark.addQuadFacing(at(u, 0.0f, -1.8f), at(u, 0.0f, 0.0f), at(u, head, 0.0f),
-                                   at(u, head, -1.8f), frame.right * (u < 1.0f ? 1.0f : -1.0f));
-            dark.addQuadFacing(at(0.6f, head, -1.8f), at(frame.width - 0.6f, head, -1.8f),
-                               at(frame.width - 0.6f, head, 0.0f), at(0.6f, head, 0.0f),
-                               frame.up * -1.0f);
-            MeshBuilder& pane = collector.builder(shopGlass);
-            pane.setTileSize(2.4f);
-            pane.addQuadFacing(at(0.6f, sill, -0.12f), at(frame.width - 0.6f, sill, -0.12f),
-                               at(frame.width - 0.6f, head, -0.12f), at(0.6f, head, -0.12f), frame.out);
-            MeshBuilder& riser = collector.builder(trim);
-            riser.addQuadFacing(at(0.6f, 0.0f, -0.06f), at(frame.width - 0.6f, 0.0f, -0.06f),
-                                at(frame.width - 0.6f, sill, -0.06f), at(0.6f, sill, -0.06f), frame.out);
-            MeshBuilder& board = collector.builder(fascia);
-            board.setTileSize(1.5f);
-            board.addQuadFacing(at(0.4f, head + 0.05f, 0.10f), at(frame.width - 0.4f, head + 0.05f, 0.10f),
-                                at(frame.width - 0.4f, groundFloor - 0.10f, 0.10f),
-                                at(0.4f, groundFloor - 0.10f, 0.10f), frame.out);
-            board.addQuadFacing(at(0.4f, groundFloor - 0.10f, 0.0f),
-                                at(frame.width - 0.4f, groundFloor - 0.10f, 0.0f),
-                                at(frame.width - 0.4f, groundFloor - 0.10f, 0.10f),
-                                at(0.4f, groundFloor - 0.10f, 0.10f), frame.up);
-            // Mullions.
-            MeshBuilder& mullion = collector.builder(frameMaterial);
-            mullion.setTileSize(0.5f);
-            const int bays = std::max(1, static_cast<int>((frame.width - 1.2f) / 1.6f));
-            for (int i = 0; i <= bays; ++i)
-            {
-                const float u = 0.6f + static_cast<float>(i) * (frame.width - 1.2f)
-                                           / static_cast<float>(bays);
-                mullion.addQuadFacing(at(u - 0.035f, sill, -0.06f), at(u + 0.035f, sill, -0.06f),
-                                      at(u + 0.035f, head, -0.06f), at(u - 0.035f, head, -0.06f),
-                                      frame.out);
-            }
-        }
-
-        // The upper storeys: recessed windows on a regular bay grid.
-        const float pitch = 2.9f;
-        const int bays = std::max(1, static_cast<int>(std::round((frame.width - 0.8f) / pitch)));
-        const float bayPitch = frame.width / static_cast<float>(bays);
-        const float ww = std::min(1.15f, bayPitch - 1.2f), wh = 1.55f, reveal = 0.14f;
-        MeshBuilder& sash = collector.builder(frameMaterial);
-        sash.setTileSize(0.5f);
-        MeshBuilder& panes = collector.builder(glass);
-        panes.setTileSize(1.4f);
-        MeshBuilder& rooms = collector.builder(interior);
-        rooms.setUvMode(Geometry::UvMode::Explicit);
-        for (int storey = 0; storey < storeys; ++storey)
-        {
-            const float v0 = groundFloor + static_cast<float>(storey) * storeyH + 0.95f;
-            const float v1 = v0 + wh;
-            for (int bay = 0; bay < bays; ++bay)
-            {
-                const float u0 = (static_cast<float>(bay) + 0.5f) * bayPitch - ww * 0.5f;
-                const float u1 = u0 + ww;
-                openings.push_back(Opening{u0, v0, u1, v1});
-                // Reveals: the four sides of the recess, in the wall's material.
-                wall.addQuad(at(u0, v0, 0.0f), at(u0, v0, -reveal), at(u0, v1, -reveal), at(u0, v1, 0.0f));
-                wall.addQuad(at(u1, v0, -reveal), at(u1, v0, 0.0f), at(u1, v1, 0.0f), at(u1, v1, -reveal));
-                wall.addQuad(at(u0, v1, 0.0f), at(u0, v1, -reveal), at(u1, v1, -reveal), at(u1, v1, 0.0f));
-                wall.addQuad(at(u0, v0, -reveal), at(u0, v0, 0.0f), at(u1, v0, 0.0f), at(u1, v0, -reveal));
-                // The room, one atlas cell, and the pane in front of it.
-                const int cell = rng.intRange(0, 15);
-                const std::size_t first = rooms.vertexCount();
-                rooms.addQuadFacingUv(at(u0 + 0.05f, v0 + 0.05f, -reveal + 0.01f),
-                                      at(u1 - 0.05f, v0 + 0.05f, -reveal + 0.01f),
-                                      at(u1 - 0.05f, v1 - 0.05f, -reveal + 0.01f),
-                                      at(u0 + 0.05f, v1 - 0.05f, -reveal + 0.01f), frame.out);
-                rooms.offsetUv(first, Vector2(0.25f, 0.25f),
-                               Vector2(static_cast<float>(cell % 4) * 0.25f,
-                                       static_cast<float>(cell / 4) * 0.25f));
-                panes.addQuadFacing(at(u0 + 0.03f, v0 + 0.03f, -reveal + 0.05f),
-                                    at(u1 - 0.03f, v0 + 0.03f, -reveal + 0.05f),
-                                    at(u1 - 0.03f, v1 - 0.03f, -reveal + 0.05f),
-                                    at(u0 + 0.03f, v1 - 0.03f, -reveal + 0.05f), frame.out);
-                // Frame: a cross, and the sill under it.
-                const float gd = -reveal + 0.04f;
-                sash.addQuadFacing(at(u0 + ww * 0.5f - 0.03f, v0, gd), at(u0 + ww * 0.5f + 0.03f, v0, gd),
-                                   at(u0 + ww * 0.5f + 0.03f, v1, gd), at(u0 + ww * 0.5f - 0.03f, v1, gd),
-                                   frame.out);
-                sash.addQuadFacing(at(u0, v0 + wh * 0.7f - 0.03f, gd), at(u1, v0 + wh * 0.7f - 0.03f, gd),
-                                   at(u1, v0 + wh * 0.7f + 0.03f, gd), at(u0, v0 + wh * 0.7f + 0.03f, gd),
-                                   frame.out);
-                trimBuilder.addQuadFacing(at(u0 - 0.05f, v0 - 0.07f, 0.0f), at(u1 + 0.05f, v0 - 0.07f, 0.0f),
-                                          at(u1 + 0.05f, v0 - 0.07f, 0.05f), at(u0 - 0.05f, v0 - 0.07f, 0.05f),
-                                          frame.up);
-                trimBuilder.addQuadFacing(at(u0 - 0.05f, v0 - 0.07f, 0.05f), at(u1 + 0.05f, v0 - 0.07f, 0.05f),
-                                          at(u1 + 0.05f, v0, 0.05f), at(u0 - 0.05f, v0, 0.05f), frame.out);
-            }
-        }
-
-        // The wall itself, around the openings: a scanline decomposition, the
-        // same one BuildingBuilder uses, in miniature.
-        std::vector<float> levels{0.6f, eaves - 0.35f};
+    // The wall around its openings: a scanline decomposition, the same one
+    // BuildingBuilder uses, in miniature.
+    const auto wallAround = [&](MeshBuilder& wall, const FacadeFrame& f, float from, float to,
+                                const std::vector<Opening>& openings) {
+        std::vector<float> levels{from, to};
         for (const Opening& o : openings) { levels.push_back(o.v0); levels.push_back(o.v1); }
         std::sort(levels.begin(), levels.end());
         levels.erase(std::unique(levels.begin(), levels.end(),
@@ -640,7 +610,7 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
         for (std::size_t band = 0; band + 1 < levels.size(); ++band)
         {
             const float v0 = levels[band], v1 = levels[band + 1];
-            if (v1 - v0 < 1e-3f) continue;
+            if (v1 - v0 < 1e-3f || v1 <= from + 1e-3f || v0 >= to - 1e-3f) continue;
             std::vector<std::pair<float, float>> spans;
             for (const Opening& o : openings)
                 if (o.v0 <= v0 + 1e-3f && o.v1 >= v1 - 1e-3f) spans.emplace_back(o.u0, o.u1);
@@ -649,16 +619,363 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
             for (const auto& span : spans)
             {
                 if (span.first > cursor + 1e-3f)
-                    wall.addQuadFacing(at(cursor, v0, 0.0f), at(span.first, v0, 0.0f),
-                                       at(span.first, v1, 0.0f), at(cursor, v1, 0.0f), frame.out);
+                    panel(wall, f, cursor, v0, span.first, v1, 0.0f);
                 cursor = std::max(cursor, span.second);
             }
-            if (cursor < frame.width - 1e-3f)
-                wall.addQuadFacing(at(cursor, v0, 0.0f), at(frame.width, v0, 0.0f),
-                                   at(frame.width, v1, 0.0f), at(cursor, v1, 0.0f), frame.out);
+            if (cursor < f.width - 1e-3f) panel(wall, f, cursor, v0, f.width, v1, 0.0f);
+        }
+    };
+
+    // One window of the mid tier: reveals in the wall, a room cell and a pane,
+    // a framed sash with a mullion and a transom, a sill and a head. Nineteen
+    // quads; the hero corridor's window is about sixty.
+    const auto midWindow = [&](GeometryCollector& into, const FacadeFrame& f,
+                               const DistrictPlot& p, float u0, float v0, float ww, float wh,
+                               float room, std::vector<Opening>& openings) {
+        const float u1 = u0 + ww, v1 = v0 + wh, reveal = 0.14f;
+        openings.push_back(Opening{u0, v0, u1, v1});
+        MeshBuilder& wall = into.builder(p.wall);
+        wall.setTileSize(2.0f);
+        wall.addQuad(f.at(u0, v0, 0.0f), f.at(u0, v0, -reveal), f.at(u0, v1, -reveal), f.at(u0, v1, 0.0f));
+        wall.addQuad(f.at(u1, v0, -reveal), f.at(u1, v0, 0.0f), f.at(u1, v1, 0.0f), f.at(u1, v1, -reveal));
+        wall.addQuad(f.at(u0, v1, 0.0f), f.at(u0, v1, -reveal), f.at(u1, v1, -reveal), f.at(u1, v1, 0.0f));
+        wall.addQuad(f.at(u0, v0, -reveal), f.at(u0, v0, 0.0f), f.at(u1, v0, 0.0f), f.at(u1, v0, -reveal));
+        MeshBuilder& rooms = into.builder(interior);
+        rooms.setUvMode(Geometry::UvMode::Explicit);
+        const int cell = rng.intRange(0, 15);
+        const std::size_t first = rooms.vertexCount();
+        rooms.addQuadFacingUv(f.at(u0 + 0.05f, v0 + 0.05f, -reveal + 0.01f),
+                              f.at(u1 - 0.05f, v0 + 0.05f, -reveal + 0.01f),
+                              f.at(u1 - 0.05f, v1 - 0.05f, -reveal + 0.01f),
+                              f.at(u0 + 0.05f, v1 - 0.05f, -reveal + 0.01f), f.out);
+        rooms.offsetUv(first, Vector2(0.25f, 0.25f),
+                       Vector2(static_cast<float>(cell % 4) * 0.25f,
+                               static_cast<float>(cell / 4) * 0.25f));
+        MeshBuilder& panes = into.builder(glass);
+        panes.setTileSize(1.4f);
+        panel(panes, f, u0 + 0.03f, v0 + 0.03f, u1 - 0.03f, v1 - 0.03f, -reveal + 0.05f);
+        // The sash: four members and a cross, a hand in front of the glass.
+        MeshBuilder& sash = into.builder(p.frame);
+        sash.setTileSize(0.5f);
+        const float gd = -reveal + 0.065f, fw = 0.06f;
+        panel(sash, f, u0, v0, u0 + fw, v1, gd);
+        panel(sash, f, u1 - fw, v0, u1, v1, gd);
+        panel(sash, f, u0, v0, u1, v0 + fw, gd);
+        panel(sash, f, u0, v1 - fw, u1, v1, gd);
+        panel(sash, f, u0 + ww * 0.5f - 0.03f, v0, u0 + ww * 0.5f + 0.03f, v1, gd);
+        if (wh > 1.3f) panel(sash, f, u0, v0 + wh * 0.7f - 0.03f, u1, v0 + wh * 0.7f + 0.03f, gd);
+        // Sill and head.
+        MeshBuilder& trim = into.builder(p.trim);
+        trim.setTileSize(1.0f);
+        facadeBox(trim, f, u0 - 0.06f, v0 - 0.08f, -reveal, u1 + 0.06f, v0, 0.06f);
+        facadeBox(trim, f, u0 - 0.05f, v1 + 0.005f, -0.01f, u1 + 0.05f, v1 + 0.11f, 0.045f);
+        // A leaf each side, folded back on the wall, in the plot's door colour.
+        // Flat: at twenty metres a shutter is a coloured rectangle beside a
+        // window, and the shade line its 3 cm of stand-off throws is all the
+        // relief it needs.
+        if (p.shutters && room > 0.24f)
+        {
+            const float leaf = std::min({ww * 0.46f, 0.50f, room - 0.04f});
+            MeshBuilder& leaves = into.builder(p.door);
+            leaves.setTileSize(0.8f);
+            panel(leaves, f, u0 - 0.05f - leaf, v0 + 0.02f, u0 - 0.05f, v1 - 0.02f, 0.035f);
+            panel(leaves, f, u1 + 0.05f, v0 + 0.02f, u1 + 0.05f + leaf, v1 - 0.02f, 0.035f);
+        }
+    };
+
+    // A balcony of the mid tier: slab, rails, uprights every 40 cm, returns.
+    const auto midBalcony = [&](GeometryCollector& into, const FacadeFrame& f,
+                                const DistrictPlot& p, float u, float v, float w) {
+        const float depth = 1.05f, rail = 1.0f;
+        MeshBuilder& trim = into.builder(p.trim);
+        trim.setTileSize(1.0f);
+        facadeBox(trim, f, u, v - 0.16f, -0.01f, u + w, v, depth);
+        MeshBuilder& metal = into.builder(railing);
+        metal.setTileSize(0.3f);
+        facadeBox(metal, f, u, v + rail - 0.05f, depth - 0.05f, u + w, v + rail, depth, true);
+        facadeBox(metal, f, u, v + 0.05f, depth - 0.05f, u + w, v + 0.10f, depth, true);
+        const int uprights = std::max(2, static_cast<int>(w / 0.40f));
+        for (int i = 0; i <= uprights; ++i)
+        {
+            const float bu = u + static_cast<float>(i) * (w / static_cast<float>(uprights));
+            facadeBox(metal, f, bu - 0.012f, v + 0.05f, depth - 0.045f, bu + 0.012f, v + rail,
+                      depth - 0.02f);
+        }
+        facadeBox(metal, f, u, v + rail - 0.05f, 0.0f, u + 0.05f, v + rail, depth);
+        facadeBox(metal, f, u + w - 0.05f, v + rail - 0.05f, 0.0f, u + w, v + rail, depth);
+    };
+
+    // A door in a recess, with its frame and a threshold, where a plot has no
+    // shop. The one thing every ground floor has and the painted rows never
+    // had: a way in.
+    const auto midEntrance = [&](GeometryCollector& into, const FacadeFrame& f,
+                                 const DistrictPlot& p, float u, std::vector<Opening>& openings) {
+        const float w = 1.15f, h = 2.35f, recess = 0.32f;
+        openings.push_back(Opening{u, 0.0f, u + w, h});
+        MeshBuilder& wall = into.builder(p.wall);
+        wall.setTileSize(2.0f);
+        wall.addQuad(f.at(u, 0.0f, 0.0f), f.at(u, 0.0f, -recess), f.at(u, h, -recess), f.at(u, h, 0.0f));
+        wall.addQuad(f.at(u + w, 0.0f, -recess), f.at(u + w, 0.0f, 0.0f), f.at(u + w, h, 0.0f),
+                     f.at(u + w, h, -recess));
+        wall.addQuad(f.at(u, h, 0.0f), f.at(u, h, -recess), f.at(u + w, h, -recess), f.at(u + w, h, 0.0f));
+        MeshBuilder& leaf = into.builder(p.door);
+        leaf.setTileSize(0.8f);
+        panel(leaf, f, u + 0.07f, 0.02f, u + w - 0.07f, h - 0.08f, -recess + 0.02f);
+        MeshBuilder& sash = into.builder(p.frame);
+        sash.setTileSize(0.5f);
+        panel(sash, f, u, 0.0f, u + 0.07f, h, -recess + 0.03f);
+        panel(sash, f, u + w - 0.07f, 0.0f, u + w, h, -recess + 0.03f);
+        panel(sash, f, u, h - 0.08f, u + w, h, -recess + 0.03f);
+        MeshBuilder& trim = into.builder(p.trim);
+        trim.setTileSize(1.0f);
+        facadeBox(trim, f, u - 0.05f, 0.0f, -recess, u + w + 0.05f, 0.12f, 0.10f);
+    };
+
+    // One elevation of one plot. @p primary is the street face, which may
+    // carry a shopfront; a flank facing a cross street gets windows and a
+    // door and no shop. @p cornerAtU0 / @p cornerAtU1 say which of the plot's
+    // vertical edges are corners of the whole block, where quoins go; an
+    // edge shared with the next plot gets a pilaster instead, on the left
+    // only so the two plots do not both put one on the joint.
+    const auto plotFacade = [&](GeometryCollector& into, const FacadeFrame& f,
+                                const DistrictPlot& p, bool primary, bool cornerAtU0,
+                                bool cornerAtU1) {
+        const float W = f.width, eaves = p.eaves;
+        std::vector<Opening> openings;
+        MeshBuilder& wall = into.builder(p.wall);
+        wall.setTileSize(2.0f);
+        MeshBuilder& trim = into.builder(p.trim);
+        trim.setTileSize(1.0f);
+
+        // --- the ground floor ---------------------------------------------
+        std::vector<std::pair<float, float>> plinthGaps;
+        const bool shop = p.shop && primary && W > 6.0f;
+        if (shop)
+        {
+            const float sill = 0.5f, head = kGroundFloor - 0.75f;
+            openings.push_back(Opening{0.6f, 0.0f, W - 0.6f, head + 0.05f});
+            plinthGaps.emplace_back(0.6f, W - 0.6f);
+            // A dark room behind the glass: a recessed panel two metres back
+            // reads as an interior at this distance and costs one quad.
+            MeshBuilder& dark = into.builder(screen);
+            dark.setTileSize(1.0f);
+            panel(dark, f, 0.6f, 0.0f, W - 0.6f, head, -1.8f);
+            for (const float u : {0.6f, W - 0.6f})
+                dark.addQuadFacing(f.at(u, 0.0f, -1.8f), f.at(u, 0.0f, 0.0f), f.at(u, head, 0.0f),
+                                   f.at(u, head, -1.8f), f.right * (u < 1.0f ? 1.0f : -1.0f));
+            dark.addQuadFacing(f.at(0.6f, head, -1.8f), f.at(W - 0.6f, head, -1.8f),
+                               f.at(W - 0.6f, head, 0.0f), f.at(0.6f, head, 0.0f), f.up * -1.0f);
+            MeshBuilder& pane = into.builder(shopGlass);
+            pane.setTileSize(2.4f);
+            panel(pane, f, 0.6f, sill, W - 0.6f, head, -0.12f);
+            panel(trim, f, 0.6f, 0.0f, W - 0.6f, sill, -0.06f);
+            MeshBuilder& board = into.builder(fascia);
+            board.setTileSize(1.5f);
+            facadeBox(board, f, 0.4f, head + 0.05f, -0.01f, W - 0.4f, kGroundFloor - 0.10f, 0.10f);
+            MeshBuilder& mullion = into.builder(p.frame);
+            mullion.setTileSize(0.5f);
+            const int bays = std::max(1, static_cast<int>((W - 1.2f) / 1.6f));
+            for (int i = 0; i <= bays; ++i)
+            {
+                const float u = 0.6f + static_cast<float>(i) * (W - 1.2f) / static_cast<float>(bays);
+                panel(mullion, f, u - 0.035f, sill, u + 0.035f, head, -0.06f);
+            }
+            // The pilasters either side of the shopfront, which is what carries
+            // the upper floors over the glass.
+            facadeBox(trim, f, 0.0f, 0.0f, -0.01f, 0.6f, kGroundFloor - 0.10f, 0.08f);
+            facadeBox(trim, f, W - 0.6f, 0.0f, -0.01f, W, kGroundFloor - 0.10f, 0.08f);
+        }
+        else
+        {
+            const float doorU = std::clamp(rng.range(0.25f, 0.75f) * W, 0.8f, std::max(0.8f, W - 2.0f));
+            midEntrance(into, f, p, doorU, openings);
+            plinthGaps.emplace_back(doorU, doorU + 1.15f);
+            const float ww = 1.15f, wh = 1.60f;
+            for (float u = 0.7f; u + ww < W - 0.5f; u += 2.6f)
+            {
+                if (u + ww > doorU - 0.30f && u < doorU + 1.15f + 0.30f) continue;
+                midWindow(into, f, p, u, 1.0f, ww, wh, 0.0f, openings);
+            }
+        }
+        // The plinth, around whatever cuts it.
+        {
+            float cursor = 0.0f;
+            std::sort(plinthGaps.begin(), plinthGaps.end());
+            for (const auto& gap : plinthGaps)
+            {
+                if (gap.first > cursor + 0.05f) panel(trim, f, cursor, 0.0f, gap.first, 0.6f, 0.06f);
+                cursor = std::max(cursor, gap.second);
+            }
+            if (cursor < W - 0.05f) panel(trim, f, cursor, 0.0f, W, 0.6f, 0.06f);
         }
 
-        roof(collector, cx, cz, halfX, halfZ, eaves, wallMaterial, storeyH);
+        // --- the upper storeys ---------------------------------------------
+        const float pitch = 2.9f;
+        const int bays = std::max(1, static_cast<int>(std::round((W - 0.8f) / pitch)));
+        const float bayPitch = W / static_cast<float>(bays);
+        const float ww = std::clamp(bayPitch - 1.2f, 0.7f, 1.15f), wh = 1.55f;
+        const float room = (bayPitch - ww) * 0.5f - 0.10f;
+        std::vector<bool> balconyBay(static_cast<std::size_t>(bays), false);
+        if (p.balconies && bays >= 3)
+            for (int bay = 1; bay + 1 < bays; ++bay)
+                balconyBay[static_cast<std::size_t>(bay)] = rng.chance(0.4f);
+        for (int storey = 0; storey < p.storeys; ++storey)
+        {
+            const float floor = kGroundFloor + static_cast<float>(storey) * kStoreyH;
+            const float v0 = floor + 0.95f;
+            for (int bay = 0; bay < bays; ++bay)
+            {
+                const float centre = (static_cast<float>(bay) + 0.5f) * bayPitch;
+                if (balconyBay[static_cast<std::size_t>(bay)] && storey <= 1)
+                {
+                    // A door onto a balcony: taller, down to the floor.
+                    midWindow(into, f, p, centre - ww * 0.5f - 0.05f, floor + 0.10f, ww + 0.10f,
+                              2.15f, 0.0f, openings);
+                    const float bw = std::min(2.4f, bayPitch - 0.45f);
+                    midBalcony(into, f, p, centre - bw * 0.5f, floor + 0.10f, bw);
+                }
+                else
+                    midWindow(into, f, p, centre - ww * 0.5f, v0, ww, wh, room, openings);
+            }
+            // A string course over the first floor on the classical plots.
+            if (p.classical && storey == 0 && p.storeys > 2)
+                facadeBox(trim, f, -0.02f, floor + kStoreyH - 0.30f, -0.01f, W + 0.02f,
+                          floor + kStoreyH - 0.14f, 0.08f);
+        }
+
+        // --- cornice, corners, wall -----------------------------------------
+        facadeBox(trim, f, -0.06f, eaves - 0.38f, -0.01f, W + 0.06f, eaves, 0.30f);
+        if (p.quoins)
+        {
+            // Alternating long and short blocks up a block's corners, every
+            // other course rather than every course, which at this distance
+            // reads the same and costs half.
+            int row = 0;
+            for (float qv = 0.66f; qv + 0.55f < eaves - 0.45f; qv += 0.62f, ++row)
+            {
+                const float qw = row % 2 == 0 ? 0.42f : 0.28f;
+                if (cornerAtU0) facadeBox(trim, f, -0.015f, qv, -0.01f, qw, qv + 0.55f, 0.03f);
+                if (cornerAtU1) facadeBox(trim, f, W - qw, qv, -0.01f, W + 0.015f, qv + 0.55f, 0.03f);
+            }
+        }
+        if (!cornerAtU0 && p.classical)
+            facadeBox(trim, f, -0.02f, 0.6f, -0.01f, 0.28f, eaves - 0.38f, 0.05f);
+        wallAround(wall, f, 0.6f, eaves - 0.38f, openings);
+    };
+
+    // A block of the windowed rows: its footprint, the way it fronts the
+    // street, and whether either end faces a cross street. @p exposedMinus
+    // and @p exposedPlus are the ends at the lower and higher coordinate
+    // along the street's axis.
+    auto windowedBlock = [&](float cx, float cz, float halfX, float halfZ, float height,
+                             const Vector3& streetNormal, bool exposedMinus, bool exposedPlus,
+                             int key) {
+        collector.setRegionKey(key);
+        const bool alongZ = std::fabs(streetNormal.X) > 0.5f;   // the face runs along Z
+        FacadeFrame face;
+        face.up    = Vector3::Up;
+        face.out   = streetNormal;
+        face.right = Vector3::Cross(face.up, face.out);
+        face.width = alongZ ? halfZ * 2.0f : halfX * 2.0f;
+        const Vector3 faceCentre(cx + streetNormal.X * halfX, 0.0f, cz + streetNormal.Z * halfZ);
+        face.origin = faceCentre - face.right * (face.width * 0.5f);
+        const float blockDepth = alongZ ? halfX * 2.0f : halfZ * 2.0f;
+        // Which end of the face u = 0 is, along the street's axis.
+        const float rightAlong = alongZ ? face.right.Z : face.right.X;
+        const bool flankAtU0 = rightAlong > 0.0f ? exposedMinus : exposedPlus;
+        const bool flankAtU1 = rightAlong > 0.0f ? exposedPlus : exposedMinus;
+
+        // Divide the face into plots.
+        std::vector<DistrictPlot> plots;
+        std::size_t lastWall = std::size(renders);
+        const int baseStoreys = std::max(2, static_cast<int>((height - kGroundFloor) / kStoreyH));
+        for (float u = 0.0f; u < face.width - 0.5f;)
+        {
+            float w = rng.range(8.5f, 14.0f);
+            if (face.width - (u + w) < 7.0f) w = face.width - u;
+            DistrictPlot p;
+            p.u0 = u;
+            p.u1 = u + w;
+            std::size_t pick = rng.index(std::size(renders));
+            if (pick == lastWall) pick = (pick + 1) % std::size(renders);
+            lastWall = pick;
+            const bool brick = renders[pick] == MaterialId::BrickRed
+                               || renders[pick] == MaterialId::BrickBuff;
+            p.wall      = &materials_.get(renders[pick]);
+            p.classical = !brick && rng.chance(0.75f);
+            p.trim      = &materials_.get(rng.chance(0.5f) ? MaterialId::RenderWhite
+                                                            : MaterialId::Ashlar);
+            p.frame     = &materials_.get(rng.chance(0.7f) ? MaterialId::FrameWhite
+                                                            : MaterialId::FrameDark);
+            p.door      = &materials_.get(doorColours[rng.index(std::size(doorColours))]);
+            p.storeys   = std::clamp(baseStoreys + rng.intRange(-1, 1), 2, 7);
+            p.eaves     = kGroundFloor + static_cast<float>(p.storeys) * kStoreyH;
+            p.shop      = rng.chance(0.7f);
+            p.shutters  = p.classical && rng.chance(0.5f);
+            p.quoins    = p.classical && rng.chance(0.4f);
+            p.balconies = p.classical && rng.chance(0.45f);
+            p.pitched   = rng.chance(0.5f);
+            plots.push_back(p);
+            u += w;
+        }
+
+        for (std::size_t i = 0; i < plots.size(); ++i)
+        {
+            const DistrictPlot& p = plots[i];
+            const bool first = i == 0, last = i + 1 == plots.size();
+            // The mass: a box from the back of the block to the street face,
+            // less the faces built as elevations. The party walls are emitted
+            // whole -- two quads each -- because a plot a storey taller than
+            // its neighbour shows the difference above the neighbour's eaves.
+            const Vector3 a = face.at(p.u0, 0.0f, -blockDepth);
+            const Vector3 b = face.at(p.u1, p.eaves, 0.0f);
+            const Vector3 lo(std::min(a.X, b.X), 0.0f, std::min(a.Z, b.Z));
+            const Vector3 hi(std::max(a.X, b.X), p.eaves, std::max(a.Z, b.Z));
+            BoxFaces faces = BoxFaces::allButBottom();
+            const auto omit = [&faces](const Vector3& n) {
+                if (n.X > 0.5f) faces.posX = false;
+                if (n.X < -0.5f) faces.negX = false;
+                if (n.Z > 0.5f) faces.posZ = false;
+                if (n.Z < -0.5f) faces.negZ = false;
+            };
+            omit(streetNormal);
+            const bool flank0 = first && flankAtU0, flank1 = last && flankAtU1;
+            if (flank0) omit(face.right * -1.0f);
+            if (flank1) omit(face.right);
+            MeshBuilder& wall = collector.builder(p.wall);
+            wall.setTileSize(2.0f);
+            wall.addBox(lo, hi, faces);
+
+            // The street face.
+            FacadeFrame front = face;
+            front.origin = face.at(p.u0, 0.0f, 0.0f);
+            front.width  = p.u1 - p.u0;
+            front.height = p.eaves;
+            plotFacade(collector, front, p, true, first, last);
+
+            // An end that faces a cross street.
+            for (int end = 0; end < 2; ++end)
+            {
+                if (!(end == 0 ? flank0 : flank1)) continue;
+                FacadeFrame flank;
+                flank.up    = Vector3::Up;
+                flank.out   = end == 0 ? face.right * -1.0f : face.right;
+                flank.right = Vector3::Cross(flank.up, flank.out);
+                flank.width = blockDepth;
+                flank.height = p.eaves;
+                const Vector3 centre = face.at(end == 0 ? p.u0 : p.u1, 0.0f, -blockDepth * 0.5f);
+                flank.origin = centre - flank.right * (blockDepth * 0.5f);
+                // The corner it shares with the street face gets the quoins;
+                // its other end is the back of the block.
+                const bool streetCornerAtU0 = Vector3::Dot(flank.right, streetNormal) < 0.0f;
+                plotFacade(collector, flank, p, false, streetCornerAtU0, !streetCornerAtU0);
+            }
+
+            // The roof, per plot, with the ridge along the street.
+            const float pcx = (lo.X + hi.X) * 0.5f, pcz = (lo.Z + hi.Z) * 0.5f;
+            roof(collector, pcx, pcz, (hi.X - lo.X) * 0.5f, (hi.Z - lo.Z) * 0.5f, p.eaves, p.wall,
+                 kStoreyH, p.pitched ? 1 : 0, alongZ ? 1 : 0);
+        }
     };
 
     // Down both arms of the main street, past the modelled frontage. Every
@@ -668,14 +985,26 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
     {
         float z = M::kMainStreetHalfLength + 6.0f;
         int count = 0;
+        bool afterCross = false;
         while (z < 316.0f)
         {
             const float depth = rng.range(16.0f, 30.0f);
+            const bool crossAfter = count % 3 == 2;
+            const float gap = crossAfter ? rng.range(12.0f, 16.0f) : rng.range(1.5f, 4.0f);
+            // The ends of a block that face a cross street: the one toward the
+            // junction if the last gap was a street, the one away from it if
+            // the next gap is.
+            const bool towardJunction = afterCross, awayFromJunction = crossAfter;
             for (const float side : {-1.0f, 1.0f})
                 windowedBlock(side * (M::kMainStreetHalfWidth + 11.0f), sign * (z + depth * 0.5f),
                               11.0f, depth * 0.5f, rng.range(13.0f, 24.0f),
-                              Vector3(-side, 0.0f, 0.0f));
-            z += depth + ((count++ % 3 == 2) ? rng.range(12.0f, 16.0f) : rng.range(1.5f, 4.0f));
+                              Vector3(-side, 0.0f, 0.0f),
+                              sign > 0.0f ? towardJunction : awayFromJunction,
+                              sign > 0.0f ? awayFromJunction : towardJunction,
+                              districtKey(true, sign > 0.0f, side > 0.0f, segmentOf(true, z), 0));
+            z += depth + gap;
+            afterCross = crossAfter;
+            ++count;
         }
         // The block that closes the view down the street.
         paintedBlock(collector, 0.0f, sign * 345.0f, 46.0f, 22.0f, rng.range(18.0f, 30.0f));
@@ -685,14 +1014,23 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
     {
         float x = M::kSideStreetHalfLength + 5.0f;
         int count = 0;
+        bool afterCross = false;
         while (x < 198.0f)
         {
             const float depth = rng.range(15.0f, 26.0f);
+            const bool crossAfter = count % 3 == 2;
+            const float gap = crossAfter ? rng.range(10.0f, 14.0f) : rng.range(1.5f, 4.0f);
+            const bool towardJunction = afterCross, awayFromJunction = crossAfter;
             for (const float side : {-1.0f, 1.0f})
                 windowedBlock(sign * (x + depth * 0.5f), side * (M::kSideStreetHalfWidth + 10.0f),
                               depth * 0.5f, 10.0f, rng.range(11.0f, 20.0f),
-                              Vector3(0.0f, 0.0f, -side));
-            x += depth + ((count++ % 3 == 2) ? rng.range(10.0f, 14.0f) : rng.range(1.5f, 4.0f));
+                              Vector3(0.0f, 0.0f, -side),
+                              sign > 0.0f ? towardJunction : awayFromJunction,
+                              sign > 0.0f ? awayFromJunction : towardJunction,
+                              districtKey(false, sign > 0.0f, side > 0.0f, segmentOf(false, x), 0));
+            x += depth + gap;
+            afterCross = crossAfter;
+            ++count;
         }
         paintedBlock(collector, sign * 224.0f, 0.0f, 20.0f, 40.0f, rng.range(15.0f, 26.0f));
     }
@@ -753,14 +1091,18 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
                         const int segment = static_cast<int>(pos / 150.0f);
                         const int key = stripKey + segment;
                         const int wallPick = (stripKey + segment * 5) % 6 + rng.intRange(0, 2);
+                        // The first row is the one a cross street opens a view
+                        // of from the footway; it gets the cornice and the
+                        // pilasters. The second stands behind it and does not.
+                        const bool relief = &row == &rows[0];
                         if (alongMain)
                             paintedBlock(infill, cxBase, sign * (pos + span * 0.5f), depth,
                                         span * 0.5f, rng.range(row.minHeight, row.maxHeight),
-                                        key, wallPick);
+                                        key, wallPick, relief);
                         else
                             paintedBlock(infill, sign * (pos + span * 0.5f), cxBase, span * 0.5f,
                                         depth, rng.range(row.minHeight, row.maxHeight),
-                                        key, wallPick);
+                                        key, wallPick, relief);
                         pos += span + rng.range(3.0f, 7.0f);
                     }
                 }
@@ -771,14 +1113,20 @@ void CityScene::buildContext(GeometryCollector& collector, GeometryCollector& in
 
     // A far skyline: a scatter of taller blocks well beyond the district, which
     // is what stops the horizon being a clean line of identical parapets.
+    // Batched by thirty-degree sector, two facades a sector: a block at 300 m
+    // is thirty triangles and a haze, and one cell per block was a draw per
+    // block per material -- about a hundred draws of horizon on the flagship
+    // view, or seven per cent of the frame, for a strip of blue-grey along
+    // the top of the picture.
     for (int i = 0; i < 90; ++i)
     {
         const float angle = rng.range(0.0f, 6.2831853f);
         const float radius = rng.range(240.0f, 430.0f);
         const float cx = std::cos(angle) * radius;
         const float cz = std::sin(angle) * radius * 1.35f;
+        const int sector = std::clamp(static_cast<int>(angle / (6.2831853f / 12.0f)), 0, 11);
         paintedBlock(collector, cx, cz, rng.range(9.0f, 26.0f), rng.range(9.0f, 26.0f),
-                     rng.range(12.0f, 44.0f));
+                     rng.range(12.0f, 44.0f), 4000000 + sector, (sector * 5 + (i & 1)) % 6);
     }
 
     // --- what stands in the far street ------------------------------------
