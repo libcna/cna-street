@@ -342,6 +342,7 @@ void StreetApplication::LoadContent()
     // call, which a `--frames` profiling run should pay for and an ordinary
     // one flying the camera should not.
     renderer_->setShadowReportEnabled(frameBudget_ > 0);
+    renderer_->setDrawTimingEnabled(frameBudget_ > 0);
 
     // The overlay before the scene, not after: it owns the font and the sprite
     // batch the loading screen draws with, and the loading screen is the whole
@@ -606,6 +607,17 @@ void StreetApplication::recordFrame()
     profile_.characterShadowDraws += stats.characterShadowDrawCalls;
     profile_.vehicleTriangles     += static_cast<long long>(stats.vehicleTriangles);
     profile_.characterTriangles   += static_cast<long long>(stats.characterTriangles);
+    profile_.materialApplies         += stats.materialApplies;
+    profile_.repeatedMaterialApplies += stats.repeatedMaterialApplies;
+    profile_.shadowSliceSkips        += stats.shadowSliceSkips;
+    profile_.shadowTexelSkips        += stats.shadowTexelSkips;
+    if (stats.opaqueApplyMs >= 0.0f)
+    {
+        profile_.opaqueApplyMs += static_cast<double>(stats.opaqueApplyMs);
+        profile_.opaqueDrawMs  += static_cast<double>(stats.opaqueDrawMs);
+        profile_.skinnedMs     += static_cast<double>(stats.skinnedMs);
+        ++profile_.splitSamples;
+    }
 
     if (profile_.cascades.size() < stats.cascades.size())
         profile_.cascades.resize(stats.cascades.size());
@@ -682,6 +694,39 @@ void StreetApplication::reportProfile()
                       + std::to_string(profile_.shadowDraws / profile_.samples) + " shadow draws, "
                       + std::to_string(profile_.triangles / profile_.samples)
                       + " triangles per frame");
+
+    // Where the opaque pass's submission time actually goes: this side's
+    // material setters and Apply, or the framework's draw. The split decides
+    // whether a state cache here is worth writing -- if the setters are a
+    // tenth of the draw, skipping them saves a tenth -- and the repeated-
+    // apply count says how many calls such a cache could have collapsed.
+    if (profile_.splitSamples > 0)
+    {
+        const double s = static_cast<double>(profile_.splitSamples);
+        const long long applies = profile_.materialApplies / profile_.samples;
+        const double perApply = applies > 0 ? profile_.opaqueApplyMs / s * 1000.0
+                                                  / static_cast<double>(applies)
+                                            : 0.0;
+        const long long opaqueDraws = (profile_.draws - profile_.skinnedDraws) / profile_.samples;
+        const double perDraw = opaqueDraws > 0 ? profile_.opaqueDrawMs / s * 1000.0
+                                                     / static_cast<double>(opaqueDraws)
+                                               : 0.0;
+        CNA::Logger::Info("cna-street:   opaque CPU split -- material setters + Apply "
+                          + fixed(profile_.opaqueApplyMs / s, 2) + " ms ("
+                          + fixed(perApply, 1) + " us each), framework draws "
+                          + fixed(profile_.opaqueDrawMs / s, 2) + " ms ("
+                          + fixed(perDraw, 1) + " us each), skinned "
+                          + fixed(profile_.skinnedMs / s, 2) + " ms; "
+                          + std::to_string(applies) + " effect applies of which "
+                          + std::to_string(profile_.repeatedMaterialApplies / profile_.samples)
+                          + " repeat the previous material");
+    }
+    if (profile_.shadowSliceSkips > 0 || profile_.shadowTexelSkips > 0)
+        CNA::Logger::Info("cna-street:   shadow casters left out per frame -- "
+                          + std::to_string(profile_.shadowSliceSkips / profile_.samples)
+                          + " whose shadow lands outside the cascade's depth slice, "
+                          + std::to_string(profile_.shadowTexelSkips / profile_.samples)
+                          + " under a texel");
 
     // The other clock. A CPU stage time is how long the driver took to accept
     // the work; a GPU stage time is how long the hardware took to do it. Which

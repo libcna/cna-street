@@ -235,6 +235,27 @@ public:
         int characterShadowDrawCalls = 0;
         std::size_t vehicleTriangles = 0;
         std::size_t characterTriangles = 0;
+
+        /// The opaque pass's CPU time split between the two things it does
+        /// per draw: setting the material on the effect and applying it, and
+        /// issuing the draw. Only measured while @ref setDrawTimingEnabled is
+        /// on; -1 otherwise. The split is what says whether a material state
+        /// cache on this side of the framework could buy anything: if the
+        /// setters are a tenth of the draw, skipping them saves a tenth.
+        float opaqueApplyMs = -1.0f;
+        float opaqueDrawMs  = -1.0f;
+        float skinnedMs     = -1.0f;
+        /// How many times the PBR effect was applied this frame across the
+        /// opaque and transparent passes, and how many of those were for the
+        /// same material and environment as the call before -- the ones a
+        /// state cache could have collapsed if the framework did not re-upload
+        /// every parameter per draw regardless.
+        int materialApplies = 0;
+        int repeatedMaterialApplies = 0;
+        /// Casters the per-cascade slice test left out of a cascade this
+        /// frame, and the ones the texel floor did. See drawCasters.
+        int shadowSliceSkips = 0;
+        int shadowTexelSkips = 0;
     };
 
     SceneRenderer(Microsoft::Xna::Framework::Graphics::GraphicsDevice& device,
@@ -333,6 +354,32 @@ public:
     /// Off by default: it is a hash-map insert per shadow draw call, which is
     /// not something a frame anybody is timing should pay for free.
     void setShadowReportEnabled(bool enabled) { shadowReportEnabled_ = enabled; }
+    /// Turns on the apply-versus-draw split in @ref Stats. Two clock reads per
+    /// opaque draw; a profiling run pays it, an ordinary frame does not.
+    void setDrawTimingEnabled(bool enabled) { drawTimingEnabled_ = enabled; }
+
+    /// Whether a caster has to be written into one cascade at all.
+    ///
+    /// The receiver picks its cascade by view depth, so a caster only needs
+    /// to be in the cascade covering `[nearDepth, farDepth]` if something it
+    /// can shade lies at those depths. Everything a caster can shade lies in
+    /// the sphere swept from it along the light until the whole sphere has
+    /// passed below the lowest receiver (@p groundY): the caster's own
+    /// position, the ground its shadow lands on, and every wall and roof in
+    /// between. This tests that swept volume's view-depth range against the
+    /// cascade's, padded by @p margin for the receiver's blend band. It is
+    /// what stops the far cascade -- whose fit sphere contains most of the
+    /// near street -- being written with every bollard, person and parked car
+    /// beside the camera, none of whose shadows it will ever be asked for.
+    /// A sun near the horizon throws every shadow to the edge of the world,
+    /// and the test says yes to everything. Public and pure so it can be
+    /// checked against hand-worked cases.
+    [[nodiscard]] static bool casterShadowReachesSlice(
+        const Microsoft::Xna::Framework::Vector3& eye,
+        const Microsoft::Xna::Framework::Vector3& forward, float nearDepth, float farDepth,
+        const Microsoft::Xna::Framework::Vector3& lightDirection,
+        const Microsoft::Xna::Framework::Vector3& centre, float radius, float groundY,
+        float margin);
     /// What the *last frame's shadow pass* drew, by the name each caster was
     /// registered under, heaviest first -- across every cascade, since a
     /// caster near the camera is often written into more than one. This is
@@ -376,6 +423,16 @@ private:
         /// satisfy both: the sphere alone lets the near cascade take in
         /// everything beside the camera, which is where a street is densest.
         float split = 0.0f;
+        /// Where the slice starts, and the camera's forward, for the
+        /// per-cascade test in @ref casterShadowReachesSlice. `slice` is
+        /// false for a probe capture, which is a sphere about a point and not
+        /// a slice of anything.
+        float nearSplit = 0.0f;
+        Microsoft::Xna::Framework::Vector3 forward{0.0f, 0.0f, -1.0f};
+        bool  slice = false;
+        /// The ground one texel of this cascade covers, in metres. A caster
+        /// narrower than one is under the map's resolution and is not drawn.
+        float texel = 0.0f;
     };
     [[nodiscard]] CascadeVolume cascadeVolume(const Camera& camera, float nearSplit,
                                               float farSplit) const;
@@ -435,6 +492,10 @@ private:
     /// sharing a probe uploads it once. Reset whenever the lighting is.
     const ReflectionProbe* boundProbe_ = nullptr;
     bool environmentBound_ = false;
+    /// The material and probe the last applyMaterial set, for the repeated-
+    /// apply count in Stats. Reset with the lighting.
+    const Material*        appliedMaterial_ = nullptr;
+    const ReflectionProbe* appliedProbe_    = nullptr;
     /// Multiplies the sun, the ambient and the sky while a probe is being
     /// captured into an 8-bit target, and 1 for the frame. See captureProbe.
     float lightScale_ = 1.0f;
@@ -453,6 +514,7 @@ private:
     std::vector<std::string> limitations_;
 
     bool shadowReportEnabled_ = false;
+    bool drawTimingEnabled_ = false;
     mutable std::unordered_map<std::string, BatchCost> shadowByName_;
 
     /// One instanced renderer per mesh, kept across frames. It used to be

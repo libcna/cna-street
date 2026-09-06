@@ -140,6 +140,14 @@ private:
         long long vehicleDraws = 0, driverDraws = 0, skinnedDraws = 0;
         long long characterShadowDraws = 0;
         long long vehicleTriangles = 0, characterTriangles = 0;
+
+        /// The opaque pass split between this side's setters and the
+        /// framework's draws, and how many effect applies a material cache
+        /// could have collapsed. Summed over the frames that measured them.
+        double opaqueApplyMs = 0.0, opaqueDrawMs = 0.0, skinnedMs = 0.0;
+        int    splitSamples = 0;
+        long long materialApplies = 0, repeatedMaterialApplies = 0;
+        long long shadowSliceSkips = 0, shadowTexelSkips = 0;
     };
     FrameProfile profile_;
     /// How many frames to discard before measuring. Three is what the screenshot
