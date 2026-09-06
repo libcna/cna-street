@@ -21,10 +21,14 @@
 # "CNA/Graphics/CascadedShadowMap.hpp: No such file". Point CNA_ROOT_DIR at a
 # `next` checkout, and CNA_SHARP_RUNTIME_ROOT at a sharp-runtime `next`
 # checkout to match.
+# The eighth pass (2026-09-06) built and verified against these. Another agent
+# was committing to the CNA `next` checkout during that session (6e22a44b6,
+# 4bf74e31b, d42203805 in turn); the SHA below is the one checked out when the
+# final build, the test run and the benchmark baseline were made.
 # branch=next
-CNA=e1d3aa5d56c5e4166e40da9dda77b42d52b647eb
+CNA=d42203805057d43dc092bb713613bcc945ad8d5a
 # branch=next
-SHARP_RUNTIME=c3fbb95872414181d88315f9d4af6fa1707ed744
+SHARP_RUNTIME=30ccdef30ba4d27534864b0777729b9e78ee8a21
 # branch=develop
 EASY_GL=deda7a426c3c166c0e03a4790f1ede610e2e46fb
 # branch=develop

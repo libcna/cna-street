@@ -160,11 +160,22 @@ carry folding shutters beside their windows -- one in eight closed -- and
 half have quoins up their corners.
 
 **Beyond the frontage.** The two streets continue past the modelled plots
-with their kerbs, footways and carriageways, lined by blocks that carry real
-window recesses, shopfronts under fascias, plinths and cornices, with the same
-trees on the same pitch and the same cars parked along them, and cross streets
-between every third block. The scatter of blocks on the skyline beyond is
-painted: it is 240 m away.
+with their kerbs, footways and carriageways, lined by a district built in
+three tiers. The blocks that line the streets are the *mid* tier: each is a
+terrace of plots eight to fourteen metres wide with its own render, frame
+and door colour, storey count and roof, so a block reads as several
+buildings; the windows are real recesses with a framed sash, a sill and a
+head; the rendered plots carry shutters, a string course, a balcony or two
+and quoins at the block's corners; a plot without a shop has a door in a
+recess; and where a cross street opens between every third block, the ends
+that face it are windowed elevations too. The same trees stand on the same
+pitch and the same cars park along the kerbs. Behind that row stand two
+rows of painted blocks -- a storey per texture tile, a cornice band and
+pilasters on the first row, pitched roofs with stacks and flat ones with
+plant -- and beyond them the scatter of taller blocks on the skyline, 240 m
+out, is massing alone. Each tier is cheaper than the one in front of it by
+about an order of magnitude, and the district is batched a strip of street
+at a time rather than a block at a time.
 
 **The parked cars.** Eight authored car models -- an Opel Astra GTC, a Fiat
 Punto GT, a Renault Logan, a VAZ-2104 estate, a Honda Civic, a Mini Cooper S,
@@ -175,10 +186,15 @@ street within a hundred and twenty-six metres of the junction by
 `CityScene::buildHeroVehicles`, never the same model in two neighbouring
 bays. They are static, so the reflection probes hold them and the shop
 windows reflect them. The loft each one replaces stays in the simulation and
-is not drawn. The bays are dealt into four rings of thirty-four metres,
-because a level of detail is chosen once per instance group and one car
-three metres away would otherwise draw every copy of that model down the
-whole street at full detail.
+is not drawn. A parked copy's level of detail is per instance: the near
+model inside forty-five metres, the welded far copy beyond, as two instance
+groups culled either side of the same distance, the far one carrying every
+copy's shadow. The near copy would be the model with every part that shares
+a material merged into one mesh -- nothing on a parked car moves, so the
+wheel nodes the moving copy needs are nineteen draws the parked one does
+not -- and the merge is in place, but CNA's model loader hands every part
+its own texture objects, so no two parts can be recognised as sharing a
+material and the merge waits (`docs/cna-findings.md` CNA-F20).
 
 **The moving parts.** The traffic is the same eight authored cars, driven:
 `scripts/blender-vehicles.py` finds each model's four tyres, splits the
@@ -375,6 +391,7 @@ The command line, in full, is `--help`. The ones that matter:
 | `--width`, `--height`, `--seed` | Window size and the procedural seed |
 | `--night` | Civil twilight: the sun four degrees under the horizon and the street lighting itself |
 | `--frames <n>` | Render *n* frames, then print the frame-time profile and the batch reports |
+| `--benchmark <preset>` | A fixed camera, sun and clock: render the preset's warm-up and measured frames and print the profile, with one line of JSON at the end; `--benchmark-list` names the presets and `--benchmark-output <file>` appends the result to a `.csv` or a JSON-lines file. See *Benchmarking* below |
 | `--lineup` | Park one of every vehicle in a row, with a side, a front and a driver's-window viewpoint for each, and three rows of people: standing, frozen at heel strike, and through the walk cycle |
 | `--walkthrough <dir>` | Walk the camera through the street with collision on, write a frame per leg, and report what it met: how far it got, what stopped it, how close it came to a car, whether it was ever inside one, and the worst disagreement between a moving car's drawn heading and its direction of travel |
 | `--viewpoint <n>` | Start at named viewpoint *n* |
@@ -384,7 +401,8 @@ The command line, in full, is `--help`. The ones that matter:
 | `--supersample <n>` | Render a still at *n* times the size and box-filter it down, in linear light: the flagship frames are shot at 2 |
 | `--frames <n>` | Render *n* frames and exit |
 | `--sun <elev> <azimuth>` | Move the sun, in degrees |
-| `--no-shadows`, `--no-ssao`, `--no-bloom`, `--no-fog`, `--no-clouds`, `--no-ibl` | Turn one thing off |
+| `--no-shadows`, `--no-ssao`, `--no-bloom`, `--no-fog`, `--no-clouds`, `--no-ibl`, `--no-light-shafts` | Turn one thing off |
+| `--ssao-samples <n>`, `--bloom-iterations <n>` | The two post-process quality dials the pipeline exposes: samples per pixel (8-64, default 16) and the bloom pyramid's depth (1-8, default 4) |
 | `--no-probes` | Sky-only reflections: no local probes are captured |
 | `--dump-probes <dir>` | Write every reflection probe's cube as a strip of six faces, which is how a capture that came out mirrored gets seen to be |
 | `--no-traffic`, `--no-pedestrians`, `--no-vegetation`, `--no-overlay` | Leave one thing out |
@@ -929,6 +947,21 @@ CPU-bound by twelve milliseconds of `PbrEffect::Apply`; the shadow pass was
 parked fleet from a shadow-only proxy. `docs/visual-overhaul-7/performance.md`
 has the whole of it.
 
+The eighth pass took the counts down rather than the pixels: on the same
+Radeon at the same size the flagship view is 1 212 draws where it was
+1 443, 932 shadow draws where it was 1 899, 2.2 M shadow triangles where it
+was 5.9 M and 6.8 M triangles where it was 7.6 M, with fourteen of the
+eighteen viewpoints pixel-identical under the shadow change and the other
+four differing only under the hydrant. Every caster is written only into
+the cascades its shadow can land in; the district is batched a strip at a
+time and the skyline by sector; the parked cars have a level of detail per
+instance and reach their far copies for the first time. And the opaque
+pass's twelve milliseconds were timed in two halves: this side's material
+setters are 0.7 - 1.0 ms of it and the framework's draws 23 - 35, at 22 -
+27 us each, which is CNA-F19 and the boundary this project's performance
+work now sits against. `docs/visual-overhaul-8/performance.md` has the
+tables and the load-average caveats; `--benchmark` reproduces them.
+
 The sixth pass is the first that made the frame *shorter*. It did it by
 submitting less rather than by drawing less: a car went from thirty-three
 draw calls to eight and a person from six to three, both through content
@@ -1010,6 +1043,53 @@ repeated prop, frustum and distance culling with a shorter leash for shadows
 than for drawing, one mip chain on every texture, shared textures behind tinted
 materials, and alpha masking instead of blending everywhere except glass.
 
+### Benchmarking
+
+The street is a real scene and not a test pattern, which is what makes it
+useful for finding where CNA's renderer stops scaling -- and a benchmark of
+it is only worth having if it is the same benchmark every time. `--benchmark`
+fixes everything a frame's cost depends on that the settings do not:
+
+```sh
+./build/bin/cna-street --benchmark-list
+./build/bin/cna-street --benchmark baseline --benchmark-output results.csv
+./scripts/benchmark.sh                       # every preset, one process each
+```
+
+A preset is a camera, a sun where the workload wants one, and a warm-up and
+a measurement window in frames. Under a preset the clock runs at a fixed
+step, so frame *N* of a run holds the same traffic and the same crowd as
+frame *N* of the last one; the overlay, the sound and vsync are off; and
+the camera is a constant in `street/src/Bench/Benchmark.cpp` rather than a
+named viewpoint, because a viewpoint is a composition that moves when the
+picture wants it and a benchmark camera must not. Six presets ship:
+`baseline` (the flagship footway view), `shadow` (the long view under a
+28-degree sun, every cascade full), `traffic` (on the centre line among the
+moving cars and their drivers), `crowd` (on the crossing among the people),
+`city` (above the junction, the district to the skyline) and `post` (looking
+up at the facades and the sky, few draws and the whole post chain).
+
+The result is one line of JSON on stdout -- and, with `--benchmark-output`,
+a row appended to a `.csv` (with a header when the file is new) or one
+object per line to anything else. It records the renderer and adapter, the
+resolution and seed, the frame counts, the machine's one-minute load average
+when the run started, the CPU frame time (mean, median, p95, min, max) and
+its stage breakdown, the opaque pass split between this side's material
+setters and the framework's draws, the GPU time per stage and per post
+pass, draws, shadow draws, instanced and skinned draws, triangles, shadow
+triangles per cascade, effect applies and how many repeated the previous
+material, the visible people and vehicle draws, and the static batch count
+and mesh and texture memory. `scripts/benchmark.sh` runs every preset into
+one file named for the git revision, so two builds compare as two files.
+`tests/BenchmarkTests.cpp` holds the presets to being places and the
+writers to producing what they claim.
+
+Read the load average before the frame time. On a shared machine the wall
+clock swings with what the other cores are doing; the GPU timers and the
+counts do not, and on an APU even the GPU clock follows the CPU's power
+budget, so a comparison wants both files' load columns within a few of each
+other or it wants the GPU columns and the counts and nothing else.
+
 ## Known limitations
 
 * **A person is three skinned draws and cannot be fewer without the
@@ -1034,9 +1114,6 @@ materials, and alpha masking instead of blending everywhere except glass.
   stays exercised, and deliberately not placed in the crowd. The investigation,
   including what has and has not been ruled out, is `docs/cna-findings.md`
   GLTF-208.
-* **No audio.** CNA's audio module is there and works; the demo has nothing to
-  play through it, and a synthesised city ambience would be a worse thing than
-  silence.
 * **The moving traffic has no brake lights.** The authored cars carry their
   lamps in their textures, so a driven one shows no lit lens when it brakes;
   the loft it stands in for did. A per-part emissive override for the parts
@@ -1047,13 +1124,14 @@ materials, and alpha masking instead of blending everywhere except glass.
   nostril's depth and a lip's edge really are, and is a large improvement at
   a metre on a matte surface. It is not skin: there is no subsurface term,
   the hair is card sheets, and one figure's fringe hangs through an eye.
-* **The far skyline is blocks with printed façades.** The blocks that line
-  the two streets past the modelled frontage carry real window recesses,
-  shopfronts and cornices, and now the street's own scanned trees and its
-  own authored cars at their far level of detail; the scatter of taller
-  blocks beyond them, 240 m out, is still massing with a tiling image of a
-  storey on it. Walked rather than looked down, the district's own facades
-  are plainly cheaper than the modelled frontage.
+* **The district is a mid tier, and it shows from inside fifteen metres.**
+  The plots that line the two streets past the modelled frontage carry
+  real recesses, framed sashes, sills, heads, shutters, balconies, quoins
+  and doors, and read as buildings from thirty metres; stood beside, they
+  show what they are not -- no rooms behind the glass, no arrises on the
+  sills, no weathering, one pane for a shopfront. The rows behind them are
+  massing with a storey per texture tile, a cornice band and pilasters, and
+  the skyline scatter at 240 m is massing alone.
 * **The hero trees, cars and people need Blender.** Their derived files are
   cut, normalised and generated by scripts that run inside Blender 4.3 with
   numpy on its Python path (`--python-use-system-env`), and the people need
@@ -1136,6 +1214,8 @@ docs/visual-overhaul-3/     the third pass: scans, props, trees, light
 docs/visual-overhaul-4/     the fourth pass: authored cars, people, trees, depth, the hero cafe
 docs/visual-overhaul-5/     the fifth pass: the cars driven, gaits, dressed facades, coherence
 docs/visual-overhaul-6/     the sixth pass: behaviour, collision, drivers, coherence to the vanishing point, and half the draw calls
+docs/visual-overhaul-7/     the seventh pass: right-hand traffic, real drivers, the city behind the frontage, the frame on two clocks, sound
+docs/visual-overhaul-8/     the eighth pass: the district as plots, the shadow pass halved, the draw cost measured, the benchmark presets and their baseline
 plan.md                     what is done, what is next
 ```
 
