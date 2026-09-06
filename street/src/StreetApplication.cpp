@@ -43,6 +43,8 @@ using Microsoft::Xna::Framework::Input::Mouse;
 
 namespace CnaStreet {
 
+namespace M = Metrics;
+
 namespace {
 
 bool Pressed(const KeyboardState& now, const KeyboardState& before, Keys key)
@@ -103,6 +105,9 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --seed <n>                        procedural seed (default: %u)\n"
                 "  --viewpoint <n>                   start at named viewpoint n (1-based)\n"
                 "  --camera x,y,z,yaw,pitch          start at an explicit camera (radians)\n"
+                "  --walkthrough <dir>               walk the camera through the street with\n"
+                "                                    collision on, write a frame per leg and\n"
+                "                                    report what it met\n"
                 "  --lineup                          park one of every vehicle in a row, and\n"
                 "                                    add a side and a front viewpoint for each\n"
                 "  --frames <n>                      render n frames and exit\n"
@@ -163,6 +168,7 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--screenshot") { const char* v = next(i); if (v) screenshotPath_ = v; }
         else if (arg == "--supersample") { const char* v = next(i); if (v) supersample_ = std::clamp(std::atoi(v), 1, 4); }
         else if (arg == "--capture")    { const char* v = next(i); if (v) captureDirectory_ = v; }
+        else if (arg == "--walkthrough") { const char* v = next(i); if (v) walkDirectory_ = v; }
         else if (arg == "--exposure")  { const char* v = next(i); if (v) settings_.exposure = static_cast<float>(std::atof(v)); }
         else if (arg == "--no-ibl")         settings_.imageBasedLighting = false;
         else if (arg == "--shadow-debug")   settings_.shadowDebugTint = true;
@@ -232,7 +238,7 @@ bool StreetApplication::configure(int argc, char** argv)
         }
     }
 
-    if (!captureDirectory_.empty())
+    if (!captureDirectory_.empty() || !walkDirectory_.empty())
     {
         // A capture run has no user to look at an overlay, and the overlay would
         // be baked into every screenshot.
@@ -438,7 +444,8 @@ void StreetApplication::Update(GameTime& gameTime)
     // that scripts/check-screenshots.sh is built on means nothing: a quarter of
     // the pixels in a view of the sky differed between runs of an unchanged
     // build.
-    const bool deterministic = !captureDirectory_.empty() || !screenshotPath_.empty();
+    const bool deterministic = !captureDirectory_.empty() || !screenshotPath_.empty()
+                               || !walkDirectory_.empty();
     const float dt = deterministic
                          ? 1.0f / 60.0f
                          : static_cast<float>(
@@ -458,10 +465,11 @@ void StreetApplication::Update(GameTime& gameTime)
 
     handleHotkeys(keyboard, previousKeyboard_);
 
-    if (captureDirectory_.empty())
+    if (captureDirectory_.empty() && walkDirectory_.empty())
         controller_.update(dt, keyboard, previousKeyboard_, mouse, previousMouse_);
 
     if (scene_ != nullptr) scene_->update(dt, settings_);
+    if (!walkDirectory_.empty()) runWalkthrough(dt);
 
     previousKeyboard_ = keyboard;
     previousMouse_    = mouse;
@@ -479,6 +487,18 @@ void StreetApplication::Draw(const GameTime& gameTime)
     }
 
     if (!captureDirectory_.empty()) runCaptureScript();
+    if (!walkDirectory_.empty() && walkSettle_ > 0 && --walkSettle_ == 0
+        && walkLeg_ > 0 && walkLeg_ <= static_cast<int>(walkRoute_.size()))
+    {
+        std::filesystem::create_directories(walkDirectory_);
+        char index[16];
+        std::snprintf(index, sizeof(index), "%02d", walkLeg_);
+        screenshotPath_ = (std::filesystem::path(walkDirectory_)
+                           / (std::string(index) + "-"
+                              + SanitiseFileName(walkRoute_[static_cast<std::size_t>(walkLeg_ - 1)]
+                                                     .name)
+                              + ".png")).string();
+    }
 
     renderer_->beginFrame();
     scene_->submit(settings_, camera_.position());
@@ -504,9 +524,9 @@ void StreetApplication::Draw(const GameTime& gameTime)
     {
         captureScreenshot(screenshotPath_);
         screenshotPath_.clear();
-        // A one-shot --screenshot run is finished here; a --capture run has more
-        // viewpoints to walk and ends when the script says so.
-        if (frameBudget_ == 0 && captureDirectory_.empty()) Exit();
+        // A one-shot --screenshot run is finished here; a --capture or a
+        // --walkthrough run has more to do and ends when its script says so.
+        if (frameBudget_ == 0 && captureDirectory_.empty() && walkDirectory_.empty()) Exit();
     }
     if (frameBudget_ > 0 && framesDrawn_ >= frameBudget_)
     {
@@ -640,6 +660,232 @@ void StreetApplication::runCaptureScript()
         // for the end of Draw rather than taking it here.
         screenshotPath_ = path;
         ++captureIndex_;
+    }
+}
+
+void StreetApplication::buildWalkthrough()
+{
+    // A route through the things a still cannot check. Every leg is aimed
+    // from the scene itself rather than from typed-in coordinates, so a
+    // change to the layout moves the route with it.
+    walkRoute_.clear();
+    if (scene_ == nullptr) return;
+    const TrafficSystem& traffic = scene_->traffic();
+    const std::vector<TrafficSystem::Solid> solids = traffic.solids();
+    const std::vector<Vehicle>& fleet = traffic.vehicles();
+
+    const float footway = -(M::kMainCarriagewayWidth * 0.5f + M::kMainSidewalkWidth * 0.5f);
+    const float kerbLane = -(M::kMainCarriagewayWidth * 0.5f - M::kParkingLaneWidth * 0.5f);
+    const float travelLane = -(M::kMainCarriagewayWidth * 0.5f - M::kParkingLaneWidth
+                               - M::kMainLaneWidth * 0.5f);
+
+    // 1. Down the footway, which is the control: a walk that should not be
+    //    stopped by anything.
+    walkRoute_.push_back(WalkLeg{"down the footway", Vector3(footway, 0.0f, 24.0f),
+                                 Vector3(footway, 0.0f, 52.0f), 0.0f, 22.0f, 1.4f,
+                                 "walks the whole way"});
+
+    // 2. Straight at the nearest parked car on this side. A car has to be a
+    //    wall; before this pass the camera walked through it.
+    std::size_t nearest = fleet.size();
+    float best = 1e9f;
+    for (std::size_t i = 0; i < fleet.size(); ++i)
+    {
+        if (!fleet[i].parked) continue;
+        if (solids[i].centre.X > 0.0f) continue;
+        const float away = std::fabs(solids[i].centre.Y - 40.0f);
+        if (away < best) { best = away; nearest = i; }
+    }
+    if (nearest < fleet.size())
+    {
+        const Vector2 at = solids[nearest].centre;
+        walkRoute_.push_back(WalkLeg{"into a parked car",
+                                     Vector3(footway, 0.0f, at.Y),
+                                     Vector3(at.X, 0.0f, at.Y), 0.0f, 6.0f, 1.4f,
+                                     "stopped short of the bodywork"});
+        walkRoute_.push_back(WalkLeg{"along the kerb past the parked cars",
+                                     Vector3(footway + 1.0f, 0.0f, at.Y - 16.0f),
+                                     Vector3(footway + 1.0f, 0.0f, at.Y + 16.0f), 0.0f, 26.0f,
+                                     1.4f, "walks the row without entering a car"});
+    }
+
+    // 3. Standing in the travel lane while the traffic comes. The camera
+    //    cannot walk into a moving car; a moving car can drive into it, and
+    //    what must not happen is that it takes the camera with it.
+    walkRoute_.push_back(WalkLeg{"standing in the traffic lane",
+                                 Vector3(travelLane, 0.0f, 46.0f),
+                                 Vector3(travelLane, 0.0f, 24.0f), 0.0f, 26.0f, 0.0f,
+                                 "pushed clear, never carried"});
+
+    // 4. From the kerb, at the traffic. This is the frame that shows whether
+    //    a moving car has somebody in it and whether it faces the way it is
+    //    going -- the two things that cannot be checked from a parked one.
+    walkRoute_.push_back(WalkLeg{"watching the traffic from the kerb",
+                                 Vector3(footway + 1.1f, 0.0f, 34.0f),
+                                 Vector3(travelLane, 0.0f, 22.0f), 0.0f, 18.0f, 0.0f,
+                                 "cars face their travel, with drivers in them"});
+
+    // 5. At the crossing while the light cycles, which is where the crowd
+    //    piled into one body volume.
+    // Standing back from the kerb the crossing starts at, looking at the
+    // place where a queue forms: the corner where the two crossings meet.
+    walkRoute_.push_back(WalkLeg{"at the crossing",
+                                 Vector3(footway - 1.6f, 0.0f, 11.5f),
+                                 Vector3(footway + 0.4f, 0.0f, 3.0f), 0.0f, 40.0f, 0.0f,
+                                 "a queue, not a heap"});
+    CNA::Logger::Info("cna-street: walkthrough -- " + std::to_string(walkRoute_.size()) + " legs");
+}
+
+void StreetApplication::runWalkthrough(float deltaSeconds)
+{
+    if (scene_ == nullptr) return;
+    if (walkRoute_.empty())
+    {
+        buildWalkthrough();
+        if (walkRoute_.empty()) { Exit(); return; }
+        controller_.setMode(CameraMode::Walk);
+        walkLeg_ = 0;
+        walkTime_ = -1.0f;   // "not started yet"
+    }
+
+    // Every moving vehicle, every step: does its drawn body face the way it
+    // is travelling? This is the check the backwards Mini would have failed
+    // for a whole pass.
+    {
+        const TrafficSystem& traffic = scene_->traffic();
+        const std::vector<Vehicle>& fleet = traffic.vehicles();
+        for (const Vehicle& vehicle : fleet)
+        {
+            if (vehicle.parked || vehicle.speed < 1.0f) continue;
+            const Matrix world = vehicle.transform(traffic.lanes());
+            // The body's own forward, from the transform the renderer uses.
+            const Vector3 nose = Vector3::TransformNormal(Vector3(0.0f, 0.0f, 1.0f), world);
+            Vector2 travel(0.0f, 0.0f);
+            if (vehicle.inTurn)
+            {
+                Vehicle later = vehicle;
+                later.turnPhase = std::min(1.0f, vehicle.turnPhase + 0.02f);
+                const Vector2 a = vehicle.groundPosition(traffic.lanes());
+                const Vector2 b = later.groundPosition(traffic.lanes());
+                travel = Vector2(b.X - a.X, b.Y - a.Y);
+            }
+            else
+                travel = traffic.lanes()[static_cast<std::size_t>(vehicle.lane)].direction;
+            const float length = std::sqrt(travel.X * travel.X + travel.Y * travel.Y);
+            if (length < 1e-4f) continue;
+            const float dot = (nose.X * travel.X + nose.Z * travel.Y) / length;
+            const float degrees = std::acos(std::clamp(dot, -1.0f, 1.0f)) * 180.0f
+                                  / MathHelper::Pi;
+            ++walkHeadingSamples_;
+            if (degrees > walkWorstHeading_)
+            {
+                walkWorstHeading_ = degrees;
+                walkWorstVehicle_ = VehicleFactory::name(vehicle.type);
+            }
+        }
+    }
+
+    if (walkLeg_ >= static_cast<int>(walkRoute_.size()))
+    {
+        // The last leg's screenshot is still two frames out; let it be taken.
+        if (walkSettle_ > 0 || !screenshotPath_.empty()) return;
+        // The report, and out.
+        CNA::Logger::Info("cna-street: walkthrough results");
+        for (const WalkLeg& leg : walkRoute_)
+            CNA::Logger::Info(
+                "cna-street:   " + leg.name + " -- asked " + std::to_string(leg.wanted)
+                + " m, moved " + std::to_string(leg.travelled) + " m, blocked on "
+                + std::to_string(leg.blocked) + " steps, closest to a car "
+                + std::to_string(leg.closest) + " m, inside one on "
+                + std::to_string(leg.inside) + " steps, pushed out "
+                + std::to_string(leg.pushed) + " m; expected: " + leg.expectation);
+        CNA::Logger::Info("cna-street:   worst heading error over "
+                          + std::to_string(walkHeadingSamples_) + " moving-vehicle samples: "
+                          + std::to_string(walkWorstHeading_) + " degrees ("
+                          + walkWorstVehicle_ + ")");
+        Exit();
+        return;
+    }
+
+    WalkLeg& leg = walkRoute_[static_cast<std::size_t>(walkLeg_)];
+    if (walkTime_ < 0.0f)
+    {
+        // Start this leg. Three frames to settle before the camera moves, so
+        // the screenshot at the end of the previous one is clean.
+        camera_.setPosition(Vector3(leg.from.X, Metrics::kEyeHeight, leg.from.Z));
+        const Vector3 look = leg.towards - leg.from;
+        camera_.setOrientation(std::fabs(look.X) + std::fabs(look.Z) > 1e-3f
+                                   ? std::atan2(look.X, -look.Z)
+                                   : leg.yaw,
+                               -0.03f);
+        controller_.setMode(CameraMode::Walk);
+        walkTime_ = 0.0f;
+        walkSideStep_ = 0.0f;
+        return;
+    }
+
+    const Vector3 before = camera_.position();
+    Vector3 wish(0.0f, 0.0f, 0.0f);
+    const Vector3 look(leg.towards.X - before.X, 0.0f, leg.towards.Z - before.Z);
+    const float remaining = std::sqrt(look.X * look.X + look.Z * look.Z);
+    if (leg.pace > 0.0f && remaining > 0.15f)
+    {
+        const Vector3 ahead(look.X / remaining, 0.0f, look.Z / remaining);
+        // A person who walks into a tree steps round it. Without this the
+        // scripted walker stands against the first lamp column for the rest
+        // of the leg, which measures the column and not the street.
+        if (walkSideStep_ > 0.0f)
+        {
+            const Vector3 aside(ahead.Z, 0.0f, -ahead.X);
+            wish = (ahead * 0.35f + aside * (walkSideStep_ > 0.6f ? 1.0f : -1.0f))
+                   * (leg.pace * deltaSeconds);
+            walkSideStep_ = std::max(0.0f, walkSideStep_ - deltaSeconds);
+        }
+        else
+            wish = ahead * (leg.pace * deltaSeconds);
+    }
+    leg.wanted += std::sqrt(wish.X * wish.X + wish.Z * wish.Z);
+
+    controller_.walkStep(deltaSeconds, wish);
+
+    const Vector3 after = camera_.position();
+    const float moved = std::sqrt((after.X - before.X) * (after.X - before.X)
+                                  + (after.Z - before.Z) * (after.Z - before.Z));
+    leg.travelled += moved;
+    const float asked = std::sqrt(wish.X * wish.X + wish.Z * wish.Z);
+    if (asked > 1e-4f && moved < asked * 0.5f)
+    {
+        ++leg.blocked;
+        // Step round it for the next second, to the left of the way it is
+        // going for a while and then to the right, so a walker wedged in a
+        // corner gets out of it.
+        if (walkSideStep_ <= 0.0f)
+            walkSideStep_ = walkTime_ - std::floor(walkTime_ / 6.0f) * 6.0f < 3.0f ? 1.0f : 0.5f;
+    }
+    if (asked < 1e-4f) leg.pushed += moved;
+
+    // How close it came, and whether it was ever inside.
+    const Vector3 body(after.X, after.Y - Metrics::kEyeHeight + 0.95f, after.Z);
+    if (scene_->traffic().blocks(body, 0.0f)) ++leg.inside;
+    for (const TrafficSystem::Solid& solid : scene_->traffic().solids())
+    {
+        const float dx = body.X - solid.centre.X;
+        const float dz = body.Z - solid.centre.Y;
+        const float s = std::sin(solid.heading), c = std::cos(solid.heading);
+        const float across = std::fabs(dx * c - dz * s) - solid.halfWidth;
+        const float along = std::fabs(dx * s + dz * c) - solid.halfLength;
+        leg.closest = std::min(leg.closest, std::max(std::max(across, along), 0.0f));
+    }
+
+    walkTime_ += deltaSeconds;
+    if (walkTime_ > leg.seconds)
+    {
+        ++walkLeg_;
+        // The shot is taken in *this* frame's Draw, before the next Update
+        // teleports the camera to the next leg's start. Two frames of settle
+        // photographed the leg after the one it was labelled with.
+        walkSettle_ = 1;
+        walkTime_ = -1.0f;   // the next leg starts from its own beginning
     }
 }
 

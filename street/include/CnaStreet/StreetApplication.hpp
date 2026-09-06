@@ -57,6 +57,32 @@ private:
     void loadSettingsFile();
     void captureScreenshot(const std::string& path);
     void runCaptureScript();
+    /// Drives the walking camera along a scripted route with collision on,
+    /// and reports what it met. The point is that a street has to *behave*,
+    /// not only photograph: a car has to be solid, a car that drives into
+    /// the camera has to give it back, and a moving car has to face the way
+    /// it is going. All three are things a still cannot show, and all three
+    /// were wrong.
+    void runWalkthrough(float deltaSeconds);
+    /// One leg of that route.
+    struct WalkLeg
+    {
+        std::string name;
+        Microsoft::Xna::Framework::Vector3 from{0.0f, 0.0f, 0.0f};
+        Microsoft::Xna::Framework::Vector3 towards{0.0f, 0.0f, 0.0f};
+        float yaw = 0.0f;
+        float seconds = 4.0f;
+        float pace = 1.4f;
+        std::string expectation;
+        // --- what happened -------------------------------------------------
+        float wanted = 0.0f;      ///< metres the walker asked to move
+        float travelled = 0.0f;   ///< metres it actually moved
+        float closest = 1e9f;     ///< nearest it came to a vehicle's skin
+        int   blocked = 0;        ///< steps where it moved less than it asked
+        int   inside = 0;         ///< steps where it was inside a vehicle
+        float pushed = 0.0f;      ///< metres a vehicle pushed it out of itself
+    };
+    void buildWalkthrough();
     void handleHotkeys(const Microsoft::Xna::Framework::Input::KeyboardState& keyboard,
                        const Microsoft::Xna::Framework::Input::KeyboardState& previous);
 
@@ -106,6 +132,19 @@ private:
     /// the mechanism behind the screenshot set in the README and the visual
     /// regression views.
     std::string captureDirectory_;
+    std::string walkDirectory_;
+    std::vector<WalkLeg> walkRoute_;
+    int   walkLeg_ = -1;
+    float walkTime_ = 0.0f;
+    int   walkSettle_ = 0;
+    /// Seconds left of a side-step round something the walker has run into.
+    float walkSideStep_ = 0.0f;
+    /// The worst disagreement seen between a moving vehicle's drawn heading
+    /// and the direction it is actually travelling, in degrees, and which
+    /// model it was.
+    float walkWorstHeading_ = 0.0f;
+    std::string walkWorstVehicle_;
+    int   walkHeadingSamples_ = 0;
     int         captureIndex_    = 0;
     int         captureSettle_   = 0;
     std::string screenshotPath_;
