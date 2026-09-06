@@ -1,6 +1,6 @@
 # Asset attribution
 
-**The street is generated. Sixty-nine models, fourteen surfaces and eight people are not.**
+**The street is generated. Sixty-nine models, fourteen surfaces, eight people and twenty-two sounds are not.**
 
 That first sentence has been rewritten twice, and the honest version is the
 current one: every mesh of the street itself, every sign, every letter, every
@@ -186,6 +186,12 @@ Credits, as CC-BY-4.0 asks:
 
 CC0-1.0: Asphalt 02, Asphalt 03, Asphalt 04, Bark Platanus, Brick Wall 001, Brick Wall 003, Brick Wall 08, Concrete Wall 008, Granite Tile 04, Plastered Wall 02, Roof 09, Sandstone Blocks 05, Square Floor Patern 01, Terrazzo Tiles.
 
+### Sounds
+
+| Sound set | Author | Licence | Acquired | Used for |
+| --- | --- | --- | --- | --- |
+| Essentials Series (Vehicle, Footsteps, Nature, Voices) | NOX Sound | CC0-1.0 | manual | What the street sounds like (see SoundScape): four engine loops chosen by a car's speed, a horn, wind and birds, eight footsteps on tile for the walking camera and the nearest pedestrians, and seven short voices for people waiting at the crossings. |
+
 ### Tools
 
 | Tool | Licence | Used for |
@@ -220,6 +226,7 @@ it is generated.
 | The cars parked in the hero bays | Sketchfab models via the Objaverse mirror, normalised by `scripts/blender-vehicles.py`, via CNA's glTF importer | CC-BY-4.0, credited above; the lofted car stands in where a model is not fetched. |
 | The people | MakeHuman's CC0 base mesh and system assets, assembled by `scripts/blender-people.py` with MPFB and written in this project's character format | Weighted onto the project's own skeleton and driven by its own clips; the generated figure stands in where a person is not generated. |
 | Hydrants, cabinets, benches, planters, cafe seating, A-boards, deliveries, manhole covers, the covered car, the hero trees, the hero cafe's fittings and food, the cameras and condenser units on the walls | Poly Haven models, via CNA's glTF importer | Each with a generated stand-in where the model is not fetched. |
+| Engines, a horn, wind, birds, footsteps and voices | NOX Sound's Essentials packs (CC0), a manual download derived by `scripts/prepare-audio.py` | Played through CNA's XNA audio with `Apply3D` (see `SoundScape`); a tree with no derived sounds runs silent. |
 | Shop-window props | Khronos sample models, via CNA's glTF importer | A bare plinth where a model is not fetched. |
 | Sky and clouds | `CNA::Graphics::AtmosphericSky` plus this project's cloud shader | Analytic; no sky photograph or HDRI. |
 | Environment lighting | `CNA::Graphics::EnvironmentProcessor` | Irradiance, prefiltered specular and BRDF LUT baked at start-up from the same analytic sky, and from the street's own reflection probes. |

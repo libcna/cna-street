@@ -4341,5 +4341,35 @@
    "bytes": 45031536,
    "role": "A build tool, not an asset: the Blender extension scripts/blender-people.py drives to turn the MakeHuman pack into people. Run, never linked or redistributed; nothing it produces carries its licence, exactly as nothing Blender exports carries Blender's."
   }
+ ],
+ "audio": [
+  {
+   "name": "nox-sound-essentials",
+   "title": "Essentials Series (Vehicle, Footsteps, Nature, Voices)",
+   "author": "NOX Sound",
+   "copyright": "(c) NOX Sound; released under CC0",
+   "source": "https://www.asoundeffect.com/sound-library/essentials-series/",
+   "sourceRepository": "https://freesound.org/people/NOX_Sound/",
+   "licence": "CC0-1.0",
+   "licenceUrl": "https://creativecommons.org/publicdomain/zero/1.0/legalcode",
+   "attributionRequired": false,
+   "redistributionAllowed": true,
+   "retrieved": "2026-09-06",
+   "originalFormat": "WAV, 24-bit PCM, 48 kHz, mono and stereo",
+   "acquisition": "manual",
+   "acquisitionNote": "Not fetchable by URL: the packs are a free download from asoundeffect.com behind a form (the pack's own README states every sound is CC0). Unpack them and point scripts/prepare-audio.py at the folder, or set CNA_STREET_NOX_SOUND.",
+   "transformations": [
+    "scripts/prepare-audio.py: converted to 16-bit PCM with ffmpeg",
+    "loops cut to 9 s (engines) and 20 s (ambience) with a 60 ms fade at each end",
+    "engine, footstep and voice samples downmixed to mono so Apply3D can pan them"
+   ],
+   "role": "What the street sounds like (see SoundScape): four engine loops chosen by a car's speed, a horn, wind and birds, eight footsteps on tile for the walking camera and the nearest pedestrians, and seven short voices for people waiting at the crossings.",
+   "derived": [
+    {
+     "name": "audio",
+     "folder": "derived/audio/"
+    }
+   ]
+  }
  ]
 }

@@ -85,6 +85,12 @@ public:
     [[nodiscard]] const TrafficSignalController& signals() const { return signals_; }
     [[nodiscard]] const TrafficSystem& traffic() const { return traffic_; }
     [[nodiscard]] const PedestrianSystem& pedestrians() const { return pedestrians_; }
+    /// Where the street trees stand, for whatever wants to be in one -- the
+    /// birds, at present.
+    [[nodiscard]] const std::vector<Microsoft::Xna::Framework::Vector3>& treePositions() const
+    {
+        return treePositions_;
+    }
 
     struct BuildStats
     {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "CnaStreet/StreetApplication.hpp"
 
+#include "CnaStreet/Audio/SoundScape.hpp"
 #include "CnaStreet/Render/DebugOverlay.hpp"
 #include "CnaStreet/Assets/ModelLibrary.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
@@ -121,6 +122,8 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --no-probes                       sky-only reflections, no local probes\n"
                 "  --dump-probes <dir>               write each reflection probe as a face strip\n"
                 "  --no-traffic --no-pedestrians --no-vegetation --no-overlay\n"
+                "  --no-audio                        silence the street\n"
+                "  --volume <0..1>                   master volume (default 0.8)\n"
                 "  --sun <elevation> <azimuth>       sun position in degrees\n"
                 "  --night                           civil twilight, street lights on\n"
                 "  --dump-settings                   print the settings JSON and exit\n"
@@ -188,6 +191,8 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--no-vegetation")  settings_.vegetation = false;
         else if (arg == "--lineup") { settings_.vehicleLineup = true; }
         else if (arg == "--no-overlay")     settings_.debugOverlay = false;
+        else if (arg == "--no-audio")       settings_.audio = false;
+        else if (arg == "--volume")         { const char* v = next(i); if (v) settings_.audioVolume = static_cast<float>(std::atof(v)); }
         else if (arg == "--vsync")          settings_.vsync = true;
         else if (arg == "--no-vsync")       settings_.vsync = false;
         else if (arg == "--sun")
@@ -369,6 +374,20 @@ void StreetApplication::LoadContent()
     scene_->setProgressReporter(nullptr);
     renderer_->setBakeProgress(nullptr);
 
+    // The sound of it. Not for a capture, a screenshot or a walkthrough,
+    // which are deterministic image runs with nothing to hear and no device
+    // worth opening for; for everything else, including `--frames`, so a
+    // profile pays whatever the mixer costs the way a person playing does.
+    if (settings_.audio && screenshotPath_.empty() && captureDirectory_.empty()
+        && walkDirectory_.empty())
+    {
+        const std::filesystem::path sounds =
+            std::filesystem::path(CNA_STREET_DEFAULT_ASSET_DIR) / "external" / "downloads"
+            / "derived" / "audio";
+        sound_ = std::make_unique<SoundScape>(sounds.string());
+        if (!sound_->available()) sound_.reset();
+    }
+
     camera_.setPerspective(MathHelper::ToRadians(settings_.verticalFovDegrees),
                            static_cast<float>(width) / static_cast<float>(std::max(1, height)),
                            settings_.nearPlane, settings_.farPlane);
@@ -498,6 +517,8 @@ void StreetApplication::Update(GameTime& gameTime)
 
     if (scene_ != nullptr) scene_->update(dt, settings_);
     if (!walkDirectory_.empty()) runWalkthrough(dt);
+    if (sound_ != nullptr && scene_ != nullptr)
+        sound_->update(dt, camera_, controller_.mode() == CameraMode::Walk, *scene_, settings_);
 
     previousKeyboard_ = keyboard;
     previousMouse_    = mouse;
