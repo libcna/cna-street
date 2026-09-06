@@ -119,10 +119,15 @@ and the shrubs in them, the manhole covers, the cafe tables and A-boards out on
 the footway by the bakeries, the crates and cartons by the shop doors, the
 refuse sacks by the bins, and a car under a cover in one bay are
 photogrammetry scans from Poly Haven, imported through CNA's own glTF pipeline
-and instanced like everything else. The trees within eighty metres of the
-junction are three scanned species -- a small tree, a broad island tree and a
-mature jacaranda -- each cut in Blender to a near and a far level of detail;
-the rest of the street's trees are the generated ones.
+and instanced like everything else. Every tree pit on the main street carries
+one of three scanned species -- a small tree, a broad island tree and a
+mature jacaranda -- each cut in Blender to a near and a far level of detail,
+and the district beyond the modelled frontage plants the same three at their
+far level. The generated trees are the fallback for a tree that has fetched
+no scans, and nowhere else: a generated tree beside a scanned one is a
+different green and a ball on a stick, and a row of them beginning where the
+scanned ones stopped was the most legible thing in the frame saying where
+the modelling ended.
 
 **The hero cafe.** One shop -- the one the shop-window and pavement-cafe
 viewpoints look into -- is built as a composed room rather than a dressed
@@ -162,11 +167,15 @@ painted: it is 240 m away.
 Punto GT, a Renault Logan, a VAZ-2104 estate, a Honda Civic, a Mini Cooper S,
 a 1980s saloon and a Mercedes Sprinter -- all CC-BY from Sketchfab authors
 publishing their own work, normalised in Blender by
-`scripts/blender-vehicles.py` and dealt into the parking bays of the main
-street within seventy metres of the junction by `CityScene::buildHeroVehicles`,
-never the same model in two neighbouring bays. They are static, so the
-reflection probes hold them and the shop windows reflect them. The loft each
-one replaces stays in the simulation and is not drawn.
+`scripts/blender-vehicles.py` and dealt into *every* parking bay of the main
+street within a hundred and twenty-six metres of the junction by
+`CityScene::buildHeroVehicles`, never the same model in two neighbouring
+bays. They are static, so the reflection probes hold them and the shop
+windows reflect them. The loft each one replaces stays in the simulation and
+is not drawn. The bays are dealt into four rings of thirty-four metres,
+because a level of detail is chosen once per instance group and one car
+three metres away would otherwise draw every copy of that model down the
+whole street at full detail.
 
 **The moving parts.** The traffic is the same eight authored cars, driven:
 `scripts/blender-vehicles.py` finds each model's four tyres, splits the
@@ -182,6 +191,18 @@ with seats and a steering wheel. Bicycles lean on the stands. They follow the ve
 their brake lamps lit, and turn through the junction on a Bézier. They are the fallback for a tree
 without the derived cars, and the simulation the authored cars are driven by.
 
+Every moving car has somebody at the wheel: a seated figure, rigid and in one
+piece, drawn inside thirty metres and placed from the vehicle class's own
+seat position. Two draws, because through a windscreen at a glancing angle
+what reads is a head, two shoulders and two arms on the wheel.
+
+And every car is *solid*. In walk mode the camera cannot pass through a
+parked one, and a moving one that drives into it eases it out through the
+nearest face at walking pace rather than carrying it down the road. So are
+the lamp columns, the signal and sign posts, the bollards, the bins, the
+hydrants, the cabinets, the benches, the planters, the bike stands, the bus
+shelter and every tree up to its clear stem.
+
 Fifty-odd people over eight variants, each one mesh per material on a
 nineteen-bone skeleton and animated on the GPU by `SkinnedPbrEffect` from
 three walks and three ways of standing built in code: an ordinary pace, a
@@ -190,7 +211,12 @@ wait that shifts its weight and looks about, one that reads a phone, one
 with the hands together. Each person is dealt a gait and a stance, a stride
 scaled to their height, a place on the footway rather than its centre line,
 and turns a corner over half a second; one in six walks with the person in
-front. The eight are built from MakeHuman's CC0 base
+front. Nobody walks through anybody: each direction of travel keeps to its
+own side of the footway, a follower takes the pace of the person in front,
+and one ordered separation pass a frame steps anyone standing in somebody
+else aside. At a crossing they take a place in a loose cluster at the kerb
+-- five abreast, three rows deep, filled from the middle out -- and step off
+in rows when the man goes green. The eight are built from MakeHuman's CC0 base
 mesh and system wardrobe -- skins, clothes, shoes, hair, eyes -- by
 `scripts/blender-people.py` with MPFB in Blender, posed with the arms down,
 their authored weights folded from MakeHuman's 137 bones onto this project's
@@ -227,10 +253,14 @@ densest.
 `docs/visual-overhaul/` holds the first overhaul's before-and-after set,
 `docs/visual-overhaul-2/` the second pass's, `docs/visual-overhaul-3/` the
 third's, `docs/visual-overhaul-4/` the fourth's, and
-`docs/visual-overhaul-5/` the fifth's: the authored cars driven, three gaits,
-dressed windows and shutters, the cafe composed further, mip chains for every
-imported image and supersampled stills, each viewpoint before beside after,
-flagship frames at 1920 × 1080, and what it cost.
+`docs/visual-overhaul-5/` the fifth's, and `docs/visual-overhaul-6/` the
+sixth's: a car that drove backwards, a walk with the legs a third of a metre
+apart, four people standing in one another at a crossing, a camera that
+walked through parked cars, thirty cars with nobody at the wheel, and the
+lofted cars and generated trees that gave away where the modelling stopped
+-- with the draw-call consolidation that paid for the fixes, each viewpoint
+before beside after, a walk through the street rather than a look at it, and
+what it cost.
 
 ## Building
 
@@ -342,7 +372,8 @@ The command line, in full, is `--help`. The ones that matter:
 | `--width`, `--height`, `--seed` | Window size and the procedural seed |
 | `--night` | Civil twilight: the sun four degrees under the horizon and the street lighting itself |
 | `--frames <n>` | Render *n* frames, then print the frame-time profile and the batch reports |
-| `--lineup` | Park one of every vehicle in a row, with a side and a front viewpoint for each |
+| `--lineup` | Park one of every vehicle in a row, with a side, a front and a driver's-window viewpoint for each, and three rows of people: standing, frozen at heel strike, and through the walk cycle |
+| `--walkthrough <dir>` | Walk the camera through the street with collision on, write a frame per leg, and report what it met: how far it got, what stopped it, how close it came to a car, whether it was ever inside one, and the worst disagreement between a moving car's drawn heading and its direction of travel |
 | `--viewpoint <n>` | Start at named viewpoint *n* |
 | `--camera x,y,z,yaw,pitch` | Start at an explicit camera, in radians |
 | `--screenshot <file.png>` | Write one frame and exit |
@@ -722,7 +753,22 @@ exports every alpha as BLEND) and no colour attribute (GLTF-209).
 `scripts/blender-vehicles.py` normalises a downloaded car: backdrop dropped,
 faced +Z at the real car's length, one mesh per material, a far level of
 detail, textures capped at 1k, glass blended and everything else opaque, and
-the triangles reversed for CNA's cull (CNA-F15). `scripts/blender-people.py`
+the triangles reversed for CNA's cull (CNA-F15). *Which* end is the nose is
+measured from the body's own shape rather than declared per model
+(`scripts/vehicle_pose.py`), because a declaration nothing checks is how a
+car shipped driving permanently in reverse; `scripts/vehicle-orientation.py`
+holds the exported files to it as a CTest. `scripts/vehicle-atlas.py` then
+merges what can be merged: every material becomes three images -- a constant
+colour is a one-pixel texture -- those go into one atlas per channel with a
+cell each, the UVs are remapped into the cell and the primitives that now
+share a material are concatenated, with each material's roughness and
+metalness kept exactly in the green and blue of the merged map. Glass, a
+material whose UVs tile, and any textured material covering more than a
+fifth of the car are left alone. The Astra goes from thirty-three draw calls
+to eight. `scripts/people-atlas.py` does the same for a person -- six parts
+to three, the skin kept apart because it is the face -- and derives a normal
+map for that skin from the high frequencies of its own albedo, which is
+where the relief in a painted face actually is. `scripts/blender-people.py`
 builds a person with MPFB, poses the arms down, bakes the targets, applies the
 masks and the armature, folds the rig's weights onto this project's nineteen
 bones and writes the mesh in this project's character format beside its
@@ -736,7 +782,7 @@ generated trees, the lofted cars and the generated figures stand in.
 ctest --test-dir build --output-on-failure
 ```
 
-Thirteen suites over the parts of the street that can be checked without a device:
+Fourteen suites over the parts of the street that can be checked without a device:
 the signal controller, the traffic model, the walk graph, mesh building, the
 layout, the settings parser, the camera frustum, the mip-chain generation the
 content pipeline depends on, the shapes and surfaces the first visual overhaul
@@ -778,7 +824,23 @@ sill and splash rises from the pavement; that a shelf of stock is mostly pale
 card; that a poster is opaque paper with print on it; and that render is
 cracked a little and not crazed.
 
-`appearance_tests` is the newest and the most opinionated: nine cases, each one
+The newest are the ones this pass's live-play defects made necessary.
+`vehicle_orientation` reads every derived car straight out of its exported
+file, with no Blender, and fails when one faces -Z or has its front wheels
+behind its rear ones. `gait_tests` gained a case that evaluates the walk and
+idle clips through both rigs the project animates -- the generated one and a
+copy of the widest imported one -- samples the whole cycle and refuses feet
+more than 30 cm apart: MakeHuman's A-posed rig diverges the legs all the way
+down, so an imported figure used to walk with its ankles a third of a metre
+either side of its centre line. `pedestrian_tests` runs a hundred and twenty
+people through four minutes of signal cycles and checks every pair at every
+sampled step, because "four people at a crossing standing in one another" is
+a state, not a frame. `traffic_system_tests` checks a car as a solid: solid
+at its centre, hollow over its roof and under its sills, longer than it is
+wide and turned the way the car is, and every point pushed out of one ends
+up outside every one.
+
+`appearance_tests` is the most opinionated: nine cases, each one
 a defect that was shipped, found by looking at a rendering, and fixed. Not one
 of them would have been caught by a pixel comparison, because they are all
 structural, and each has a number attached that says whether a surface is the
@@ -823,18 +885,28 @@ them again. The overlay's headline is an *exponential* average and its
 breakdown is one frame's stage times: right for flying a camera around, wrong
 for tuning — it once read 214 ms on a frame that took 778.
 
-| | Before the second pass (`27f92a8`) | Before the third (`83dc8e1`) | Before the fourth (`c31ae23`) | Before the fifth (`c171cec`) | Now |
-| --- | --- | --- | --- | --- | --- |
-| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes | 12 s, then 7 s of probes | 17 s, then 8 s of probes | 27 s on a loaded machine, then 10 s of probes |
-| Static batches | 1 187 | 1 586 | 1 634 | 1 655 | 1 721 |
-| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas | the same, fourteen of them scans at 1024 px, plus twenty scanned models' own | the same, plus forty-four scanned models', eight cars' at 1k and eight people's with mip chains | the same, every imported image now compiled with a mip chain, two cars' paint at 2k |
-| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 | 42, 74 + one covered car, 78 | 42, 74 of which 8 are authored, 78 over 8 authored people | 42, 74 all drawn as the 8 authored models, 78 over 8 people in 3 gaits |
-| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 | 1 564 | 1 700 | 1 750–1 780 |
-| Shadow draw calls | 2 840 | 3 115 | 3 303 | 3 563 | 3 525 |
-| Triangles drawn | 560 k | 603 k | 1 695 k, of which the hero trees are most | 5 150 k, of which the trees are most | 5 620 k |
-| Frame, 1024×576 | 34–45 ms median | 41–51 ms median | 47–59 ms median, interleaved with 52–64 for `83dc8e1` on a busy machine | 59–62 ms median against 47 for `c31ae23` | 71–77 ms median against 72–86 for `c171cec`, both on a machine running other builds |
-| Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 | 76 ms | not re-measured |
-| Frame, `--night` | 34 ms | 47 ms | unchanged by this pass | 56 ms | not re-measured |
+| | Before the second pass (`27f92a8`) | Before the third (`83dc8e1`) | Before the fourth (`c31ae23`) | Before the fifth (`c171cec`) | Before the sixth (`6a40427`) | Now |
+| --- | --- | --- | --- | --- | --- | --- |
+| Scene build | 7 s from compiled content | 7 s, then 6–8 s baking 29 reflection probes | 12 s, then 7 s of probes | 17 s, then 8 s of probes | 27 s on a loaded machine, then 10 s of probes | 19–21 s, then 10 s of probes |
+| Static batches | 1 187 | 1 586 | 1 634 | 1 655 | 1 721 | 1 721 |
+| Textures | 198 catalogue surfaces plus per-shop signage and the imported models' own | the same, plus a poster atlas and a weathering-decal atlas | the same, fourteen of them scans at 1024 px, plus twenty scanned models' own | the same, plus forty-four scanned models', eight cars' at 1k and eight people's with mip chains | the same, every imported image now compiled with a mip chain, two cars' paint at 2k | the same, the cars' and the people's small materials merged into per-model atlases |
+| Plots, vehicles, people | 42, 74, 78 | 42, 74, 78 | 42, 74 + one covered car, 78 | 42, 74 of which 8 are authored, 78 over 8 authored people | 42, 74 all drawn as the 8 authored models, 78 over 8 people in 3 gaits | the same, every parked car authored and every moving one with a driver |
+| Draw calls per frame | 1 361, of which 160 are skinned | 1 535 | 1 564 | 1 700 | 1 784 | 1 407, of which 150 are skinned |
+| Shadow draw calls | 2 840 | 3 115 | 3 303 | 3 563 | 3 503 | 2 534 |
+| Triangles drawn | 560 k | 603 k | 1 695 k, of which the hero trees are most | 5 150 k, of which the trees are most | 5 620 k | 7 500 k |
+| Frame, 1024×576 (llvmpipe) | 34–45 ms median | 41–51 ms median | 47–59 ms median, interleaved with 52–64 for `83dc8e1` on a busy machine | 59–62 ms median against 47 for `c31ae23` | 71–77 ms median against 72–86 for `c171cec`, both on a machine running other builds | 54–55 ms median on a quiet one |
+| Frame, 1600×900 (Radeon 780M) | — | — | — | — | 81.3 ms (12.3 fps) | 59–63 ms (15.9–16.9 fps) |
+| Frame, 1920×1080 | 46 ms | 47 ms | 64 ms against 60 | 76 ms | not re-measured | not re-measured |
+| Frame, `--night` | 34 ms | 47 ms | unchanged by this pass | 56 ms | not re-measured | not re-measured |
+
+The sixth pass is the first that made the frame *shorter*. It did it by
+submitting less rather than by drawing less: a car went from thirty-three
+draw calls to eight and a person from six to three, both through content
+preprocessing, and the shadow pass is fitted to each cascade's slice of the
+camera frustum rather than to a disc around the camera. Three hundred and
+seventy-seven fewer draws and nine hundred and seventy fewer shadow draws,
+with a third more triangles in the frame and every parked car on the street
+an authored model. `docs/visual-overhaul-6/performance.md` has the tables.
 
 Those are from a 16-core machine that was busy with other work while it
 measured, hence the ranges; the first overhaul's table, from four cores, is in
@@ -886,6 +958,13 @@ moving car switches to its welded far copy at thirty-two metres, which took
 it back. `docs/visual-overhaul-5/performance.md` has the runs, and a profile
 on the machine's own GPU, where the frame is the shadow pass's draw calls.
 
+Against `6a40427`, the commit before the sixth pass, on the machine's own
+Radeon 780M at 1600 × 900: **81.3 ms to 59–63**, with 1 784 draw calls
+becoming 1 407 and 3 503 shadow draws becoming 2 534, while the triangles
+went from 5.6 M to 7.5 M and every parked car on the street became an
+authored model. `docs/visual-overhaul-6/performance.md` has the tables and
+the exact per-model draw counts.
+
 Against `83dc8e1`, the commit before the third pass, three interleaved pairs
 at 1024 × 576 came out 52.0 / 63.8 / 55.4 ms before against 47.2 / 52.1 /
 58.6 ms after, and one pair at 1920 × 1080 59.5 against 63.8: within noise,
@@ -903,6 +982,14 @@ materials, and alpha masking instead of blending everywhere except glass.
 
 ## Known limitations
 
+* **A person is three skinned draws and cannot be fewer without the
+  framework.** A skinned draw carries its own bone palette and cannot be
+  instanced, so fifty people is a hundred and fifty draw calls -- the
+  largest family in the frame by a factor of four. The parts that could be
+  merged have been (`scripts/people-atlas.py`); what is left is the face,
+  everything else opaque, and the hair, and going below that means either
+  putting the face through an atlas cell or a way to instance a palette,
+  which is CNA's.
 * **A skinned figure casts no shadow of its own.** CNA's cascade caster takes
   its world matrix from a uniform and knows nothing about a bone palette
   (`docs/cna-findings.md` CNA-F14), so each character carries a rigid stand-in
@@ -924,9 +1011,19 @@ materials, and alpha masking instead of blending everywhere except glass.
   lamps in their textures, so a driven one shows no lit lens when it brakes;
   the loft it stands in for did. A per-part emissive override for the parts
   named as lamps is the next step.
-* **The people's faces are painted.** MakeHuman's skins hold at four metres,
-  which is where a street is seen from, and at two metres a painted face is a
-  painted face.
+* **The people's faces are paintings with relief on them.** MakeHuman's skins
+  are colour and nothing else, so the normal map every face carries is
+  derived from the albedo's own high frequencies -- which is where a
+  nostril's depth and a lip's edge really are, and is a large improvement at
+  a metre on a matte surface. It is not skin: there is no subsurface term,
+  the hair is card sheets, and one figure's fringe hangs through an eye.
+* **The far skyline is blocks with printed façades.** The blocks that line
+  the two streets past the modelled frontage carry real window recesses,
+  shopfronts and cornices, and now the street's own scanned trees and its
+  own authored cars at their far level of detail; the scatter of taller
+  blocks beyond them, 240 m out, is still massing with a tiling image of a
+  storey on it. Walked rather than looked down, the district's own facades
+  are plainly cheaper than the modelled frontage.
 * **The hero trees, cars and people need Blender.** Their derived files are
   cut, normalised and generated by scripts that run inside Blender 4.3 with
   numpy on its Python path (`--python-use-system-env`), and the people need
@@ -942,10 +1039,6 @@ materials, and alpha masking instead of blending everywhere except glass.
 * **An imported single-sided part draws inside out** under CNA's default cull
   (CNA-F15). The derived cars and people carry reversed winding for it, and
   any other single-sided import will need the same.
-* **The far skyline is blocks with printed façades.** The blocks that line the
-  two streets past the modelled frontage now carry real window recesses,
-  shopfronts and cornices; the scatter of taller blocks beyond them, 240 m out,
-  is still massing with a tiling image of a storey on it.
 * **`--preset low` is untested on a machine that needs it.** It is built and it
   runs, but the decisions in it are reasoned rather than measured.
 * **Reflections are probe-based, static, and uncorrected for parallax.** A
@@ -984,6 +1077,11 @@ scripts/manifest-tool.py    reads the manifest for the build and the fetch
 scripts/prepare-surfaces.py turns scanned PBR sets into catalogue surfaces
 scripts/blender-tree-lod.py cuts a tree's levels of detail, in Blender
 scripts/blender-vehicles.py normalises a downloaded car into two levels of detail with its wheels split off, in Blender
+scripts/vehicle_pose.py     which end of a car is its nose, from the shape; shared by the two below
+scripts/vehicle-orientation.py
+                            checks every derived car faces +Z with its front wheels at the front, and draws the side-view sheet
+scripts/vehicle-atlas.py    merges a car's materials into one atlas so a car is a handful of draws
+scripts/people-atlas.py     the same for a person, and derives a skin normal map from the albedo
 scripts/model-textures.py   lists a compiled model's images with the colour space their mip chains are averaged in
 scripts/blender-people.py   builds the people from MakeHuman with MPFB, in Blender
 scripts/blender-vehicle-preview.py
@@ -1007,6 +1105,7 @@ docs/visual-overhaul-2/     the second pass: before and after, night, report
 docs/visual-overhaul-3/     the third pass: scans, props, trees, light
 docs/visual-overhaul-4/     the fourth pass: authored cars, people, trees, depth, the hero cafe
 docs/visual-overhaul-5/     the fifth pass: the cars driven, gaits, dressed facades, coherence
+docs/visual-overhaul-6/     the sixth pass: behaviour, collision, drivers, coherence to the vanishing point, and half the draw calls
 plan.md                     what is done, what is next
 ```
 
