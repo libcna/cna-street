@@ -609,3 +609,16 @@ crosses half a stride, the same clock their legs run on, so the sound is
 on the foot; the birds are in whichever tree is nearest, because that is
 where birds are. The one unplaced sound is the wind, which is nowhere in
 particular and so does not pan or fall off.
+
+## A wheel turns about its own axle, which is not always X
+
+The wheel splitter centres each wheel on its axle and the scene rolls it
+about X. Concentric is not aligned: five of the eight authored cars export
+their wheels with toe or camber baked into the mesh, up to eighteen
+degrees on the Astra, and a wheel rolled about an axis eighteen degrees
+from its own wobbles by thirty-six every turn. The axle is a property of
+the geometry -- a tyre is a ring, a ring has one direction of least spread
+-- so it is measured from the vertices at load and the wheel is rotated
+onto X before anything else is done to it. The lesson is the sixth pass's
+again: a frame convention nothing checks is a claim, and this one was
+checked by somebody watching a yellow car's front wheel.

@@ -76,6 +76,21 @@ public:
         /// a fresh hydrant and an aged one, a clean bin and a rusted one --
         /// and the name is how a caller takes one and leaves the other.
         std::string node;
+        /// For a part named `wheel_*`: the axis its tyre actually turns
+        /// about, in the node's own frame, measured from the vertices. A
+        /// wheel is a torus and a torus has one axis of least spread; on
+        /// five of the eight authored cars that axis is not the node's X --
+        /// the front wheels are exported with ten to eighteen degrees of
+        /// toe or camber baked in -- and a wheel rolled about X instead of
+        /// its own axle wobbles by twice that angle every revolution. Unit
+        /// length, X positive; (1,0,0) for anything that is not a wheel.
+        Microsoft::Xna::Framework::Vector3 axle{1.0f, 0.0f, 0.0f};
+        /// How much the measured ring spreads *along* its axle against
+        /// across it: near zero for a tyre or a rim, near one for a part
+        /// that is not a ring at all (a caliper, a liner, half a wheel).
+        /// The scene straightens a wheel from its most ring-like part and
+        /// leaves one alone whose best part is not a ring.
+        float axleSpread = 1.0f;
     };
 
     struct Imported

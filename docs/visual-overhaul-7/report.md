@@ -83,6 +83,24 @@ is long -- and the rest turn with the stub axle and stand still. The
 rolling radius is now the rolling part's, so the odometer no longer
 turns a tyre by a mudflap's height.
 
+That was half of it. The Astra kept wobbling with nothing bolted to its
+wheels at all, and a screenshot of it parked showed why: its rim sat
+off-centre in its tyre. The wheel node was concentric in the file; what
+it was not was *aligned* -- the front wheels are exported with 18.6
+degrees of toe baked into the mesh, so their true axle is not the
+node's X, and a wheel rolled about X instead of its own axle wobbles by
+twice that every revolution and stands turned at rest. Five of the
+eight models do this, from 4 to 20 degrees. `ModelLibrary` now measures
+each wheel part's axle from its tyre ring (the least-spread direction of
+the ring's covariance, by power iteration on the vertex positions it
+already reads for the bounds) and how ring-like the part is, and
+`CityScene` straightens the wheel onto X before rolling it -- from the
+biggest part whose spread is a tyre's, because the Punto's wheel node
+also carries a flat disc lying fifty degrees off the axle that
+"most ring-like" would have chosen. The parked copies get the same
+rotation, so a row of Astras no longer parks with its front wheels
+turned.
+
 **Every imported model's box was a cube.** Underneath the driver sitting
 on the bonnet: CNA's `ModelMesh` publishes a bounding sphere and no box,
 and `ModelLibrary` took a cube of side 2r round it. The Astra reported
