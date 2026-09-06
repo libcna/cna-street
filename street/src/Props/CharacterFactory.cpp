@@ -976,6 +976,121 @@ void CharacterFactory::Clips::install(std::unordered_map<std::string, AnimationC
     into[kIdleNames[0]] = idle;
     into[kIdleNames[1]] = idlePhone;
     into[kIdleNames[2]] = idleHands;
+    into[kDriveName]    = drive;
+}
+
+/// Sitting at a steering wheel.
+///
+/// The seated figures in the cars used to be a separate rigid prop: a
+/// featureless ellipsoid head, a shoulder bar and two grey spheres for hands,
+/// two draws and no face. Through a windscreen at three metres that is not a
+/// person, it is a mannequin, and once the cars themselves were authored it was
+/// the mannequin a viewer noticed. This is the crowd's own figure -- the same
+/// imported mesh, the same skin, the same skeleton -- posed to drive, so a
+/// driver is the same quality of human as the people on the footway.
+///
+/// The pose, in the order it matters: the thighs come up to level and the
+/// shins drop, which is what sitting is; the pelvis tips back and the spine
+/// takes a driver's slouch, which is what stops a 1.85 m man's crown coming
+/// through a hatchback roof; the upper arms come forward and in, the forearms
+/// rise to a rim about a third of a metre in front of the chest, and the
+/// wrists roll so the palms face it. Nothing here is still: the wheel takes
+/// small corrections, the head looks about the way somebody in traffic does,
+/// and the chest breathes. A row of drivers frozen in one pose is the other
+/// way to read as a mannequin.
+AnimationClip DriveClip(const Skeleton& skeleton, float height)
+{
+    constexpr float kCycle = 7.0f;
+    constexpr int   kKeys  = 20;
+    AnimationClip drive;
+    drive.Duration = Seconds(kCycle);
+    const auto bone = [&](const char* base, const char* suffix) {
+        return skeleton.find(std::string(base) + suffix);
+    };
+    const auto slow = [](float t, float phase) { return std::sin(t * MathHelper::TwoPi + phase); };
+
+    // The seat. A driver's hip angle is about a right angle and the pelvis is
+    // tipped back into the cushion; the scene puts the pelvis on the cushion,
+    // so the translation stays at the bind offset and only the rotation moves.
+    {
+        const int pelvis = skeleton.find(BoneName::kPelvis);
+        const Vector3 rest = pelvis >= 0 ? skeleton[pelvis].head : Vector3::Zero;
+        drive.Tracks.push_back(Track(skeleton, pelvis, kCycle, kKeys,
+            [&](float t) { return PitchQ(0.22f + 0.010f * slow(t, 0.0f)); },
+            [&](float) { return rest; }));
+    }
+    // The slouch: the trunk comes back up most of the way, so the figure is
+    // reclined rather than folded, and the crown drops five or six centimetres
+    // against sitting bolt upright -- which is the difference between a head
+    // under a hatchback's roof lining and one through it.
+    drive.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kSpine), kCycle, kKeys,
+        [&](float t) { return PitchQ(-0.13f + 0.008f * slow(t * 1.7f, 0.0f)); }));
+    drive.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kChest), kCycle, kKeys,
+        [&](float t) {
+            // The breath, and the shoulder that follows a hand going round.
+            return PitchQ(-0.08f + 0.010f * slow(t * 2.3f, 0.0f))
+                   * YawQ(0.030f * slow(t, 1.1f));
+        }));
+    drive.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kNeck), kCycle, kKeys,
+        [&](float t) { return PitchQ(-0.06f) * YawQ(0.05f * slow(t, 0.6f)); }));
+    // Looking at the road, the mirror, the road. Not a metronome: the two
+    // frequencies beat against each other so the turn is never the same twice
+    // in the seven seconds a viewer watches one car for.
+    drive.Tracks.push_back(Track(skeleton, skeleton.find(BoneName::kHead), kCycle, kKeys,
+        [&](float t) {
+            return YawQ(0.16f * slow(t, 0.6f) + 0.07f * slow(t * 2.7f, 2.2f))
+                   * PitchQ(0.04f * slow(t * 1.3f, 1.0f));
+        }));
+
+    // The legs, folded into the footwell. The thigh comes up to a little above
+    // level -- a car seat is lower than a chair -- and the shin drops from it;
+    // the ankle keeps the sole on the floor. Adduction is what the walk uses,
+    // because the imported rigs diverge the legs all the way down and a seated
+    // figure with its knees 40 cm apart is sitting astride the transmission
+    // tunnel.
+    const Adduction adduct = AdductionFor(skeleton, 0.72f);
+    for (int side = 0; side < 2; ++side)
+    {
+        const char* suffix = side == 0 ? ".R" : ".L";
+        // The pedal foot works; the other rests.
+        const bool pedals = side == 0;
+        drive.Tracks.push_back(Track(skeleton, bone(BoneName::kThigh, suffix), kCycle, kKeys,
+            [&](float) { return RollQ(adduct.roll[side]) * PitchQ(-1.62f); }));
+        drive.Tracks.push_back(Track(skeleton, bone(BoneName::kShin, suffix), kCycle, kKeys,
+            [&](float t) {
+                return PitchQ(1.16f + (pedals ? 0.05f * slow(t * 1.9f, 0.3f) : 0.0f));
+            }));
+        drive.Tracks.push_back(Track(skeleton, bone(BoneName::kFoot, suffix), kCycle, kKeys,
+            [&](float t) {
+                return RollQ(-adduct.roll[side])
+                       * PitchQ(0.24f + (pedals ? 0.07f * slow(t * 1.9f, 0.3f) : 0.0f));
+            }));
+    }
+
+    // Both hands on the rim, at a quarter to three. The upper arm comes
+    // forward and in, the forearm up and across, the wrist rolls the palm on
+    // to the rim; the correction is a few degrees of yaw shared between them,
+    // which is what makes a driver look like they are driving rather than
+    // holding on.
+    for (int side = 0; side < 2; ++side)
+    {
+        const char* suffix = side == 0 ? ".R" : ".L";
+        const float in = side == 0 ? 1.0f : -1.0f;
+        drive.Tracks.push_back(Track(skeleton, bone(BoneName::kClavicle, suffix), kCycle, kKeys,
+            [&](float t) { return YawQ(in * 0.05f * (1.0f + 0.25f * slow(t, 1.1f))); }));
+        drive.Tracks.push_back(Track(skeleton, bone(BoneName::kUpperArm, suffix), kCycle, kKeys,
+            [&](float t) {
+                return RollQ(in * -0.13f) * PitchQ(-0.62f + in * 0.045f * slow(t, 1.1f));
+            }));
+        drive.Tracks.push_back(Track(skeleton, bone(BoneName::kForearm, suffix), kCycle, kKeys,
+            [&](float t) {
+                return RollQ(in * -0.20f) * PitchQ(-0.88f - in * 0.055f * slow(t, 1.1f));
+            }));
+        drive.Tracks.push_back(Track(skeleton, bone(BoneName::kHand, suffix), kCycle, kKeys,
+            [&](float) { return YawQ(kPalmIn * -in) * PitchQ(-0.22f); }));
+    }
+    (void)height;
+    return drive;
 }
 
 CharacterFactory::Clips CharacterFactory::clips(const Skeleton& skeleton, float height,
@@ -998,6 +1113,7 @@ CharacterFactory::Clips CharacterFactory::clips(const Skeleton& skeleton, float 
     out.idle      = IdleClip(skeleton, height, IdleKind::Look, stance);
     out.idlePhone = IdleClip(skeleton, height, IdleKind::Phone, stance);
     out.idleHands = IdleClip(skeleton, height, IdleKind::Hands, stance);
+    out.drive     = DriveClip(skeleton, height);
     return out;
 }
 

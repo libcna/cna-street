@@ -59,6 +59,15 @@ public:
     /// slow start-up can be attributed.
     void build(const RenderSettings& settings);
 
+    /// Called at every stage of @ref build with what it is doing and roughly
+    /// how far through it is. The build takes the better part of half a
+    /// minute and the window used to be black for all of it, which from
+    /// outside is a hung program; whoever sets this paints something instead.
+    void setProgressReporter(std::function<void(const std::string&, float)> reporter)
+    {
+        progress_ = std::move(reporter);
+    }
+
     void update(float deltaSeconds, const RenderSettings& settings);
     /// Submits this frame's moving objects to the renderer. @p eye decides which
     /// level of detail each vehicle and each pedestrian is drawn at, which is
@@ -199,8 +208,19 @@ private:
     /// The people in the moving cars. Rigid, one piece, and only drawn while
     /// the cabin is close enough to see into.
     void buildDrivers(const RenderSettings& settings);
+    /// One person in one car: the crowd's own figure, posed to drive.
+    void submitDriver(std::size_t index, const Vehicle& vehicle,
+                      const Microsoft::Xna::Framework::Matrix& world, float distance);
+    /// Which side of its centre line a vehicle's drawn model steers from.
+    [[nodiscard]] float steeringSideFor(std::size_t vehicle) const;
     /// Where a driver sits in a vehicle of this class, in the car's own frame.
-    [[nodiscard]] static Microsoft::Xna::Framework::Matrix driverSeat(const Vehicle& vehicle);
+    /// @p steeringSide is +1 when the model's steering wheel is on the car's
+    /// left (+X) and -1 when it is on its right, as measured off the model.
+    /// @p drawnLength and @p drawnWidth are the model actually drawn for this
+    /// vehicle, or 0 to fall back on the class's own dimensions.
+    [[nodiscard]] static Microsoft::Xna::Framework::Matrix driverSeat(
+        const Vehicle& vehicle, float steeringSide = 1.0f,
+        float drawnLength = 0.0f, float drawnWidth = 0.0f, float drawnHeight = 0.0f);
     /// Switches on everything in the catalogue that is a lamp rather than a
     /// surface. Called once, before anything is built, when the sun is down.
     void lightTheStreet(const RenderSettings& settings);
@@ -288,7 +308,16 @@ private:
     {
         struct Wheel
         {
+            /// The parts that turn with the road: everything in the wheel's
+            /// node that is a surface of revolution about the axle.
             PropMesh mesh;
+            /// The parts that do not. A wheel node as the splitter leaves it
+            /// often carries a brake caliper, a suspension upright, an arch
+            /// liner or a mudflap as well as the wheel, and those are bolted
+            /// to the car, not to the rim: rolled with it they orbit the axle
+            /// once a revolution, which is exactly what a wobbling wheel is.
+            /// They still steer, because a caliper turns with the stub axle.
+            PropMesh hub;
             Microsoft::Xna::Framework::Vector3 centre{0.0f, 0.0f, 0.0f};
             bool steered = false;
         };
@@ -303,6 +332,13 @@ private:
         /// meets: a Sprinter is not a hatchback to walk into.
         float width  = 1.8f;
         float height = 1.5f;
+        /// Which side of this model's own centre line the steering wheel is
+        /// on: +1 for the car's left (+X, a left-hand-drive car), -1 for its
+        /// right. Measured from the cabin's own geometry at load, not
+        /// declared -- see CityScene::measureSteeringSide. A driver seated on
+        /// the other side of it is a passenger, and a car with a passenger
+        /// and no driver is what a viewer notices first.
+        float steeringSide = 1.0f;
         VehicleType nearest = VehicleType::Hatchback;
         /// Only a model whose wheels came out of the file separately can be
         /// driven; one that did not stays parked.
@@ -313,10 +349,20 @@ private:
     /// vehicle is drawn as, or -1 for the loft.
     std::vector<int> heroForVehicle_;
     int movingHeroes_ = 0;
-    /// The people in the cars: a few rigid seated figures, and which one each
-    /// moving vehicle carries (-1 for a parked one, which is empty).
-    std::vector<PropMesh> driverMeshes_;
+    /// The people in the cars. Not a prop of their own any more: each one is
+    /// one of the crowd's own imported figures, on the crowd's own skeleton,
+    /// playing the `drive` clip. @ref driverForVehicle_ is the character
+    /// variant each moving vehicle carries, or -1 for a parked one, which is
+    /// empty; @ref driverPlayers_ is one animation player per vehicle, so no
+    /// two drivers in a frame hold the wheel at the same angle.
     std::vector<int> driverForVehicle_;
+    std::vector<float> driverHeight_;
+    /// Wall clock the scene's own animations run on -- the drivers' hands on
+    /// the wheel, which are not driven by anything the simulation reports.
+    float elapsedSeconds_ = 0.0f;
+    std::function<void(const std::string&, float)> progress_;
+    std::vector<std::unique_ptr<Microsoft::Xna::Framework::Graphics::AnimationPlayer>>
+        driverPlayers_;
 
     /// The far level of detail of each street tree, kept for the district
     /// beyond the modelled frontage, which plants the same trees at the same
@@ -349,6 +395,11 @@ private:
         Microsoft::Xna::Framework::Graphics::SkinningData skinning;
         PropMesh shadowProxy;
         float height = 1.75f;
+        /// How far the pelvis stands above the soles in the bind pose. A
+        /// seated figure is placed by its hips -- the seat cushion is where
+        /// the car puts it -- and a figure placed by its feet instead sits
+        /// with its head through the roof.
+        float hipHeight = 0.92f;
     };
     /// Held indirectly because every AnimationPlayer keeps a reference to its
     /// variant's SkinningData for its whole life, and a vector that reallocates

@@ -323,9 +323,85 @@ int main()
     {
         std::unordered_map<std::string, AnimationClip> installed;
         clips.install(installed);
-        CHECK(installed.size() == 6);
+        CHECK(installed.size() == 7);
         for (const char* name : CharacterFactory::Clips::kWalkNames) CHECK(installed.count(name) == 1);
         for (const char* name : CharacterFactory::Clips::kIdleNames) CHECK(installed.count(name) == 1);
+        CHECK(installed.count(CharacterFactory::Clips::kDriveName) == 1);
+    }
+
+    CASE("a driver sits, and holds a wheel in front of the chest");
+    {
+        // The seated pose the people in the cars play. Three things have to
+        // be true of it, and every one of them was false of the rigid prop it
+        // replaces -- which had no knees, no wrists and no face.
+        struct SeatRig { const char* what; Geometry::Skeleton bones; };
+        std::vector<SeatRig> seats;
+        seats.push_back(SeatRig{"the generated rig", figure.skeleton});
+        seats.push_back(SeatRig{"a MakeHuman rig (person-05)", SplayedRig()});
+        for (const SeatRig& rig : seats)
+        {
+            const Geometry::Skeleton& skeleton = rig.bones;
+            const CharacterFactory::Clips seated =
+                CharacterFactory::clips(skeleton, 1.75f, 1.06f, 1.0f);
+            const AnimationClip& drive = seated.drive;
+
+            const int hipBone  = skeleton.find(BoneName::kPelvis);
+            const int headBone = skeleton.find(BoneName::kHead);
+            CHECK(hipBone >= 0 && headBone >= 0);
+
+            for (const float t : {0.0f, 0.25f, 0.5f, 0.75f})
+            {
+                const std::vector<Vector3> at = BonesAt(drive, skeleton, t);
+                const Vector3 hip = at[static_cast<std::size_t>(hipBone)];
+
+                for (const char* suffix : {".R", ".L"})
+                {
+                    const int knee = skeleton.find(std::string(BoneName::kShin) + suffix);
+                    const int foot = skeleton.find(std::string(BoneName::kFoot) + suffix);
+                    const int hand = skeleton.find(std::string(BoneName::kHand) + suffix);
+                    CHECK(knee >= 0 && foot >= 0 && hand >= 0);
+                    const Vector3 kneeAt = at[static_cast<std::size_t>(knee)];
+                    const Vector3 footAt = at[static_cast<std::size_t>(foot)];
+                    const Vector3 handAt = at[static_cast<std::size_t>(hand)];
+
+                    // Sitting: the knee is forward of the hips and no lower
+                    // than a hand's breadth below them, and the foot is
+                    // forward of the knee and below it. A figure whose knees
+                    // are under its hips is standing up through the roof.
+                    CHECK_MSG(kneeAt.Z > hip.Z + 0.20f,
+                              std::string(rig.what) + ": a seated knee is not forward of the hip");
+                    CHECK_MSG(kneeAt.Y > hip.Y - 0.14f,
+                              std::string(rig.what) + ": a seated thigh hangs down");
+                    CHECK_MSG(footAt.Y < kneeAt.Y,
+                              std::string(rig.what) + ": a seated shin points up");
+                    CHECK_MSG(footAt.Z > hip.Z,
+                              std::string(rig.what) + ": a seated foot is behind the hips");
+
+                    // Hands on a rim: forward of the hips, above them, and
+                    // the two of them a wheel's width apart rather than in
+                    // the driver's lap.
+                    CHECK_MSG(handAt.Z > hip.Z + 0.16f,
+                              std::string(rig.what) + ": a driver's hand is not on the wheel");
+                    CHECK_MSG(handAt.Y > hip.Y + 0.14f,
+                              std::string(rig.what) + ": a driver's hand is in their lap");
+                }
+                const int right = skeleton.find(std::string(BoneName::kHand) + ".R");
+                const int left  = skeleton.find(std::string(BoneName::kHand) + ".L");
+                const float apart = std::fabs(at[static_cast<std::size_t>(right)].X
+                                              - at[static_cast<std::size_t>(left)].X);
+                CHECK_MSG(apart > 0.16f && apart < 0.70f,
+                          std::string(rig.what) + ": the hands are "
+                              + std::to_string(apart) + " m apart on the rim");
+
+                // And the head is over the shoulders, not thrown back over
+                // the parcel shelf: the recline is a slouch, not a faint.
+                const Vector3 head = at[static_cast<std::size_t>(headBone)];
+                CHECK_MSG(head.Y > hip.Y + 0.40f,
+                          std::string(rig.what) + ": a seated head is too low");
+                CHECK_MSG(std::fabs(head.Z - hip.Z) < 0.30f,
+                          std::string(rig.what) + ": a seated head is off the spine");
+            }
+        }
     }
 
     TEST_MAIN("gait");

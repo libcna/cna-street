@@ -22,7 +22,16 @@
 #     end) vote, and the script says how strongly they agreed.
 #   * `--sheet` draws every model in side view, nose expected to the right, so
 #     the answer can be looked at rather than believed.
-#   * `--check` is the test: it fails when any derived model faces -Z.
+#   * `steering_side` reads the same body for the *other* thing a pose has to
+#     agree with the street about: which side of its centre line the steering
+#     wheel is on. `CityScene::driverSeat` puts the driver there, and it used
+#     to put them at -X on the strength of a comment -- so every car on the
+#     street was driven from the passenger seat, with the wheel beside the
+#     figure and nobody behind it. It is the same class of fault as the flip
+#     flag: a claim about a file that nothing measured.
+#   * `--check` is the test: it fails when any derived model faces -Z, steers
+#     its rear axle, or measures right-hand drive on a street laid out for
+#     right-hand traffic.
 #
 # Pure Python: struct, numpy and (for the sheet) PIL. Nothing here imports bpy,
 # because a test that needs Blender is a test nobody runs.
@@ -39,6 +48,12 @@ import vehicle_pose   # noqa: E402  -- the shared nose-direction rule
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DERIVED = os.path.join(ROOT, "assets", "external", "downloads", "derived", "vehicles")
+
+# How large an area asymmetry counts as evidence of a steering wheel. Below
+# this a model simply has no cabin worth measuring -- two of these eight are
+# shells with a dashboard and no column -- and saying so is better than
+# reading a side out of noise.
+STEERING_FLOOR = 0.05
 
 COMPONENTS = {"SCALAR": 1, "VEC2": 2, "VEC3": 3, "VEC4": 4, "MAT4": 16}
 DTYPES = {5120: "i1", 5121: "u1", 5122: "i2", 5123: "u2", 5125: "u4", 5126: "f4"}
@@ -172,6 +187,53 @@ def front_sign(pieces):
     return (1.0 if score >= 0.0 else -1.0), cabin, deck
 
 
+def steering_side(pieces):
+    """Which side of its centre line a car's steering wheel is on.
+
+    Returns (bias, samples). A positive bias means the car's **left** -- +X,
+    with the nose at +Z and +Y up, which is the side a left-hand-drive car
+    steers from and the side a street with right-hand traffic wants. Near zero
+    means the model carries too little cabin to tell, which several of these
+    do; the caller reports that rather than guessing.
+
+    The measurement is an area asymmetry, not a search for a torus. A cabin is
+    symmetric except for what is in front of the driver -- the wheel, the
+    column, the cluster, the pedal box -- so weighing the triangle area on
+    each side of the centre line through the dashboard slab answers the
+    question without needing to recognise any part by name. The slab is the
+    front of the cabin at dash height, and only the *inner* two thirds of the
+    half-width is counted: the door skins, the mirrors and the glass are
+    symmetric and large, and including them buries the signal under them.
+    """
+    centroid, up, area = [], [], []
+    for points, indices in pieces:
+        if len(indices) < 3:
+            continue
+        c, a = vehicle_pose.triangle_centroids(points, indices)
+        centroid.append(c)
+        area.append(a)
+    if not centroid:
+        return 0.0, 0
+    centroid = np.vstack(centroid)
+    area = np.concatenate(area)
+    lo, hi = float(centroid[:, 2].min()), float(centroid[:, 2].max())
+    floor, roof = float(centroid[:, 1].min()), float(centroid[:, 1].max())
+    length, height = hi - lo, roof - floor
+    half = max(float(np.abs(centroid[:, 0]).max()), 1e-3)
+    if length < 1e-3 or height < 1e-3:
+        return 0.0, 0
+    across = np.abs(centroid[:, 0])
+    pick = ((centroid[:, 2] > lo + 0.42 * length) & (centroid[:, 2] < lo + 0.64 * length)
+            & (centroid[:, 1] > floor + 0.32 * height) & (centroid[:, 1] < floor + 0.62 * height)
+            & (across > 0.12 * half) & (across < 0.66 * half))
+    left = float(area[pick & (centroid[:, 0] > 0.0)].sum())
+    right = float(area[pick & (centroid[:, 0] < 0.0)].sum())
+    total = left + right
+    if total <= 0.0:
+        return 0.0, 0
+    return (left - right) / total, int(pick.sum())
+
+
 def silhouette(indices_by_part, width, height, margin=6):
     """A filled side-view silhouette, +Z to the right and +Y up."""
     from PIL import Image, ImageDraw
@@ -246,6 +308,7 @@ def main():
         return 0
 
     bad = []
+    steers_left = 0
     for name in names:
         source = os.path.join(DERIVED, name + ".glb")
         if not os.path.isfile(source):
@@ -274,12 +337,26 @@ def main():
             if front <= rear:
                 print(f"    {name}: the front wheels are behind the rear ones")
                 bad.append(name)
+        bias, samples = steering_side(body)
+        verdict = ("left-hand drive" if bias > STEERING_FLOOR
+                   else "RIGHT-hand drive" if bias < -STEERING_FLOOR
+                   else "no cabin detail")
+        print(f"    steering bias {bias:+.3f} over {samples} triangles -- {verdict}")
+        if bias < -STEERING_FLOOR:
+            print(f"    {name}: steers from the car's right, and this street "
+                  "keeps right; CityScene::driverSeat would seat its driver "
+                  "beside the wheel")
+            bad.append(name)
+            continue
+        if bias > STEERING_FLOOR:
+            steers_left += 1
     if args.sheet:
         print("sheet:", sheet(names, args.sheet))
     if bad:
-        print(f"FAIL: {len(bad)} model(s) face -Z: {', '.join(bad)}")
+        print(f"FAIL: {len(bad)} model(s) posed wrongly: {', '.join(bad)}")
         return 1 if args.check else 0
-    print(f"{len(names)} derived vehicle(s), every nose toward +Z")
+    print(f"{len(names)} derived vehicle(s), every nose toward +Z; "
+          f"{steers_left} measure left-hand drive and none measures right")
     return 0
 
 

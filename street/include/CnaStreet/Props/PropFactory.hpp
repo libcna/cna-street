@@ -56,19 +56,6 @@ public:
     /// A bus shelter: posts, roof, and a glazed back and side.
     void busShelter(GeometryCollector& collector) const;
 
-    /// Somebody at the wheel: a seated figure from the hips up, facing +Z,
-    /// with the origin at the seat cushion between the hips. Rigid and in one
-    /// piece -- one draw for a whole person -- because a driver is seen
-    /// through a windscreen from three metres and further, at a glancing
-    /// angle, and what reads there is a head, two shoulders and two arms on
-    /// the wheel. A skinned figure would cost six draws a car for detail the
-    /// glass takes away.
-    ///
-    /// @p build 0 is slight and 1 is heavy; @p reach is how far forward the
-    /// hands are, which is where the wheel is for this cabin.
-    void driver(GeometryCollector& collector, Rng& rng, const Material* skin,
-                const Material* clothes, float shoulderHeight, float build,
-                float reach) const;
 
     /// The street trees. Three species rather than one: a plane with a broad
     /// high crown, a lime with a denser upright one, and a young tree of the

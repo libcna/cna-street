@@ -334,9 +334,36 @@ void StreetApplication::LoadContent()
     renderer_->resize(width, height);
     renderer_->initialise(settings_);
 
+    // The overlay before the scene, not after: it owns the font and the sprite
+    // batch the loading screen draws with, and the loading screen is the whole
+    // point of building it early. Twenty seconds of scene generation and seven
+    // of probe capture used to happen behind a black window, which from
+    // outside is a program that has hung.
+    overlay_ = std::make_unique<DebugOverlay>(device);
+    overlay_->build();
+
     scene_ = std::make_unique<CityScene>(device, *renderer_, *materials_, *models_);
     if (content_ != nullptr) scene_->setContentRoot(contentRoot.string());
+    if (screenshotPath_.empty() && captureDirectory_.empty() && walkDirectory_.empty())
+    {
+        // Only when there is a window somebody is looking at. A capture run
+        // presents nothing and a present per stage would just cost it time.
+        float stageAt = 0.0f;
+        scene_->setProgressReporter([this, &stageAt, width, height](const std::string& what,
+                                                                   float fraction) {
+            stageAt = fraction;
+            overlay_->drawLoading(what, fraction, width, height);
+        });
+        renderer_->setBakeProgress([this, &stageAt, width, height](float fraction) {
+            // The bake is the last four per cent of the bar and seven seconds
+            // of the wall clock, so it gets its own sweep through them.
+            overlay_->drawLoading("capturing reflection probes",
+                                  stageAt + (1.0f - stageAt) * fraction, width, height);
+        });
+    }
     scene_->build(settings_);
+    scene_->setProgressReporter(nullptr);
+    renderer_->setBakeProgress(nullptr);
 
     camera_.setPerspective(MathHelper::ToRadians(settings_.verticalFovDegrees),
                            static_cast<float>(width) / static_cast<float>(std::max(1, height)),
@@ -360,9 +387,6 @@ void StreetApplication::LoadContent()
     }
     if (cameraOverride_) controller_.setHome(cameraOverrideAt_);
     controller_.setCinematicPath(viewpoints, 8.0f);
-
-    overlay_ = std::make_unique<DebugOverlay>(device);
-    overlay_->build();
 }
 
 void StreetApplication::handleHotkeys(const KeyboardState& keyboard, const KeyboardState& previous)

@@ -83,11 +83,21 @@ void CityScene::build(const RenderSettings& settings)
 {
     Stopwatch watch = Stopwatch::StartNew();
 
-    CNA::Logger::Info("cna-street: generating materials");
+    // Every stage says what it is doing, to the log and to whoever is painting
+    // the window. The fractions are measured shares of a build on this
+    // machine, not equal slices: raising the buildings is a third of it and
+    // lettering the shopfronts is a blink, and a bar that pretends otherwise
+    // is a bar that stalls at 60 per cent.
+    const auto stage = [this](const char* what, float fraction) {
+        CNA::Logger::Info(std::string("cna-street: ") + what);
+        if (progress_) progress_(what, fraction);
+    };
+
+    stage("generating materials", 0.02f);
     materials_.build(settings.seed);
     if (settings.nightLighting()) lightTheStreet(settings);
 
-    CNA::Logger::Info("cna-street: laying out the street");
+    stage("laying out the street", 0.10f);
     layout_.generate(settings.seed);
     buildStats_.plots = static_cast<int>(layout_.plots().size());
     // Where each plot is and what it is built as, so a viewpoint can be aimed
@@ -102,7 +112,7 @@ void CityScene::build(const RenderSettings& settings)
                            + (plot.hasShop ? " shop '" + plot.shopName + "'" : ""));
     }
 
-    CNA::Logger::Info("cna-street: building the highway");
+    stage("building the highway", 0.14f);
     {
         GeometryCollector collector;
         Rng rng = Rng::derive(settings.seed, "highway");
@@ -113,7 +123,7 @@ void CityScene::build(const RenderSettings& settings)
         publish(collector, 0.0f, settings.shadowDistance);
     }
 
-    CNA::Logger::Info("cna-street: raising the buildings");
+    stage("raising the buildings", 0.22f);
     {
         GeometryCollector collector;
         GeometryCollector interiors;
@@ -138,34 +148,34 @@ void CityScene::build(const RenderSettings& settings)
         publish(interiors, 34.0f, 0.0f);
     }
 
-    CNA::Logger::Info("cna-street: dressing the windows");
+    stage("dressing the windows", 0.46f);
     buildShopDisplays(settings);
 
     if (settings.streetFurniture)
     {
-        CNA::Logger::Info("cna-street: placing street furniture");
+        stage("placing street furniture", 0.52f);
         Rng rng = Rng::derive(settings.seed, "furniture");
         buildStreetFurniture(rng, settings);
     }
     if (settings.vegetation)
     {
-        CNA::Logger::Info("cna-street: planting");
+        stage("planting", 0.58f);
         Rng rng = Rng::derive(settings.seed, "vegetation");
         buildVegetation(rng, settings);
     }
-    CNA::Logger::Info("cna-street: lettering the shopfronts");
+    stage("lettering the shopfronts", 0.66f);
     {
         Rng rng = Rng::derive(settings.seed, "signage");
         buildSignage(rng, settings);
     }
-    CNA::Logger::Info("cna-street: signalling the junction");
+    stage("signalling the junction", 0.68f);
     {
         Rng rng = Rng::derive(settings.seed, "signals");
         buildSignalsAndSigns(rng, settings);
     }
-    CNA::Logger::Info("cna-street: traffic and people");
+    stage("traffic and people", 0.71f);
     buildTrafficAndPeople(settings);
-    CNA::Logger::Info("cna-street: dressing the street");
+    stage("dressing the street", 0.86f);
     {
         Rng rng = Rng::derive(settings.seed, "dressing");
         buildDressing(rng, settings);
@@ -175,7 +185,7 @@ void CityScene::build(const RenderSettings& settings)
     // After the trees and the vehicles, because the district beyond the
     // frontage borrows both: the same far trees at the same pitch, and the
     // same distant car bodies parked along its kerbs.
-    CNA::Logger::Info("cna-street: closing the skyline");
+    stage("closing the skyline", 0.92f);
     {
         GeometryCollector collector;
         Rng rng = Rng::derive(settings.seed, "context");
@@ -195,7 +205,7 @@ void CityScene::build(const RenderSettings& settings)
     // Everything static is registered; capture what it looks like from the
     // carriageway, so the things that move through it have a street to reflect.
     // Timed and logged on its own, after the build it depends on.
-    CNA::Logger::Info("cna-street: capturing reflection probes");
+    stage("capturing reflection probes", 0.96f);
     renderer_.bakeReflectionProbes(probePositions(settings), settings);
 }
 
@@ -875,6 +885,7 @@ void CityScene::submitProp(const PropMesh& prop, const Matrix& transform,
 
 void CityScene::update(float deltaSeconds, const RenderSettings& settings)
 {
+    elapsedSeconds_ += deltaSeconds;
     signals_.update(deltaSeconds);
     if (settings.traffic) traffic_.update(deltaSeconds, signals_);
     if (settings.pedestrians) pedestrians_.update(deltaSeconds, signals_);
@@ -947,11 +958,8 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
             // far copy anyway. Before the parked-hero test below, so the
             // line-up -- where every car is parked and every car has somebody
             // in it -- can show a driver inside an authored cabin.
-            if (distance < 30.0f && (!vehicle.parked || lineup_) && v < driverForVehicle_.size()
-                && driverForVehicle_[v] >= 0
-                && driverForVehicle_[v] < static_cast<int>(driverMeshes_.size()))
-                submitProp(driverMeshes_[static_cast<std::size_t>(driverForVehicle_[v])],
-                           driverSeat(vehicle) * world);
+            if (distance < 30.0f && (!vehicle.parked || lineup_))
+                submitDriver(v, vehicle, world, distance);
 
             // A parked loft a hero model stands in for is registered as a
             // static prop instead, so it is in the reflection probes too.
@@ -978,10 +986,14 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
                 const float rolled = vehicle.odometer / hero.wheelRadius;
                 for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
                 {
-                    Matrix local = Matrix::CreateRotationX(rolled);
+                    const Matrix axle = Matrix::CreateTranslation(wheel.centre) * world;
+                    Matrix steer = Matrix::getIdentityProperty();
                     if (wheel.steered && vehicle.steerAngle != 0.0f)
-                        local = local * Matrix::CreateRotationY(vehicle.steerAngle);
-                    submitProp(wheel.mesh, local * Matrix::CreateTranslation(wheel.centre) * world);
+                        steer = Matrix::CreateRotationY(vehicle.steerAngle);
+                    submitProp(wheel.mesh, Matrix::CreateRotationX(rolled) * steer * axle);
+                    // The caliper, the upright and the arch liner turn with
+                    // the stub axle and stand still otherwise.
+                    if (!wheel.hub.empty()) submitProp(wheel.hub, steer * axle);
                 }
                 continue;
             }
@@ -1021,6 +1033,78 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
 
     // --- people -------------------------------------------------------------
     submitPeople(settings);
+}
+
+void CityScene::submitDriver(std::size_t index, const Vehicle& vehicle,
+                             const Matrix& world, float distance)
+{
+    if (index >= driverForVehicle_.size()) return;
+    const int variant = driverForVehicle_[index];
+    if (variant < 0 || variant >= static_cast<int>(characterMeshes_.size())) return;
+    if (index >= driverPlayers_.size() || driverPlayers_[index] == nullptr) return;
+    const CharacterMesh& character = *characterMeshes_[static_cast<std::size_t>(variant)];
+
+    const auto found = character.skinning.AnimationClips.find(
+        CharacterFactory::Clips::kDriveName);
+    if (found == character.skinning.AnimationClips.end()) return;
+    const Graphics::AnimationClip& clip = found->second;
+
+    Graphics::AnimationPlayer& player = *driverPlayers_[index];
+    if (player.getCurrentClipProperty() != &clip) player.StartClip(clip);
+    // Each car on its own phase, from the vehicle's index rather than a clock,
+    // so two cars side by side at a red light are not one person twice.
+    const float phase = static_cast<float>(index) * 1.37f;
+    player.Update(System::TimeSpan::FromTicks(static_cast<std::int64_t>(
+                      static_cast<double>(elapsedSeconds_ + phase) * 1.0e7)),
+                  false, true);
+
+    // Placed by the hips. `driverSeat` is the seat cushion in the car's own
+    // frame; a figure's own origin is the soles, so it is lowered by the hip
+    // height its bind pose actually has, scaled the same as the figure.
+    const float scale = driverHeight_[index] / std::max(character.height, 0.1f);
+    float drawnLength = 0.0f, drawnWidth = 0.0f, drawnHeight = 0.0f;
+    if (index < heroForVehicle_.size() && heroForVehicle_[index] >= 0
+        && static_cast<std::size_t>(heroForVehicle_[index]) < heroVehicleMeshes_.size())
+    {
+        const HeroVehicleMesh& drawn =
+            heroVehicleMeshes_[static_cast<std::size_t>(heroForVehicle_[index])];
+        drawnLength = drawn.length;
+        drawnWidth  = drawn.width;
+        drawnHeight = drawn.height;
+    }
+    const Matrix world3 =
+        Matrix::CreateScale(scale)
+        * Matrix::CreateTranslation(0.0f, -character.hipHeight * scale, 0.0f)
+        * driverSeat(vehicle, steeringSideFor(index), drawnLength, drawnWidth,
+                     drawnHeight) * world;
+
+    // Always the collapsed set. A driver is seen through glass at a glancing
+    // angle: the three-draw figure keeps the face texture, which is what says
+    // there is a person there, and drops the parts that do not survive a
+    // windscreen.
+    const std::vector<CharacterMesh::Part>& parts =
+        character.farParts.empty() ? character.parts : character.farParts;
+    for (const CharacterMesh::Part& part : parts)
+    {
+        SkinnedItem item;
+        item.mesh     = part.mesh.get();
+        item.material = part.material;
+        item.world    = world3;
+        item.bones    = &player.GetSkinTransforms();
+        renderer_.submitSkinned(std::move(item));
+    }
+    (void)distance;
+}
+
+float CityScene::steeringSideFor(std::size_t vehicle) const
+{
+    // Which side of its own centre line this vehicle's drawn model puts the
+    // steering wheel on. A loft has no wheel modelled, and this street is
+    // right-hand traffic, so the default is a left-hand-drive car.
+    if (vehicle < heroForVehicle_.size() && heroForVehicle_[vehicle] >= 0
+        && static_cast<std::size_t>(heroForVehicle_[vehicle]) < heroVehicleMeshes_.size())
+        return heroVehicleMeshes_[static_cast<std::size_t>(heroForVehicle_[vehicle])].steeringSide;
+    return 1.0f;
 }
 
 void CityScene::submitPeople(const RenderSettings& settings)
@@ -1978,24 +2062,29 @@ void CityScene::buildSignalsAndSigns(Rng& rng, const RenderSettings& settings)
         SignalAxis axis;
         bool     mast;
     };
-    // Right-hand traffic, so each approach's near kerb is on its right.
+    // Right-hand traffic, so each approach's near kerb is the one on its
+    // right -- which, with the left of a heading (ux,uz) at (uz,-ux), is
+    // -X for the northbound carriageway and not +X. These four followed the
+    // lanes when the lanes were laid out the other way round; they follow
+    // them still. `traffic_system_tests` checks that each head stands on the
+    // kerb its own approach passes.
     const Approach approaches[] = {
-        // Northbound: east kerb, stopping south of the junction.
-        {Vector2(mainKerb + 0.60f, -mainStop), Vector2(mainKerb + 0.60f, 6.60f),
-         Vector2(mainKerb + 0.75f, -mainStop - 1.6f), Vector2(0.0f, -1.0f),
-         Vector2(-1.0f, 0.0f), SignalAxis::Main, true},
-        // Southbound: west kerb, stopping north of the junction.
-        {Vector2(-mainKerb - 0.60f, mainStop), Vector2(-mainKerb - 0.60f, -6.60f),
-         Vector2(-mainKerb - 0.75f, mainStop + 1.6f), Vector2(0.0f, 1.0f),
+        // Northbound (+Z): the -X kerb, stopping south of the junction.
+        {Vector2(-mainKerb - 0.60f, -mainStop), Vector2(-mainKerb - 0.60f, 6.60f),
+         Vector2(-mainKerb - 0.75f, -mainStop - 1.6f), Vector2(0.0f, -1.0f),
          Vector2(1.0f, 0.0f), SignalAxis::Main, true},
-        // Eastbound: south kerb, stopping west of the junction.
-        {Vector2(-sideStop, -sideKerb - 0.60f), Vector2(11.6f, -sideKerb - 0.60f),
-         Vector2(-sideStop, -sideKerb - 0.60f), Vector2(-1.0f, 0.0f),
-         Vector2(0.0f, 1.0f), SignalAxis::Side, false},
-        // Westbound: north kerb, stopping east of the junction.
-        {Vector2(sideStop, sideKerb + 0.60f), Vector2(-11.6f, sideKerb + 0.60f),
-         Vector2(sideStop, sideKerb + 0.60f), Vector2(1.0f, 0.0f),
+        // Southbound (-Z): the +X kerb, stopping north of the junction.
+        {Vector2(mainKerb + 0.60f, mainStop), Vector2(mainKerb + 0.60f, -6.60f),
+         Vector2(mainKerb + 0.75f, mainStop + 1.6f), Vector2(0.0f, 1.0f),
+         Vector2(-1.0f, 0.0f), SignalAxis::Main, true},
+        // Eastbound (+X): the +Z kerb, stopping west of the junction.
+        {Vector2(-sideStop, sideKerb + 0.60f), Vector2(11.6f, sideKerb + 0.60f),
+         Vector2(-sideStop, sideKerb + 0.60f), Vector2(-1.0f, 0.0f),
          Vector2(0.0f, -1.0f), SignalAxis::Side, false},
+        // Westbound (-X): the -Z kerb, stopping east of the junction.
+        {Vector2(sideStop, -sideKerb - 0.60f), Vector2(-11.6f, -sideKerb - 0.60f),
+         Vector2(sideStop, -sideKerb - 0.60f), Vector2(1.0f, 0.0f),
+         Vector2(0.0f, 1.0f), SignalAxis::Side, false},
     };
 
     const float mount = ground + M::kSignalMountHeight;
@@ -2650,15 +2739,69 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
             // so with the placement stripped the part turns about its own
             // origin and the scene puts it back where the axle is.
             wheel.centre = mesh.parts.front().local.getTranslationProperty();
+
+            // ...but only the parts of it that are actually round. A wheel
+            // node as `scripts/blender-vehicles.py` leaves it is everything
+            // the splitter found near that corner of the car, and on four of
+            // these eight models that is more than the rim and the tyre: the
+            // Mini's rear nodes carry an arch liner 20 cm above the axle, the
+            // small price car's carry a mudflap 25 cm above it, the Logan's a
+            // suspension arm, the VAZ's a brake caliper. Rolled with the
+            // wheel every one of them orbits the axle once a revolution --
+            // and a car whose arch liner goes round with the tyre is a car
+            // with wobbling wheels, which is what this looked like.
+            //
+            // A part that turns with the road is a surface of revolution
+            // about the axle: its own bounds are centred on the axle line and
+            // as tall as they are long. Anything else is bolted to the car
+            // and goes in the hub, which steers but does not roll.
             Vector3 lo(1e30f, 1e30f, 1e30f), hi(-1e30f, -1e30f, -1e30f);
+            for (const PropMesh::Part& part : mesh.parts) Grow(lo, hi, part.mesh->bounds());
+            const float diameter = std::max({hi.Y - lo.Y, hi.Z - lo.Z, 0.05f});
+
+            PropMesh rolls, hub;
+            Vector3 rollLo(1e30f, 1e30f, 1e30f), rollHi(-1e30f, -1e30f, -1e30f);
             for (PropMesh::Part& part : mesh.parts)
             {
+                const BoundingBox& box = part.mesh->bounds();
+                const Vector3 centre = (box.Min + box.Max) * 0.5f;
+                const float spanY = box.Max.Y - box.Min.Y;
+                const float spanZ = box.Max.Z - box.Min.Z;
+                const bool onAxis = std::abs(centre.Y) < 0.08f * diameter
+                                    && std::abs(centre.Z) < 0.08f * diameter;
+                const bool round  = std::abs(spanY - spanZ)
+                                    < 0.25f * std::max({spanY, spanZ, 1e-3f});
                 part.local = Matrix::getIdentityProperty();
-                Grow(lo, hi, part.mesh->bounds());
+                if (onAxis && round)
+                {
+                    Grow(rollLo, rollHi, box);
+                    rolls.parts.push_back(part);
+                }
+                else
+                {
+                    hub.parts.push_back(part);
+                }
             }
+            // A node with nothing round in it is a wheel the rule failed to
+            // recognise rather than a car with no wheels: roll the lot, which
+            // is what this did before, rather than draw a car whose wheels
+            // never turn.
+            if (rolls.parts.empty())
+            {
+                rolls.parts = std::move(hub.parts);
+                hub.parts.clear();
+                rollLo = lo; rollHi = hi;
+            }
+            rolls.bounds = BoundingBox(rollLo, rollHi);
+            hub.bounds   = BoundingBox(lo, hi);
             mesh.bounds  = BoundingBox(lo, hi);
-            wheel.mesh   = std::move(mesh);
-            radius       = std::max(radius, (hi.Y - lo.Y) * 0.5f);
+            wheel.mesh   = std::move(rolls);
+            wheel.hub    = std::move(hub);
+            // The rolling radius is the rolling part's, not the node's: a
+            // mudflap in the bounds makes the tyre look bigger than it is and
+            // the odometer then turns it too slowly, which is a wheel that
+            // skates.
+            radius       = std::max(radius, (rollHi.Y - rollLo.Y) * 0.5f);
             hero.wheels.push_back(std::move(wheel));
         }
         if (hero.wheels.size() == 4)
@@ -2672,6 +2815,21 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
         else
         {
             hero.wheels.clear();
+        }
+        {
+            std::size_t rolling = 0, bolted = 0;
+            for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
+            {
+                rolling += wheel.mesh.parts.size();
+                bolted  += wheel.hub.parts.size();
+            }
+            char line[256];
+            std::snprintf(line, sizeof(line),
+                          "cna-street: %s  %.2f x %.2f x %.2f m, wheel r %.3f, "
+                          "%zu wheels, %zu rolling part(s) and %zu bolted to the car",
+                          hero.name.c_str(), hero.length, hero.width, hero.height,
+                          hero.wheelRadius, hero.wheels.size(), rolling, bolted);
+            CNA::Logger::Info(line);
         }
         heroVehicleMeshes_.push_back(std::move(hero));
     }
@@ -2915,58 +3073,30 @@ void CityScene::buildHeroShop(const RenderSettings& settings)
 
 void CityScene::buildDrivers(const RenderSettings& settings)
 {
-    driverMeshes_.clear();
     driverForVehicle_.assign(traffic_.vehicles().size(), -1);
-    if (!settings.traffic) return;
+    driverHeight_.assign(traffic_.vehicles().size(), 1.75f);
+    driverPlayers_.clear();
+    if (!settings.traffic || characterMeshes_.empty()) return;
 
     // A moving car with nobody in it is the thing that gives the whole street
     // away once the cars themselves are good: through a windscreen at three
     // metres an empty seat reads instantly, and there are thirty of them.
     //
-    // Six people, each one rigid and in one piece. A driver is seen through
-    // glass, at a glancing angle, from three metres and further, so what has
-    // to be there is a head, two shoulders and two arms on the wheel -- the
-    // skinned figures the footway uses would cost six draws a car for detail
-    // the glass takes away, and there is no seated clip for them anyway.
-    // A stop darker than the crowd's. CNA's glass is a reflection layer over
-    // what it covers rather than a filter, so a driver behind a windscreen is
-    // lit as though there were no windscreen; the tint carries the light the
-    // glass and the roof would have taken, which is what stops a head reading
-    // as a bright egg through the screen.
-    static const Vector3 kDriverSkin[] = {
-        Vector3(0.55f, 0.43f, 0.36f), Vector3(0.44f, 0.32f, 0.25f),
-        Vector3(0.31f, 0.21f, 0.16f), Vector3(0.20f, 0.13f, 0.10f),
-    };
-    static const Vector3 kDriverClothes[] = {
-        Vector3(0.09f, 0.10f, 0.12f), Vector3(0.20f, 0.22f, 0.26f),
-        Vector3(0.08f, 0.14f, 0.22f), Vector3(0.33f, 0.30f, 0.26f),
-        Vector3(0.24f, 0.10f, 0.11f), Vector3(0.15f, 0.18f, 0.15f),
-    };
-    constexpr int kDriverVariants = 6;
-    const PropFactory props(materials_);
-    for (int i = 0; i < kDriverVariants; ++i)
-    {
-        const std::string tag = std::to_string(i);
-        const Material* skin = materials_.deriveTinted(
-            "driver-skin-" + tag, MaterialId::Skin,
-            kDriverSkin[static_cast<std::size_t>(i) % std::size(kDriverSkin)]);
-        const Material* clothes = materials_.deriveTinted(
-            "driver-coat-" + tag, MaterialId::Clothing,
-            kDriverClothes[static_cast<std::size_t>(i) % std::size(kDriverClothes)]);
-        driverMeshes_.push_back(makeProp("driver-" + tag, [&](GeometryCollector& c) {
-            Rng own = Rng::derive(settings.seed, "driver-" + tag);
-            // The shoulder height is set per cabin at submission; this is the
-            // ordinary saloon's, and the seat matrix scales nothing -- a
-            // driver is a driver whatever they are sitting in.
-            props.driver(c, own, skin, clothes, 0.52f, own.range(0.0f, 1.0f), 0.34f);
-        }));
-    }
-
-    // Every moving vehicle gets one, dealt from a stream of its own so adding
-    // drivers moved nothing else. Parked cars stay empty, which is what a
-    // parked car is.
+    // What used to sit there was a prop of its own -- an ellipsoid head with
+    // no face, a bar for shoulders, two spheres for hands -- on the argument
+    // that glass takes the detail away. It does not take away enough: the
+    // figure read as a shop mannequin, which is worse than an empty seat
+    // because an empty seat is at least not a person done badly.
+    //
+    // So a driver is now one of the crowd's own people. The same imported
+    // MakeHuman figure with the same skin, the same derived face normals, the
+    // same hair and clothes, on the same nineteen-bone skeleton, playing the
+    // `drive` clip. It costs the collapsed three-draw material set instead of
+    // two, inside thirty metres and in moving cars only -- and it costs no
+    // mesh memory at all, because it is a mesh the crowd already uploaded.
     Rng deal = Rng::derive(settings.seed, "drivers");
     const std::vector<Vehicle>& fleet = traffic_.vehicles();
+    driverPlayers_.resize(fleet.size());
     int seated = 0;
     for (std::size_t v = 0; v < fleet.size(); ++v)
     {
@@ -2975,30 +3105,63 @@ void CityScene::buildDrivers(const RenderSettings& settings)
         // parked line-up car is the only way to look one in the face without
         // chasing traffic.
         if (fleet[v].parked && !settings.vehicleLineup) continue;
-        driverForVehicle_[v] = deal.intRange(0, kDriverVariants - 1);
+        const int variant = deal.intRange(0, static_cast<int>(characterMeshes_.size()) - 1);
+        driverForVehicle_[v] = variant;
+        // Seated height, not standing height. The crowd runs from 1.40 m to
+        // 1.88 m as authored, and a 1.88 m figure folded into a Mini puts its
+        // crown through the roof lining; a driver is drawn at a height the
+        // cabin it is in can hold, which is what a person choosing a car does
+        // too. The spread is still there -- 1.62 to 1.84 -- so a row of cars
+        // is not a row of one person.
+        driverHeight_[v] = deal.range(1.62f, 1.84f);
+        driverPlayers_[v] = std::make_unique<Graphics::AnimationPlayer>(
+            characterMeshes_[static_cast<std::size_t>(variant)]->skinning);
         ++seated;
     }
-    CNA::Logger::Info("cna-street: " + std::to_string(seated) + " drivers over "
-                      + std::to_string(driverMeshes_.size()) + " variants");
+    CNA::Logger::Info("cna-street: " + std::to_string(seated) + " drivers, drawn as "
+                      + std::to_string(characterMeshes_.size())
+                      + " of the crowd's own figures");
 }
 
-Matrix CityScene::driverSeat(const Vehicle& vehicle)
+Matrix CityScene::driverSeat(const Vehicle& vehicle, float steeringSide,
+                             float drawnLength, float drawnWidth, float drawnHeight)
 {
-    // Where the driver's seat cushion is, in the car's own frame. Taken from
-    // the *class* dimensions rather than the drawn model's bounding box: the
-    // Mini's box is 1.83 m tall because of its roof aerial, and a seat placed
-    // off that would put its driver's head through the roof.
+    // Where the driver's seat cushion is, in the car's own frame, and every
+    // one of the three numbers here has been wrong for a different reason.
     //
-    // Right-hand traffic means left-hand drive, and in a frame whose nose is
-    // +Z with +X east, the left of a car facing north is -X. (The lanes agree:
-    // northbound traffic runs at +x, the east side of the street.) Along the
-    // car, a saloon's H-point is about the middle and a van's cab is at the
-    // front.
+    // **Across.** A car's left, with the nose at +Z and +Y up, is +X -- the
+    // rule `Geometry::AlongFrame` states -- and all eight authored models put
+    // their steering wheel there, which `vehicle-orientation.py` measures
+    // rather than assumes. The seat used to sit at -X on the strength of a
+    // comment, so every driver in the street was in the passenger seat with
+    // the wheel beside them and nobody behind it. @p steeringSide carries the
+    // model's own side, so a right-hand-drive model added later needs no
+    // change here.
+    //
+    // **Along.** From the *drawn* model's length, not the class's. The two
+    // are close for a moving car, which is dealt a model of its own class,
+    // and nowhere near for the line-up: a van-class car drawn as a 4.26 m
+    // hatchback put its driver 1.6 m forward of centre, which is outside the
+    // windscreen. A driver sitting on the bonnet is what this looked like.
+    //
+    // **Up.** The *lower* of the two heights, which is the one rule that
+    // survives both ways of being wrong. A bounding box is honest about
+    // length and width and inflates height -- the Mini's box is 1.83 m
+    // because of a roof aerial -- so the class caps the model; and a class
+    // can be taller than the car actually drawn for it, so the model caps the
+    // class. Taking the minimum is right in both directions, and a seat that
+    // is a couple of centimetres low is a driver sitting in a car rather than
+    // one wearing it.
     const VehicleDimensions d = VehicleFactory::dimensionsFor(vehicle.type);
     const bool van = vehicle.type == VehicleType::Van;
-    const float across = -d.width * 0.20f;
-    const float along  = d.length * (van ? 0.30f : 0.05f);
-    const float seatY  = d.height * (van ? 0.40f : 0.38f);
+    const float length = drawnLength > 0.5f ? drawnLength : d.length;
+    const float width  = drawnWidth  > 0.5f ? drawnWidth  : d.width;
+    // 0.175 rather than 0.20 because a drawn width includes the door mirrors
+    // and a body width does not; on these eight that is about 18 cm.
+    const float across = width * 0.175f * (steeringSide >= 0.0f ? 1.0f : -1.0f);
+    const float along  = length * (van ? 0.26f : 0.02f);
+    const float height = drawnHeight > 0.5f ? std::min(drawnHeight, d.height) : d.height;
+    const float seatY  = height * (van ? 0.40f : 0.38f);
     return Matrix::CreateTranslation(across, seatY, along);
 }
 
@@ -3258,6 +3421,13 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
                 CharacterMesh::Part{far.parts[part].material, std::move(mesh)});
         }
 
+        // Where this figure's hips are in its bind pose, so a seated one can
+        // be placed by them: a driver sits on a cushion, not on the floor.
+        {
+            const int pelvis = full.skeleton.find(BoneName::kPelvis);
+            if (pelvis >= 0) entry->hipHeight = full.skeleton[pelvis].head.Y;
+        }
+
         // The skeleton, in the form AnimationPlayer wants. Held by unique_ptr
         // because every player holds a reference to it for its whole life.
         entry->skinning.BoneCount         = full.skeleton.count();
@@ -3472,7 +3642,12 @@ void CityScene::buildViewpoints()
             sample.type = TrafficSystem::typeForVariant(variant);
             const Vector3 seat = driverSeat(sample).getTranslationProperty();
             const Vector3 head(at.X + seat.X, seat.Y + 0.62f, at.Y + seat.Z);
-            const Vector3 stand(head.X - 2.5f, head.Y + 0.32f, head.Z + 1.9f);
+            // Stood off the driver's own side of the car, whichever that is:
+            // a viewpoint on the passenger side shows a driver through two
+            // panes and a passenger seat, which is how the wrong-side driver
+            // survived a whole pass of being looked at.
+            const float side = seat.X >= 0.0f ? 1.0f : -1.0f;
+            const Vector3 stand(head.X + side * 2.5f, head.Y + 0.32f, head.Z + 1.9f);
             const Vector3 look = head - stand;
             // The camera's forward is (sin yaw, sin pitch, -cos yaw): the
             // minus on Z is why a yaw taken as atan2(dx, dz) points a

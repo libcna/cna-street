@@ -117,9 +117,16 @@ public:
         Microsoft::Xna::Framework::Graphics::AnimationClip idle;
         Microsoft::Xna::Framework::Graphics::AnimationClip idlePhone;
         Microsoft::Xna::Framework::Graphics::AnimationClip idleHands;
+        /// Sitting at a wheel: what the people in the moving cars play. The
+        /// drivers used to be a rigid two-draw prop with an ellipsoid for a
+        /// head, and through a windscreen that read as a shop mannequin. This
+        /// puts the crowd's own figure -- face, hair, clothes and all -- in
+        /// the driver's seat.
+        Microsoft::Xna::Framework::Graphics::AnimationClip drive;
         /// The names the clips are installed under, in the order above.
         static constexpr const char* kWalkNames[3] = {"walk", "walk-brisk", "walk-easy"};
         static constexpr const char* kIdleNames[3] = {"idle", "idle-phone", "idle-hands"};
+        static constexpr const char* kDriveName    = "drive";
         /// How much longer or shorter a style's stride is than the plain
         /// walk's, which is how the scene keeps the feet on the ground:
         /// the clip's clock is distance walked over the stride.
