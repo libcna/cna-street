@@ -156,6 +156,9 @@ private:
             /// of their own, and those are composed in front of the placement.
             Microsoft::Xna::Framework::Matrix local =
                 Microsoft::Xna::Framework::Matrix::getIdentityProperty();
+            /// See ModelLibrary::Part::axle. (1,0,0) unless this is a wheel.
+            Microsoft::Xna::Framework::Vector3 axle{1.0f, 0.0f, 0.0f};
+            float axleSpread = 1.0f;
         };
         std::vector<Part> parts;
         Microsoft::Xna::Framework::BoundingBox bounds;
@@ -344,6 +347,17 @@ private:
             /// They still steer, because a caliper turns with the stub axle.
             PropMesh hub;
             Microsoft::Xna::Framework::Vector3 centre{0.0f, 0.0f, 0.0f};
+            /// The rotation that brings the wheel's measured axle onto the
+            /// car's X, applied before the roll. Five of the eight models
+            /// export their front wheels with ten to eighteen degrees of toe
+            /// or camber baked into the mesh; rolled about X as they came,
+            /// they wobbled by twice that every turn of the wheel, and stood
+            /// visibly turned when the car was going straight. Identity for
+            /// a wheel whose axle is X already.
+            Microsoft::Xna::Framework::Matrix straighten =
+                Microsoft::Xna::Framework::Matrix::getIdentityProperty();
+            /// How far the axle was off X, in degrees, for the log.
+            float tiltDegrees = 0.0f;
             bool steered = false;
         };
         std::string name;

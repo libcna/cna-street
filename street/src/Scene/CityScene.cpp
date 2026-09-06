@@ -907,6 +907,8 @@ CityScene::PropMesh CityScene::importedProp(const std::string& asset, const Matr
         placed.material = part.material;
         placed.mesh     = part.mesh;
         placed.local    = part.bone * adjust;
+        placed.axle     = part.axle;
+        placed.axleSpread = part.axleSpread;
         Grow(lo, hi, TransformBounds(part.mesh->bounds(), placed.local));
         prop.parts.push_back(placed);
     }
@@ -1114,12 +1116,16 @@ void CityScene::submit(const RenderSettings& settings, const Vector3& eye)
                     Matrix steer = Matrix::getIdentityProperty();
                     if (wheel.steered && vehicle.steerAngle != 0.0f)
                         steer = Matrix::CreateRotationY(vehicle.steerAngle);
-                    submitProp(wheel.mesh, Matrix::CreateRotationX(rolled) * steer * axle,
+                    // Straighten the export's own toe or camber onto X, roll
+                    // about X, steer about Y, place: in that order.
+                    submitProp(wheel.mesh,
+                               wheel.straighten * Matrix::CreateRotationX(rolled) * steer * axle,
                                nullptr, false, DrawFamily::Vehicle);
                     // The caliper, the upright and the arch liner turn with
                     // the stub axle and stand still otherwise.
                     if (!wheel.hub.empty())
-                        submitProp(wheel.hub, steer * axle, nullptr, false, DrawFamily::Vehicle);
+                        submitProp(wheel.hub, wheel.straighten * steer * axle, nullptr, false,
+                                   DrawFamily::Vehicle);
                 }
                 continue;
             }
@@ -2921,6 +2927,48 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
                 hub.parts.clear();
                 rollLo = lo; rollHi = hi;
             }
+            // ...and the axle's *direction* is measured, not assumed. The
+            // biggest *rolling* part is the wheel -- measured after the liner
+            // and caliper are set aside, since a liner's covariance is not a
+            // wheel's; the Punto's read 50 degrees off before that -- and its
+            // tyre ring says which way it
+            // turns, and the rotation that brings that onto X goes in front
+            // of everything else the wheel does. Without it the Astra's front
+            // wheels, exported with 18.6 degrees of toe in the mesh, wobbled
+            // by 37 degrees every revolution and stood turned at rest.
+            {
+                // The biggest rolling part whose spread along its axle is a
+                // tyre's or a rim's -- measured, on these eight, between 0.08
+                // and 0.26 of its spread across. Not the most ring-like: the
+                // Punto's wheel node carries a *planar* ring (spread 0.003)
+                // lying fifty degrees off the axle, and "most ring-like"
+                // chose it and turned the whole wheel fifty degrees. Not the
+                // biggest either: on the same car the biggest is that disc.
+                const PropMesh::Part* best = nullptr;
+                for (const PropMesh::Part& part : rolls.parts)
+                    if (part.mesh->triangleCount() >= 60 && part.axleSpread > 0.03f
+                        && part.axleSpread < 0.35f
+                        && (best == nullptr
+                            || part.mesh->triangleCount() > best->mesh->triangleCount()))
+                        best = &part;
+                Vector3 axle = best != nullptr ? best->axle : Vector3(1.0f, 0.0f, 0.0f);
+                if (axle.X < 0.0f) axle = axle * -1.0f;
+                const float length = axle.Length();
+                if (length > 1e-4f)
+                {
+                    axle = axle * (1.0f / length);
+                    const float cosine = std::clamp(axle.X, -1.0f, 1.0f);
+                    wheel.tiltDegrees = std::acos(cosine) * 180.0f / MathHelper::Pi;
+                    Vector3 pivot = Vector3::Cross(axle, Vector3(1.0f, 0.0f, 0.0f));
+                    const float sine = pivot.Length();
+                    // Below a fifth of a degree the export is straight and the
+                    // correction would be noise dressed as a matrix.
+                    if (sine > 0.0035f)
+                        wheel.straighten = Matrix::CreateFromAxisAngle(pivot * (1.0f / sine),
+                                                                       std::atan2(sine, cosine));
+                }
+            }
+
             rolls.bounds = BoundingBox(rollLo, rollHi);
             hub.bounds   = BoundingBox(lo, hi);
             mesh.bounds  = BoundingBox(lo, hi);
@@ -2933,8 +2981,24 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
             radius       = std::max(radius, (rollHi.Y - rollLo.Y) * 0.5f);
             hero.wheels.push_back(std::move(wheel));
         }
+        int straightenedParked = 0;
         if (hero.wheels.size() == 4)
         {
+            // The parked copy carries the same wheels at their node placement,
+            // so it gets the same straightening: a car parked with its front
+            // wheels turned eighteen degrees is a car whose driver was
+            // careless, and eight of them in a row are a modelling error.
+            for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
+            {
+                if (wheel.straighten == Matrix::getIdentityProperty()) continue;
+                for (PropMesh::Part& part : hero.whole.parts)
+                    if (Vector3::Distance(part.local.getTranslationProperty(), wheel.centre)
+                        < 0.02f)
+                    {
+                        part.local = wheel.straighten * part.local;
+                        ++straightenedParked;
+                    }
+            }
             // The front pair steers: the two nearer the nose.
             float noseZ = -1e30f;
             for (const HeroVehicleMesh::Wheel& wheel : hero.wheels) noseZ = std::max(noseZ, wheel.centre.Z);
@@ -2952,12 +3016,17 @@ void CityScene::buildHeroVehicles(Rng& rng, const RenderSettings& settings)
                 rolling += wheel.mesh.parts.size();
                 bolted  += wheel.hub.parts.size();
             }
-            char line[256];
+            float worstTilt = 0.0f;
+            for (const HeroVehicleMesh::Wheel& wheel : hero.wheels)
+                worstTilt = std::max(worstTilt, wheel.tiltDegrees);
+            char line[320];
             std::snprintf(line, sizeof(line),
                           "cna-street: %s  %.2f x %.2f x %.2f m, wheel r %.3f, "
-                          "%zu wheels, %zu rolling part(s) and %zu bolted to the car",
+                          "%zu wheels, %zu rolling part(s) and %zu bolted to the car, "
+                          "axle up to %.1f deg off X, %d parked part(s) straightened",
                           hero.name.c_str(), hero.length, hero.width, hero.height,
-                          hero.wheelRadius, hero.wheels.size(), rolling, bolted);
+                          hero.wheelRadius, hero.wheels.size(), rolling, bolted, worstTilt,
+                          straightenedParked);
             CNA::Logger::Info(line);
         }
         heroVehicleMeshes_.push_back(std::move(hero));

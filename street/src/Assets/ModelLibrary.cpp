@@ -69,7 +69,8 @@ Matrix AbsoluteTransform(const ModelMesh& mesh)
 /// Returns false when the buffer will not give its bytes up -- a write-only
 /// buffer, a declaration with no position element -- and the caller keeps the
 /// sphere's cube, which is wrong but never too small.
-bool PartBounds(ModelMeshPart& part, BoundingBox& out)
+bool PartBounds(ModelMeshPart& part, BoundingBox& out, Vector3* axle = nullptr,
+                float* axleSpread = nullptr)
 {
     VertexBuffer* buffer = part.getVertexBufferProperty();
     if (buffer == nullptr) return false;
@@ -100,6 +101,8 @@ bool PartBounds(ModelMeshPart& part, BoundingBox& out)
     }
 
     Vector3 lo(1e30f, 1e30f, 1e30f), hi(-1e30f, -1e30f, -1e30f);
+    std::vector<Vector3> points;
+    if (axle != nullptr) points.reserve(static_cast<std::size_t>(count));
     for (int i = 0; i < count; ++i)
     {
         float p[3];
@@ -108,9 +111,71 @@ bool PartBounds(ModelMeshPart& part, BoundingBox& out)
         if (!std::isfinite(p[0]) || !std::isfinite(p[1]) || !std::isfinite(p[2])) continue;
         lo = Vector3(std::min(lo.X, p[0]), std::min(lo.Y, p[1]), std::min(lo.Z, p[2]));
         hi = Vector3(std::max(hi.X, p[0]), std::max(hi.Y, p[1]), std::max(hi.Z, p[2]));
+        if (axle != nullptr) points.emplace_back(p[0], p[1], p[2]);
     }
     if (lo.X > hi.X) return false;
     out = BoundingBox(lo, hi);
+
+    // The axis a wheel turns about, from its own tyre. The tyre is the ring
+    // of vertices furthest from the part's centre; a ring's covariance has
+    // one small eigenvalue and two large ones, and the small one's
+    // eigenvector is the axle. Power iteration on (trace*I - C) finds it
+    // without a linear-algebra library: that matrix's largest eigenvalue is
+    // the covariance's smallest, and a wheel's is far enough from the other
+    // two that thirty steps from +X settle it to a hundredth of a degree.
+    if (axle != nullptr)
+    {
+        *axle = Vector3(1.0f, 0.0f, 0.0f);
+        const Vector3 centre = (lo + hi) * 0.5f;
+        float furthest = 0.0f;
+        for (const Vector3& q : points) furthest = std::max(furthest, Vector3::Distance(q, centre));
+        double c[3][3] = {{0, 0, 0}, {0, 0, 0}, {0, 0, 0}};
+        double mean[3] = {0, 0, 0};
+        int ring = 0;
+        for (const Vector3& q : points)
+            if (Vector3::Distance(q, centre) > 0.75f * furthest)
+            {
+                mean[0] += q.X; mean[1] += q.Y; mean[2] += q.Z;
+                ++ring;
+            }
+        if (ring >= 12)
+        {
+            for (double& m : mean) m /= ring;
+            for (const Vector3& q : points)
+            {
+                if (Vector3::Distance(q, centre) <= 0.75f * furthest) continue;
+                const double d[3] = {q.X - mean[0], q.Y - mean[1], q.Z - mean[2]};
+                for (int a = 0; a < 3; ++a)
+                    for (int b = 0; b < 3; ++b) c[a][b] += d[a] * d[b];
+            }
+            const double trace = c[0][0] + c[1][1] + c[2][2];
+            double m[3][3];
+            for (int a = 0; a < 3; ++a)
+                for (int b = 0; b < 3; ++b) m[a][b] = (a == b ? trace : 0.0) - c[a][b];
+            double v[3] = {1.0, 0.0, 0.0};
+            for (int step = 0; step < 40; ++step)
+            {
+                double w[3] = {0, 0, 0};
+                for (int a = 0; a < 3; ++a)
+                    for (int b = 0; b < 3; ++b) w[a] += m[a][b] * v[b];
+                const double n = std::sqrt(w[0] * w[0] + w[1] * w[1] + w[2] * w[2]);
+                if (n < 1e-12) break;
+                for (int a = 0; a < 3; ++a) v[a] = w[a] / n;
+            }
+            if (v[0] < 0.0) for (double& x : v) x = -x;
+            *axle = Vector3(static_cast<float>(v[0]), static_cast<float>(v[1]),
+                            static_cast<float>(v[2]));
+            // Spread along the axle over spread across it. C is the ring's
+            // scatter; v'Cv is the variance along v and the trace holds the
+            // rest. A torus gives a few hundredths; a half-ring or a bracket
+            // gives something near one, and is not to be trusted.
+            double along = 0.0;
+            for (int a = 0; a < 3; ++a)
+                for (int b = 0; b < 3; ++b) along += v[a] * c[a][b] * v[b];
+            const double across = std::max((trace - along) * 0.5, 1e-12);
+            if (axleSpread != nullptr) *axleSpread = static_cast<float>(along / across);
+        }
+    }
     return true;
 }
 
@@ -286,7 +351,11 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
             if (installed == nullptr) continue;
 
             BoundingBox local = meshBox;
-            if (!PartBounds(*part, local))
+            Vector3 axle(1.0f, 0.0f, 0.0f);
+            float axleSpread = 1.0f;
+            const bool isWheel = mesh->getNameProperty().rfind("wheel_", 0) == 0;
+            if (!PartBounds(*part, local, isWheel ? &axle : nullptr,
+                            isWheel ? &axleSpread : nullptr))
             {
                 local = meshBox;
                 ++looseBounds;
@@ -297,7 +366,7 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
                 auto mesh2 = std::make_unique<GpuMesh>(*part, local, material.name);
                 triangles_ += static_cast<std::size_t>(mesh2->triangleCount());
                 result->parts.push_back(Part{installed, mesh2.get(), bone,
-                                             mesh->getNameProperty()});
+                                             mesh->getNameProperty(), axle, axleSpread});
                 meshes_.push_back(std::move(mesh2));
             }
             catch (const std::exception&)
