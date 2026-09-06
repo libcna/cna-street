@@ -23,6 +23,9 @@ cna_street_test(character_format_tests CharacterFormatTests.cpp)
 # The walk and idle clips: a knee bends one way, an arm swings against its
 # leg, the legs are half a cycle apart, and the three walks are three walks.
 cna_street_test(gait_tests GaitTests.cpp)
+# The per-cascade caster test: a caster is written into a cascade only if the
+# volume its shadow can occupy overlaps the cascade's own depth slice.
+cna_street_test(shadow_cull_tests ShadowCullTests.cpp)
 
 # The licence gate as a test, where Python is available: every fetched asset
 # declared, every declared licence on the allow-list, every digest matching.

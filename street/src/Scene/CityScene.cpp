@@ -1517,8 +1517,29 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
                                     [](const std::string& node) {
                                         return node.find("aged") == std::string::npos;
                                     });
+    // The scanned hydrant is 6 200 triangles, and `--frames` put it fourth in
+    // the whole shadow pass by triangle -- 600 000 a frame on the flagship
+    // view, behind only the three tree species -- for a shadow that is a
+    // stub of grey a hand wide. The generated hydrant is the same silhouette
+    // at a hundred and fifty triangles; it casts, and the scan does not.
+    PropMesh hydrantShadow;
     if (hydrant.empty())
         hydrant = makeProp("hydrant", [&](GeometryCollector& c) { props.hydrant(c); });
+    else
+    {
+        hydrantShadow = makeProp("hydrant-shadow", [&](GeometryCollector& c) { props.hydrant(c); });
+        // Stretched to the scan's own height, so the shadow is the hydrant's
+        // and not the generator's idea of one.
+        const float scanned = hydrant.bounds.Max.Y - hydrant.bounds.Min.Y;
+        if (scanned > 0.2f)
+        {
+            const float fit = scanned / M::kHydrantHeight;
+            for (PropMesh::Part& part : hydrantShadow.parts)
+                part.local = part.local * Matrix::CreateScale(fit);
+            hydrantShadow.bounds = BoundingBox(hydrantShadow.bounds.Min * fit,
+                                               hydrantShadow.bounds.Max * fit);
+        }
+    }
     // The street seating kit is a set of modules; the ones from x = -2.32 to 0
     // make one bench with a back and two arm rests, centred here.
     PropMesh bench = importedProp(
@@ -1758,7 +1779,10 @@ void CityScene::buildStreetFurniture(Rng& rng, const RenderSettings& settings)
     placeProp(bench, benchAt, "bench", cull * 0.5f, shade * 0.6f);
     placeProp(bollard, bollardAt, "bollard", cull * 0.4f, shade * 0.4f);
     placeProp(bin, binAt, "litter-bin", cull * 0.5f, shade * 0.6f);
-    placeProp(hydrant, hydrantAt, "hydrant", cull * 0.4f, shade * 0.4f);
+    placeProp(hydrant, hydrantAt, "hydrant", cull * 0.4f, shade * 0.4f,
+              /*castsShadow=*/hydrantShadow.empty());
+    if (!hydrantShadow.empty())
+        placeShadowProxy(hydrantShadow, hydrantAt, "hydrant-shadow", shade * 0.4f);
     for (std::size_t i = 0; i < cabinets.size(); ++i)
         placeProp(cabinets[i], cabinetAt[i], "cabinet-" + std::to_string(i), cull * 0.7f, shade);
     placeProp(sack, sackAt, "refuse-sack", cull * 0.3f, shade * 0.3f);

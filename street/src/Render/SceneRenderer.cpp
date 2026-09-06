@@ -566,6 +566,8 @@ void SceneRenderer::applyLighting(const RenderSettings& settings)
 
     // The sky's environment to start with; a draw with a probe swaps its own in.
     environmentBound_ = false;
+    appliedMaterial_  = nullptr;
+    appliedProbe_     = nullptr;
     applyEnvironment(nullptr, settings);
 
     // Distance fog matched to the sky's own horizon haze, so the far end of the
@@ -633,6 +635,17 @@ void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
                                   const RenderSettings& settings, const ReflectionProbe* probe)
 {
     PbrEffect& effect = *effect_;
+
+    // Counted, not skipped. A run of draws in the same material and the same
+    // environment differs only in its world matrix, and every one of them
+    // still goes through every setter below and a full parameter upload in
+    // the framework's draw. How many there are is the number a state cache
+    // on this side could collapse -- and the measured split between
+    // Stats::opaqueApplyMs and Stats::opaqueDrawMs is what it would buy.
+    ++stats_.materialApplies;
+    if (&material == appliedMaterial_ && probe == appliedProbe_) ++stats_.repeatedMaterialApplies;
+    appliedMaterial_ = &material;
+    appliedProbe_    = probe;
 
     effect.setWorldProperty(world);
     effect.setViewProperty(view);
@@ -702,6 +715,27 @@ void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
     effect.Apply();
 }
 
+bool SceneRenderer::casterShadowReachesSlice(const Vector3& eye, const Vector3& forward,
+                                             float nearDepth, float farDepth,
+                                             const Vector3& lightDirection, const Vector3& centre,
+                                             float radius, float groundY, float margin)
+{
+    // The light travels along lightDirection; -Y of it is how steeply it
+    // falls. Near the horizon a shadow is as long as the world and the
+    // question has no useful answer, so everything is a caster.
+    const float down = -lightDirection.Y;
+    if (down < 0.05f) return true;
+    // Sweep the sphere along the light until its top has passed below the
+    // lowest receiver. Everything the caster can shade is inside that sweep.
+    const float travel = std::max(0.0f, (centre.Y + radius - groundY) / down);
+    const Vector3 end = centre + lightDirection * travel;
+    const float d0 = Vector3::Dot(centre - eye, forward);
+    const float d1 = Vector3::Dot(end - eye, forward);
+    const float lo = std::min(d0, d1) - radius - margin;
+    const float hi = std::max(d0, d1) + radius + margin;
+    return hi >= nearDepth && lo <= farDepth;
+}
+
 SceneRenderer::CascadeVolume SceneRenderer::cascadeVolume(const Camera& camera, float nearSplit,
                                                           float farSplit) const
 {
@@ -769,7 +803,6 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
                           + splits);
     }
 
-    const Vector3& eye = camera.position();
     const float propShadowLimit = settings.propShadowDistance;
 
     // State first, then the pass: CNA's own cascade example sets the render
@@ -787,7 +820,14 @@ void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& sett
         const float far = shadows_->getSplitDistance(cascade);
         const int drawsBefore = stats_.shadowDrawCalls;
         const long long trianglesBefore = shadowTriangles_;
-        const CascadeVolume volume = cascadeVolume(camera, near, far);
+        CascadeVolume volume = cascadeVolume(camera, near, far);
+        volume.nearSplit = near;
+        volume.forward   = camera.forward();
+        volume.slice     = true;
+        // The fit is sphere-based: the map's side is the sphere's diameter.
+        volume.texel = shadows_->getCascadeSize() > 0
+                           ? 2.0f * volume.radius / static_cast<float>(shadows_->getCascadeSize())
+                           : 0.0f;
         shadows_->begin(cascade);
         drawCasters(volume, propShadowLimit);
         shadows_->end();
@@ -839,6 +879,37 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
         return Vector3::Distance(volume.centre, centre) <= volume.radius + radius * 3.0f;
     };
 
+    // And whether this cascade will ever be *asked* for the caster's shadow.
+    // The sphere above says the caster is near the slice; this says the
+    // shadow it throws lands at a depth the receiver reads from this cascade
+    // and not from a nearer one. The far cascade's fit sphere is 250 m across
+    // and contains most of the street, so without this every caster in front
+    // of the camera was rasterised into it as well as into its own cascade --
+    // and the receiver, which picks a cascade by view depth, never sampled
+    // those texels. Measured on the flagship view: the far cascade was half
+    // the pass's draws and triangles, most of them the near street.
+    //
+    // Padded by the receiver's blend band, over which it reads two cascades,
+    // and a metre for the ground the swept sphere is closed against.
+    const Vector3 light  = sky_.lightDirection();
+    const float   margin = (shadows_ != nullptr ? shadows_->getBlendBand() : 0.0f) + 1.0f;
+    const float   groundY = -0.10f;
+    const auto inSlice = [&](const Vector3& centre, float radius) {
+        if (!volume.slice) return true;
+        if (radius * 2.0f < volume.texel)
+        {
+            ++stats_.shadowTexelSkips;
+            return false;
+        }
+        if (!casterShadowReachesSlice(volume.eye, volume.forward, volume.nearSplit,
+                                      volume.split, light, centre, radius, groundY, margin))
+        {
+            ++stats_.shadowSliceSkips;
+            return false;
+        }
+        return true;
+    };
+
     for (const SceneItem& item : items_)
     {
         if (!item.material->castsShadow) continue;
@@ -846,6 +917,7 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
         const float away = DistanceToBox(volume.eye, item.worldBounds);
         if (away > volume.split + item.worldSphere.Radius) continue;
         if (item.shadowDistance > 0.0f && away > item.shadowDistance) continue;
+        if (!inSlice(item.worldSphere.Center, item.worldSphere.Radius)) continue;
         caster->SetUniformMat4("uWorld", &item.world.M11);
         item.mesh->draw(device_);
         ++stats_.shadowDrawCalls;
@@ -860,6 +932,7 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
         if (DistanceToBox(volume.eye, item.worldBounds)
             > volume.split + item.worldSphere.Radius)
             continue;
+        if (!inSlice(item.worldSphere.Center, item.worldSphere.Radius)) continue;
         caster->SetUniformMat4("uWorld", &item.world.M11);
         item.mesh->draw(device_);
         ++stats_.shadowDrawCalls;
@@ -900,6 +973,7 @@ void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLim
             const BoundingSphere& sphere = group.spheres[i];
             if (Vector3::Distance(volume.eye, sphere.Center) - sphere.Radius > limit) continue;
             if (!reaches(sphere.Center, sphere.Radius)) continue;
+            if (!inSlice(sphere.Center, sphere.Radius)) continue;
             caster->SetUniformMat4("uWorld", &group.transforms[i].M11);
             casterMesh->draw(device_);
             ++stats_.shadowDrawCalls;
@@ -1041,11 +1115,30 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
 
     const Matrix& view = camera.view();
     const Matrix& projection = camera.projection();
+
+    // Two clocks inside the pass, when asked: the time in this side's
+    // setters and Apply, and the time in the framework's draw. Both are
+    // driver time -- neither waits for the GPU -- and the split says where a
+    // submission-bound frame is actually spending it.
+    const bool timing = drawTimingEnabled_;
+    Stopwatch watch;
+    if (timing) watch = Stopwatch::StartNew();
+    long long applyTicks = 0, drawTicks = 0, skinnedTicks = 0;
+    long long last = 0;
+    const auto lap = [&](long long& into) {
+        if (!timing) return;
+        const long long now = watch.getElapsedTicksProperty();
+        into += now - last;
+        last = now;
+    };
+
     for (std::size_t index : visibleOpaque_)
     {
         const SceneItem& item = items_[index];
         applyMaterial(*item.material, item.world, view, projection, settings, item.probe);
+        lap(applyTicks);
         item.mesh->draw(device_);
+        lap(drawTicks);
         ++stats_.drawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
     }
@@ -1055,7 +1148,9 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
         const SceneItem& item = dynamic_[index];
         if (item.material->isBlended()) continue;
         applyMaterial(*item.material, item.world, view, projection, settings, item.probe);
+        lap(applyTicks);
         item.mesh->draw(device_);
+        lap(drawTicks);
         ++stats_.drawCalls;
         stats_.triangles += static_cast<std::size_t>(item.mesh->triangleCount());
         if (item.family == DrawFamily::Vehicle)
@@ -1076,9 +1171,11 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
 
         applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
                       nullptr);
+        lap(applyTicks);
         InstancedRendererEXT& instanced = instancedFor(mesh);
         instanced.setInstances(visible);
         instanced.draw(*effect_);
+        lap(drawTicks);
         stats_.instancedDrawCalls += instanced.getLastDrawCallCount();
         stats_.drawCalls += instanced.getLastDrawCallCount();
         stats_.triangles += static_cast<std::size_t>(mesh->triangleCount()) * visible.size();
@@ -1087,6 +1184,14 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
     // The crowd, last among the opaque draws: a different effect, so it costs
     // one program switch rather than one per person interleaved with the rest.
     drawSkinned(camera, settings);
+    lap(skinnedTicks);
+
+    if (timing)
+    {
+        stats_.opaqueApplyMs = static_cast<float>(applyTicks) / 10000.0f;
+        stats_.opaqueDrawMs  = static_cast<float>(drawTicks) / 10000.0f;
+        stats_.skinnedMs     = static_cast<float>(skinnedTicks) / 10000.0f;
+    }
 }
 
 void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& settings)
@@ -1541,6 +1646,11 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     stats_.driverDrawCalls = 0;
     stats_.vehicleTriangles = 0;
     stats_.skinnedDrawCalls = 0;
+    stats_.materialApplies = 0;
+    stats_.repeatedMaterialApplies = 0;
+    stats_.shadowSliceSkips = 0;
+    stats_.shadowTexelSkips = 0;
+    stats_.opaqueApplyMs = stats_.opaqueDrawMs = stats_.skinnedMs = -1.0f;
     if (shadowReportEnabled_) shadowByName_.clear();
     shadowTriangles_ = 0;
 
