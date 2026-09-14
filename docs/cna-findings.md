@@ -720,6 +720,91 @@ runtime what it already does for the file.
 
 ---
 
+## CNA-F21 — `GraphicsDevice` refuses to filter `HdrBlendable` under any profile, but `BloomPass` asks it to anyway
+
+**Severity:** high (the HDR pipeline this project depends on end to end
+cannot complete a frame with real content loaded and the `next`-branch CNA
+this repository builds against)
+**Affected:** `GraphicsDevice::validateDrawState` /
+`IsPointFilterOnlyFormat` (`modules/graphics/src/Xna/GraphicsDevice.cpp`)
+versus `BloomPass::apply`'s secondary-sampler choice
+(`modules/graphics-ext/src/BloomPass.cpp:163-177`)
+
+**What happens.** `validateFilteredTexture` throws whenever a bound
+texture's format is one of six float-ish formats --
+`Single`/`Vector2`/`Vector4`/`HalfSingle`/`HalfVector2`/`HalfVector4`/
+`HdrBlendable` -- and its sampler's filter is not `Point`. Unlike the
+neighbouring `validateNpotTexture` check (CNA-adjacent, same function),
+this one is **not** gated on `graphicsProfile_ == GraphicsProfile::Reach`:
+it fires under `HiDef` too, matching the comment above it that D3D9 HiDef
+genuinely cannot filter these formats in hardware.
+
+`BloomPass`, however, decides its sampler from a renderer *capability*
+query, not from the profile: `manualFilter_ = !device.SupportsCapability(
+GraphicsCapability::HalfFloatTextureLinearFiltering)`, and when that
+capability is reported (true on every OpenGL/Vulkan-class backend this
+project runs on, including EasyGL/OPENGL33), it binds the accumulated HDR
+target through `SamplerState::LinearClamp` on slot 1. `GraphicsDevice`
+then throws `"The active GraphicsProfile does not support filtering
+SurfaceFormat 19"` (19 = `HdrBlendable`) the first time that draw is
+submitted -- regardless of whether the profile is `Reach` or `HiDef`,
+and regardless of what the renderer capability said was fine.
+
+Choosing `GraphicsProfile::Reach` instead does not avoid the crash: it
+only moves it earlier, into `SkySystem::bakeEnvironment`'s deliberately
+non-power-of-two 96 px IBL cubemap (`TextureCube`'s own
+`ValidateTextureCubeCreationShapeEXT`, Reach-gated). Every flag this
+project exposes to turn off individual post passes (`--no-bloom`,
+`--no-ssao`, `--no-fog`, `--no-clouds`, `--no-ibl`, `--no-probes`,
+`--no-light-shafts` together) still crashes at the same
+`SurfaceFormat 19` filtering check, because HDR/tonemap has no such flag
+and the failing bind is not exclusive to `BloomPass`.
+
+**Reproduction.** Build this repository's `cna-street` against the
+checked-out `cna` `next` branch with `CNA_STREET_CONTENT_DIR` resolving to
+a real, non-empty content root (so `LoadContent` actually wires it up --
+see the note below), set `GraphicsDeviceManager`'s profile to `HiDef`
+(`Reach` is the unpatched default and fails earlier, see above), and run
+one frame: `cna-street --frames 1 --no-overlay`. It fails during the first
+present with `"The active GraphicsProfile does not support filtering
+SurfaceFormat 19."` -- verified with the EasyGL/OPENGL33 renderer, Mesa
+25.0.7, OpenGL 4.6.
+
+**Note on how this was found.** This project's own `build/` had been
+configured from a now-nonexistent source path
+(`github.com/openeggbert/cna-street` instead of this checkout's
+`github.com/libcna/cna-street`), so `CNA_STREET_DEFAULT_ASSET_DIR` baked
+into the binary pointed nowhere, `LoadContent`'s
+`std::filesystem::is_directory(contentRoot)` check silently failed, and
+the whole demo had been running on its procedural fallback for materials,
+window-display props and pedestrians -- the intended MakeHuman-derived
+people and imported glTF props were never actually reaching the screen,
+which is why the live render looked visibly flatter than
+`docs/screenshots/`. Reconfiguring `build/` in place and adding an
+explicit `GraphicsProfile::HiDef` request to `StreetApplication`'s
+constructor (Reach's default forbids the sky cubemap outright) got content
+loading to `39 of 39 window displays dressed`, `8 of 8 crowd variants are
+imported people` -- and immediately surfaced this finding, which no
+combination of this project's own settings can route around.
+
+**Workaround here.** None available from `cna-street`'s side: every code
+path that completes a frame with HDR enabled binds `HdrBlendable` through a
+non-`Point` sampler somewhere in the pipeline, and HDR has no off switch.
+The stale prebuilt binary that shipped in this checkout's `build/` predates
+this regression -- it was linked against an older state of `cna` and
+presented frames fine, which is the only reason the demo has looked like
+it "runs" up to now.
+
+**Proposed fix.** Gate `validateFilteredTexture`'s `HdrBlendable` (and the
+other five formats') point-filter requirement on the *renderer's own*
+capability, the same way `BloomPass` already decides `manualFilter_`,
+rather than treating it as an unconditional D3D9-authenticity rule applied
+to every backend. Alternatively, expose the capability CNA already queries
+internally so a HiDef-profile caller on a capable renderer is not held to a
+Reach-era hardware limitation it does not have.
+
+---
+
 ## Eighth visual pass (2026-09-06): environment notes and behaviour
 
 **Two new defects, CNA-F19 and CNA-F20 above. Nothing in CNA,

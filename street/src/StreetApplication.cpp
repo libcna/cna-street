@@ -18,6 +18,7 @@
 #include "Microsoft/Xna/Framework/GameWindow.hpp"
 #include "Microsoft/Xna/Framework/GraphicsDeviceManager.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
+#include "Microsoft/Xna/Framework/Graphics/GraphicsProfile.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 #include "Microsoft/Xna/Framework/Input/Keyboard.hpp"
 #include "Microsoft/Xna/Framework/Input/Keys.hpp"
@@ -73,6 +74,17 @@ std::string SanitiseFileName(const std::string& text)
 StreetApplication::StreetApplication()
     : graphics_(std::make_unique<GraphicsDeviceManager>(this))
 {
+    // GraphicsDeviceManager defaults to GraphicsProfile::Reach, which forbids
+    // non-power-of-two cube textures among other HiDef-only features this scene
+    // relies on throughout: HDR render targets, MRT, cascaded shadows and the
+    // 96 px IBL environment cubemap SkySystem bakes (96 is not a power of two,
+    // deliberately, for prefiltered-specular quality). Reach only goes unnoticed
+    // when the content root does not resolve and everything falls back to the
+    // procedural path; with real content loaded it throws
+    // "Non-power-of-two TextureCube resources are not supported by the Reach
+    // graphics profile" out of Game::Run().
+    graphics_->setGraphicsProfileProperty(
+        Microsoft::Xna::Framework::Graphics::GraphicsProfile::HiDef);
     settings_.applyPreset(QualityPreset::High);
 }
 
