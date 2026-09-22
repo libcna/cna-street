@@ -29,6 +29,32 @@ namespace {
 
 float Dot(const Vector3& a, const Vector3& b) { return a.X * b.X + a.Y * b.Y + a.Z * b.Z; }
 
+Vector3 Cross(const Vector3& a, const Vector3& b)
+{
+    return Vector3(a.Y * b.Z - a.Z * b.Y, a.Z * b.X - a.X * b.Z, a.X * b.Y - a.Y * b.X);
+}
+
+/// The side of each triangle's index winding relative to its vertex normals:
+/// +1 when every non-degenerate triangle's cross(b-a, c-a) agrees with them,
+/// -1 when every one disagrees, 0 when they are mixed.
+int WindingAgainstNormals(const MeshData& mesh)
+{
+    int agree = 0, disagree = 0;
+    for (std::size_t t = 0; t + 2 < mesh.indices.size(); t += 3)
+    {
+        const Vertex& a = mesh.vertices[mesh.indices[t]];
+        const Vertex& b = mesh.vertices[mesh.indices[t + 1]];
+        const Vertex& c = mesh.vertices[mesh.indices[t + 2]];
+        const Vector3 face = Cross(b.Position - a.Position, c.Position - a.Position);
+        if (Dot(face, face) < 1e-12f) continue;   // a pole triangle
+        const Vector3 n = a.Normal + b.Normal + c.Normal;
+        (Dot(face, n) > 0.0f ? agree : disagree)++;
+    }
+    if (disagree == 0 && agree > 0) return 1;
+    if (agree == 0 && disagree > 0) return -1;
+    return 0;
+}
+
 }  // namespace
 
 int main()
@@ -108,6 +134,22 @@ int main()
         const Microsoft::Xna::Framework::BoundingBox bounds = mesh.bounds();
         CHECK_NEAR(bounds.Min.X, -1.0, 1e-5);
         CHECK_NEAR(bounds.Max.Z, 5.0, 1e-5);
+    }
+
+    CASE("a sphere is wound the same way round as a box, so culling keeps its outside");
+    {
+        // An ellipsoid wound the other way was invisible under back-face
+        // culling from everywhere but inside it: the traffic-signal lenses were
+        // dark on both renderers because only their inside was ever drawn.
+        MeshBuilder box, sphere, ellipsoid;
+        box.addBox(Vector3(-1, 0, -2), Vector3(3, 4, 5));
+        sphere.addSphere(Vector3(1, 2, 3), 0.5f, 12, 8);
+        ellipsoid.addEllipsoid(Vector3(0, 0, -0.1f), Vector3(0.1f, 0.1f, 0.075f), 14, 8);
+        const int boxWinding = WindingAgainstNormals(box.mesh());
+        CHECK(boxWinding != 0);
+        CHECK_MSG(WindingAgainstNormals(sphere.mesh()) == boxWinding, "a sphere is inside out");
+        CHECK_MSG(WindingAgainstNormals(ellipsoid.mesh()) == boxWinding,
+                  "an ellipsoid is inside out");
     }
 
     CASE("BoxFaces omits exactly what it says");
