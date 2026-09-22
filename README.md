@@ -364,6 +364,25 @@ and more) are applied to this project's targets only, through the
 `CnaStreet::Warnings` interface target — turning them on for a dependency you do
 not control produces noise nobody can act on.
 
+### The web build
+
+The same street runs in a browser, on CNA's `WEBGL2` renderer, through
+Emscripten:
+
+```sh
+source ~/emsdk/emsdk_env.sh
+emcmake cmake -S . -B build-web -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake --build build-web --target cna-street
+cd build-web/bin && python3 -m http.server 8000   # open http://localhost:8000/cna-street.html
+```
+
+`WEBGL2` is the default renderer under Emscripten, and the tests, the content
+pipeline and the offline tools are left out. Only `assets/config` is packaged.
+The compiled content is gigabytes, so the browser generates every surface at
+start-up, the way a fresh clone does, and has no imported models or sound. In
+headless Chrome (ANGLE) it takes about fifty seconds to build the street and
+bake the probes, then runs at about 25 fps at 1600x900.
+
 There is no IDE dependency and no absolute path anywhere in the build. CLion,
 VS Code and a bare terminal all work; Linux is the first-class platform and is
 what this is developed and verified on.

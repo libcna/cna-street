@@ -31,10 +31,19 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # The renderer CNA compiles in. OPENGL33 is the default here rather than CNA's
 # own Linux default (OPENGLES3) because the street's material set uses desktop
 # GL 3.3 shading; every renderer in CNA's 2d3d set is selectable.
-set(CNA_STREET_RENDERER "OPENGL33" CACHE STRING
-    "CNA graphics renderer to build against (OPENGL33, OPENGLES3, VULKAN, SOFTWARE, ...)")
+# A browser has no desktop GL: an Emscripten build targets WebGL 2, which runs
+# the same GLSL ES 3.00 the street's own shaders are written to.
+if(EMSCRIPTEN)
+    set(_cna_street_default_renderer "WEBGL2")
+    set(_cna_street_default_tests OFF)
+else()
+    set(_cna_street_default_renderer "OPENGL33")
+    set(_cna_street_default_tests ON)
+endif()
+set(CNA_STREET_RENDERER "${_cna_street_default_renderer}" CACHE STRING
+    "CNA graphics renderer to build against (OPENGL33, OPENGLES3, VULKAN, WEBGL2, SOFTWARE, ...)")
 
-option(CNA_STREET_BUILD_TESTS "Build cna-street's unit tests" ON)
+option(CNA_STREET_BUILD_TESTS "Build cna-street's unit tests" ${_cna_street_default_tests})
 
 include(CnaStreetWarnings)
 include(CnaStreetDependencies)
@@ -55,7 +64,11 @@ endforeach()
 
 add_subdirectory(street)
 
-include(CnaStreetContent)
+# The content pipeline runs host tools over the source tree; a browser build
+# has neither, and generates its surfaces at start-up instead.
+if(NOT EMSCRIPTEN)
+    include(CnaStreetContent)
+endif()
 
 if(CNA_STREET_BUILD_TESTS)
     enable_testing()
