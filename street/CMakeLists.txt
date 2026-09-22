@@ -27,11 +27,34 @@ if(TARGET SDL3::SDL3main)
 endif()
 
 # The assets directory is data, not compiled input: point the running binary at
-# the source tree in a development build and let packaging override it.
-set(CNA_STREET_ASSET_DIR "${CMAKE_SOURCE_DIR}/assets" CACHE PATH
+# the source tree in a development build and let packaging override it. In the
+# browser it is a path in Emscripten's virtual filesystem.
+if(EMSCRIPTEN)
+    set(_cna_street_default_asset_dir "/assets")
+else()
+    set(_cna_street_default_asset_dir "${CMAKE_SOURCE_DIR}/assets")
+endif()
+set(CNA_STREET_ASSET_DIR "${_cna_street_default_asset_dir}" CACHE PATH
     "Directory the application loads its assets from")
 target_compile_definitions(cna_street_core PUBLIC
     CNA_STREET_DEFAULT_ASSET_DIR="${CNA_STREET_ASSET_DIR}")
+
+if(EMSCRIPTEN)
+    # Game::Run() is CNA's blocking loop, which the browser can only host
+    # through Asyncify. Only the settings file is packaged: the compiled
+    # content is gigabytes, and the demo generates every surface without it,
+    # exactly as it does from a fresh clone.
+    set_target_properties(cna-street PROPERTIES SUFFIX ".html")
+    target_link_libraries(cna-street PRIVATE CNA::EmscriptenAsyncify)
+    target_link_options(cna-street PRIVATE
+        -sALLOW_MEMORY_GROWTH=1
+        -sMAXIMUM_MEMORY=4GB
+        -sSTACK_SIZE=8MB
+        -sMIN_WEBGL_VERSION=2
+        -sMAX_WEBGL_VERSION=2
+        --preload-file "${CMAKE_SOURCE_DIR}/assets/config@/assets/config")
+    return()
+endif()
 
 
 # --- offline asset bake ------------------------------------------------------

@@ -36,7 +36,7 @@ cna_street_require_checkout("${CNA_ROOT_DIR}/../sharp-runtime" "sharp-runtime"
 # The GL renderer family is implemented on top of easy-gl, which itself expects
 # meta-gl beside it. Check here rather than letting CNA fail later with a
 # message that names CNA's own layout instead of this project's bootstrap.
-if(CNA_STREET_RENDERER MATCHES "^(OPENGL33|OPENGLES3|OPENGLES2)$")
+if(CNA_STREET_RENDERER MATCHES "^(OPENGL33|OPENGLES3|OPENGLES2|WEBGL2|WEBGL1)$")
     cna_street_require_checkout("${CNA_ROOT_DIR}/../easy-gl" "easy-gl"
         "https://github.com/openeggbert/easy-gl.git" "develop")
     cna_street_require_checkout("${CNA_ROOT_DIR}/../meta-gl" "meta-gl"
