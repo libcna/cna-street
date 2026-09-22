@@ -155,6 +155,8 @@ private:
     float cloudSpeed_    = 0.006f;
     bool  cloudsEnabled_ = true;
     bool  flipV_         = true;
+    /// The SPIR-V variant is in use: uniforms go by type, in typed arrays.
+    bool  packaged_      = false;
     bool  supported_     = false;
     std::string reason_;
 };

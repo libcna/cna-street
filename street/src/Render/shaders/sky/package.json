@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "namespace": "CnaStreet::SkyShaders",
+  "package": "cna_street_sky",
+  "payloads": [
+    {"symbol":"kVulkanVertexSpirV","source":"sky.vulkan.vert.glsl","language":"spirv","source_language":"vulkan-glsl","stage":"vertex","format":"spirv","entry_point":"main"},
+    {"symbol":"kVulkanFragmentSpirV","source":"sky.vulkan.frag.glsl","language":"spirv","source_language":"vulkan-glsl","stage":"fragment","format":"spirv","entry_point":"main"}
+  ]
+}
