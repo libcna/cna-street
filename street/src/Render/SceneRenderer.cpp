@@ -775,10 +775,21 @@ SceneRenderer::CascadeVolume SceneRenderer::cascadeVolume(const Camera& camera, 
     return volume;
 }
 
+// Sampler state is device state, and in XNA it is whoever drew last's: a
+// SpriteBatch leaves LinearClamp in slot 0, a post pass PointClamp. Every
+// surface here tiles, so a pass that samples materials says so itself --
+// inheriting a clamp stretches one row of the asphalt down the whole street.
+void SceneRenderer::useMaterialSamplers()
+{
+    auto& samplers = device_.getSamplerStatesProperty();
+    for (int slot = 0; slot < 5; ++slot) samplers[slot] = SamplerState::LinearWrap;
+}
+
 void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& settings)
 {
     stats_.drewShadows = false;
     if (shadows_ == nullptr || !settings.shadows) return;
+    useMaterialSamplers();
 
     DirectionalLightEXT light;
     light.Direction = sky_.lightDirection();
@@ -1083,6 +1094,7 @@ void SceneRenderer::drawPrepass(const Camera& camera, const RenderSettings& sett
 
     ShaderEffect* prepassEffect = prepass_->getPrepassEffect();
     if (prepassEffect == nullptr || !prepassEffect->IsEffectValid()) return;
+    useMaterialSamplers();
 
     for (int pass = 0; pass < prepass_->getPassCount(); ++pass)
     {
@@ -1114,6 +1126,7 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
     usingSceneTarget_ = pipeline_ != nullptr && pipeline_->isUsingSceneTarget();
     device_.setDepthStencilStateProperty(DepthStencilState::Default);
     device_.setBlendStateProperty(BlendState::Opaque);
+    useMaterialSamplers();
     applyLighting(settings);
 
     const Matrix& view = camera.view();
@@ -1199,6 +1212,7 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
 
 void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& settings)
 {
+    useMaterialSamplers();
     applyLighting(settings);
     const Matrix& view = camera.view();
     const Matrix& projection = camera.projection();
@@ -1316,6 +1330,7 @@ void SceneRenderer::drawProbeFace(const Vector3& eye, const Matrix& view, const 
     device_.setBlendStateProperty(BlendState::Opaque);
     // Into an 8-bit target directly, so the effect's own sRGB encode is wanted.
     usingSceneTarget_ = false;
+    useMaterialSamplers();
     applyLighting(settings);
 
     // What a probe sees is decided from where it stands, not from the camera:
@@ -1460,6 +1475,9 @@ void SceneRenderer::captureProbe(ReflectionProbe& probe, RenderTarget2D& target,
         device_.SetRenderTarget(&target);
         device_.Clear(Color::Black, 1.0f);
         drawProbeFace(probe.position, view, projection, size, settings);
+        // A render target is read back once it is no longer the one being
+        // drawn to; XNA refuses the read while it is still set.
+        device_.SetRenderTarget(nullptr);
         target.GetData(captured.data(), static_cast<int>(count));
 
         for (int y = 0; y < size; ++y)
