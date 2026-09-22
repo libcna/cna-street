@@ -6,6 +6,7 @@
 #include "CNA/Graphics/AtmosphericSky.hpp"
 #include "CNA/Graphics/EnvironmentProcessor.hpp"
 #include "CNA/Graphics/FullscreenPass.hpp"
+#include "CNA/Graphics/ShaderPackageEXT.hpp"
 #include "CNA/GraphicsCapability.hpp"
 #include "CNA/Logger.hpp"
 #include "Microsoft/Xna/Framework/Color.hpp"
@@ -17,8 +18,12 @@
 #include "Microsoft/Xna/Framework/Graphics/TextureCube.hpp"
 #include "Microsoft/Xna/Framework/MathHelper.hpp"
 
+#include "shaders/sky/SkyShaderPackage.generated.hpp"
+
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -216,6 +221,33 @@ void main() {
 }
 )";
 
+/// The same sky for a renderer that runs SPIR-V rather than GLSL source (Vulkan):
+/// `shaders/sky/sky.vulkan.frag.glsl` is kFragmentBody over CNA's model, compiled
+/// offline by CNA's shader-package generator. Such a renderer binds uniforms by
+/// type, not name, so this variant reads them from three typed arrays.
+CNA::Graphics::ShaderPackageEXT SpirVSkyPackage()
+{
+    using CNA::Graphics::ShaderCodeEXT;
+    using namespace SkyShaders;
+    const auto bytes = [](const std::uint32_t* words, std::size_t byteSize) {
+        const auto* begin = reinterpret_cast<const std::uint8_t*>(words);
+        return std::vector<std::uint8_t>(begin, begin + byteSize);
+    };
+    return CNA::Graphics::ShaderPackageEXT(
+        {
+            ShaderCodeEXT(CNA::ShaderLanguageEXT::SpirV, CNA::ShaderStageEXT::Vertex, "main",
+                          "sky/sky.vulkan.vert.spv",
+                          bytes(kVulkanVertexSpirV, kVulkanVertexSpirVByteSize)),
+            ShaderCodeEXT(CNA::ShaderLanguageEXT::SpirV, CNA::ShaderStageEXT::Fragment, "main",
+                          "sky/sky.vulkan.frag.spv",
+                          bytes(kVulkanFragmentSpirV, kVulkanFragmentSpirVByteSize)),
+        },
+        {CNA::ShaderStageEXT::Vertex, CNA::ShaderStageEXT::Fragment},
+        {CNA::Graphics::ShaderBindingRequirementEXT(
+            "texture1", 0, CNA::Graphics::ShaderBindingTypeEXT::SampledTexture2D,
+            CNA::ShaderStageEXT::Fragment)});
+}
+
 Vector3 Normalise(const Vector3& v, const Vector3& fallback)
 {
     const float lengthSquared = v.X * v.X + v.Y * v.Y + v.Z * v.Z;
@@ -299,13 +331,27 @@ void SkySystem::build(const RenderSettings& settings)
     cloudSpeed_    = settings.cloudSpeed;
     cloudsEnabled_ = settings.clouds;
 
-    if (!device_.SupportsCapability(CNA::GraphicsCapability::CustomEffects)
-        || !device_.ExecutesShaderEffectSourceEXT())
+    const CNA::Graphics::ShaderPackageEXT spirv = SpirVSkyPackage();
+    packaged_ = false;
+    if (!device_.SupportsCapability(CNA::GraphicsCapability::CustomEffects))
     {
         supported_ = false;
-        reason_ = "the renderer does not execute shader-effect source, so the atmospheric sky "
-                  "cannot be drawn";
+        reason_ = "the renderer runs no custom effects, so the atmospheric sky cannot be drawn";
         CNA::Logger::Warn("cna-street: " + reason_);
+    }
+    else if (!device_.ExecutesShaderEffectSourceEXT())
+    {
+        if (spirv.selectFor(device_).isUsable())
+            effect_ = std::make_unique<ShaderEffect>(device_, spirv);
+        supported_ = effect_ != nullptr && effect_->IsEffectValid();
+        packaged_ = supported_;
+        if (!supported_)
+        {
+            reason_ = "the renderer executes neither shader-effect source nor this sky's SPIR-V";
+            if (effect_ != nullptr) reason_ += ": " + effect_->GetCompileErrorEXT();
+            CNA::Logger::Warn("cna-street: " + reason_);
+            effect_.reset();
+        }
     }
     else
     {
@@ -323,13 +369,13 @@ void SkySystem::build(const RenderSettings& settings)
             CNA::Logger::Error("cna-street: " + reason_);
             effect_.reset();
         }
-        else
-        {
-            fullscreen_ = std::make_unique<FullscreenPass>(device_);
-            white_ = std::make_unique<Texture2D>(device_, 1, 1);
-            const Color pixel = Color::White;
-            white_->SetData(&pixel, 1);
-        }
+    }
+    if (supported_)
+    {
+        fullscreen_ = std::make_unique<FullscreenPass>(device_);
+        white_ = std::make_unique<Texture2D>(device_, 1, 1);
+        const Color pixel = Color::White;
+        white_->SetData(&pixel, 1);
     }
 
     updateSun(settings);
@@ -585,8 +631,25 @@ void SkySystem::draw(const Matrix& view, const Matrix& projection, int width, in
 
     const Matrix inverse = Matrix::Invert(RotationOnly(view) * projection);
     effect_->Apply();
-    effect_->SetUniformMat4("uInverseViewProjection", &inverse.M11);
     const Vector3 travel = lightDirection();
+    if (packaged_)
+    {
+        // The order sky.vulkan.frag.glsl's #defines name them in.
+        std::array<float, 16> matrix{};
+        inverse.ToColumnMajor(matrix.data());
+        const std::array<float, 3> sun{travel.X, travel.Y, travel.Z};
+        const std::array<float, 7> scalars{
+            turbidity_, skyIntensity_ * intensityScale, timeSeconds * cloudSpeed_ * 60.0f,
+            cloudCoverage_, cloudsEnabled_ ? 1.0f : 0.0f, flipV_ ? 1.0f : 0.0f,
+            encodeSrgb ? 1.0f : 0.0f};
+        effect_->SetUniformMat4Array("uSkyMatrices", matrix.data(), 1);
+        effect_->SetUniformVec3Array("uSkyVectors", sun.data(), 1);
+        effect_->SetUniformFloatArray("uSkyScalars", scalars.data(),
+                                      static_cast<int>(scalars.size()));
+        fullscreen_->drawOverCurrentTarget(white_.get(), effect_.get(), width, height);
+        return;
+    }
+    effect_->SetUniformMat4("uInverseViewProjection", &inverse.M11);
     effect_->SetUniformVec3("uSunDirection", travel.X, travel.Y, travel.Z);
     effect_->SetUniformFloat("uTurbidity", turbidity_);
     effect_->SetUniformFloat("uIntensity", skyIntensity_ * intensityScale);
