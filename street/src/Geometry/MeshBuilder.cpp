@@ -446,8 +446,12 @@ void MeshBuilder::addEllipsoid(const Vector3& centre, const Vector3& radii, int 
             const std::uint32_t i1 = i0 + 1;
             const std::uint32_t i2 = i0 + rowStride;
             const std::uint32_t i3 = i2 + 1;
-            addTriangleIndices(i0, i2, i1);
-            addTriangleIndices(i1, i2, i3);
+            // Counter-clockwise seen from outside, as every helper here takes its
+            // corners: i1 is the next slice round, i2 the next stack down. The
+            // other order turned every sphere inside out, and back-face culling
+            // hid the signal lenses, the lamp globes and the bollard caps.
+            addTriangleIndices(i0, i1, i2);
+            addTriangleIndices(i1, i3, i2);
         }
 }
 
