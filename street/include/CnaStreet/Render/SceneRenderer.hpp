@@ -404,6 +404,7 @@ public:
     [[nodiscard]] std::vector<BatchCost> visibleReport(std::size_t limit) const;
 
 private:
+    void useMaterialSamplers();
     void drawOpaque(const Camera& camera, const RenderSettings& settings);
     void drawSkinned(const Camera& camera, const RenderSettings& settings);
     void drawTransparent(const Camera& camera, const RenderSettings& settings);
