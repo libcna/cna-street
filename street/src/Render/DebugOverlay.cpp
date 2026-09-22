@@ -207,8 +207,11 @@ void DebugOverlay::draw(const SceneRenderer& renderer, const CityScene& scene, c
     const Vector3 forward  = camera.forward();
 
     std::vector<std::string> lines;
+    // The renderer the device is running, not the one the build defaulted to:
+    // a build with several compiled in chooses between them at start-up.
+    const std::string rendererName(device_.GetGraphicsRendererName());
     lines.push_back(Format("cna-street %s   %s renderer   %dx%d", CNA_STREET_VERSION,
-                           CNA_STREET_RENDERER_NAME, static_cast<int>(settings.windowWidth),
+                           rendererName.c_str(), static_cast<int>(settings.windowWidth),
                            static_cast<int>(settings.windowHeight)));
     // Two lines, because they answer two questions. The first is how it is
     // running; the second is where the frame went, and its parts sum to *this*
