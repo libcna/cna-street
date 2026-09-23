@@ -2,15 +2,18 @@
 
 The street runs on CNA's WebGPU renderer (wgpu-native v29.0.1.1, AMD Radeon 780M / RADV, Mesa
 25.0.7), compared against the OPENGL33 (EasyGL) baseline and the Vulkan renderer the previous pass
-brought up. Two defects were found and fixed; one measured difference remains and belongs to CNA's
-WebGPU renderer rather than to this project.
+brought up. Three defects were found and fixed: one in this project, two in CNA's WebGPU renderer.
+The street now renders the same picture on all three.
 
 ## What was broken
 
 | Where | What | Fix |
 |---|---|---|
-| CNA `STREETW-0001` | Every instanced draw took the position-only `instanced3d` program whatever effect was applied, so every tree, parked car, bench and piece of street furniture was a flat white silhouette | PbrEffect keeps its family when the draw is instanced (`plans/plan_street_webgpu.md`) |
+| CNA `STREETW-0001` | Every instanced draw took the position-only `instanced3d` program whatever effect was applied, so every tree, parked car, bench and piece of street furniture was a flat white silhouette | PbrEffect keeps its family when the draw is instanced |
 | cna-street `STREETW-0002` | No sky at all, and `the sky shader did not compile: ... found "#"` at start-up | The sky package gained a WGSL variant, and the selection asks which *language* a renderer runs rather than whether it runs source at all |
+| CNA `STREETW-0003` | The whole frame sat half a pixel up and left of the same scene on the other two renderers | The WebGPU renderer had no XNA pixel-centre correction at all; it now carries Vulkan's, field for field |
+
+All three are in CNA's `plans/plan_street_webgpu.md`.
 
 `webgpu-before-fixes/` holds three of the viewpoints as they were: white props, black sky.
 
@@ -21,23 +24,26 @@ any channel, against the OPENGL33 capture:
 
 | | Vulkan | WebGPU |
 |---|---|---|
-| before the fixes | 0.3 – 1.9 % | 52 – 98 % |
-| after | 0.3 – 1.9 % | 8 – 32 % |
+| as found | 0.3 - 1.9 % | 52 - 98 % |
+| after STREETW-0001 and 0002 | 0.3 - 1.9 % | 8 - 32 % |
+| after STREETW-0003 | 0.3 - 1.9 % | **0.5 - 8.8 %**, 17 of the 18 under 3.2 % |
 
-The remaining WebGPU difference is **not** a shading difference. Every renderer is deterministic
-run to run (two captures of the same renderer differ by 0.00 %), region means agree to within
-1–5/255, and the high-frequency detail energy of the same surfaces matches to three decimal places.
-What differs is *where* the detail sits: a sub-pixel search over the two frames finds the WebGPU
-image offset by about **half a pixel in both x and y** — aligning it drops the mean absolute
-difference from 4.64 to 3.32/255. That is CNA's long-standing WebGPU pixel-centre-convention gap,
-the one `WebGPU_PointSamplingContract` and `WebGPU_DescriptorCapacityContract` have recorded for
-months (`plans/plan_webgpu.md`); it is measured here in a real scene rather than fixed, because
-changing the convention moves every draw on that renderer.
+The half-pixel offset was found by measurement rather than by reading code, and the order is worth
+keeping because every earlier candidate was ruled out first:
 
-Turning MSAA off in all three (`--preset medium`) does not close the gap, so it is not an
-anti-aliasing difference either; disabling every optional pass
-(`--no-bloom --no-ssao --no-fog --no-shadows --no-ibl --no-light-shafts --no-probes`) leaves it at
-26 %, so it is in the base opaque pass, exactly as a raster-position offset would be.
+* **Not noise.** Each renderer is deterministic: two captures of the same renderer differ by 0.00 %.
+* **Not tone.** Region means agreed to within 1-5/255, and the difference was not monotonic in
+  brightness, so not a gamma, exposure or tone-map difference.
+* **Not sharpness.** The high-frequency detail energy of the same oblique facades, road and canopy
+  matched to three decimal places, so not filtering, anisotropy or mip selection.
+* **Not anti-aliasing.** `--preset medium` turns MSAA off in all three and the gap grew slightly.
+* **Not a pass.** With every optional pass off it was still 26 %, so it was in the base opaque pass.
+* **A sub-pixel offset.** A search over sub-pixel shifts found the WebGPU frame displaced by half a
+  pixel in both axes. After the fix that same search puts its optimum at exactly (0, 0).
+
+The remaining few per cent are ordinary edge and sampling differences between two APIs on one GPU.
+`06-above-the-junction`, the aerial view, is the one outlier at 8.8 %; it is the viewpoint with the
+most distant geometry, and Vulkan is its worst case too (1.9 %).
 
 ## Build (one tree, three renderers)
 
