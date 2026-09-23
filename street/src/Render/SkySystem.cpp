@@ -17,6 +17,9 @@
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 #include "Microsoft/Xna/Framework/Graphics/TextureCube.hpp"
 #include "Microsoft/Xna/Framework/MathHelper.hpp"
+// GetShaderDialectEXT() returns CNA::Internal::Renderers::ShaderDialectEXT, whose values are
+// declared here rather than in GraphicsDevice.hpp (which forward-declares the enum only).
+#include "CNA/Internal/Renderers/Common/IGraphicsRenderer.hpp"
 
 #include "shaders/sky/SkyShaderPackage.generated.hpp"
 
@@ -25,6 +28,7 @@
 #include <cmath>
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <vector>
 
 using namespace Microsoft::Xna::Framework;
@@ -221,11 +225,12 @@ void main() {
 }
 )";
 
-/// The same sky for a renderer that runs SPIR-V rather than GLSL source (Vulkan):
-/// `shaders/sky/sky.vulkan.frag.glsl` is kFragmentBody over CNA's model, compiled
-/// offline by CNA's shader-package generator. Such a renderer binds uniforms by
-/// type, not name, so this variant reads them from three typed arrays.
-CNA::Graphics::ShaderPackageEXT SpirVSkyPackage()
+/// The same sky for a renderer that does not run GLSL source: SPIR-V for Vulkan, WGSL for
+/// WebGPU. `shaders/sky/sky.vulkan.frag.glsl` is kFragmentBody over CNA's model, and both
+/// payloads are generated from that one source by CNA's shader-package generator, so the
+/// variants cannot drift apart. Such a renderer binds uniforms by type, not name, so they
+/// read them from three typed arrays.
+CNA::Graphics::ShaderPackageEXT PackagedSkyPackage()
 {
     using CNA::Graphics::ShaderCodeEXT;
     using namespace SkyShaders;
@@ -233,6 +238,8 @@ CNA::Graphics::ShaderPackageEXT SpirVSkyPackage()
         const auto* begin = reinterpret_cast<const std::uint8_t*>(words);
         return std::vector<std::uint8_t>(begin, begin + byteSize);
     };
+    // WGSL is source text, not bytes: the binary overload refuses a text language outright.
+    const auto text = [](const std::string_view wgsl) { return std::string(wgsl); };
     return CNA::Graphics::ShaderPackageEXT(
         {
             ShaderCodeEXT(CNA::ShaderLanguageEXT::SpirV, CNA::ShaderStageEXT::Vertex, "main",
@@ -241,11 +248,28 @@ CNA::Graphics::ShaderPackageEXT SpirVSkyPackage()
             ShaderCodeEXT(CNA::ShaderLanguageEXT::SpirV, CNA::ShaderStageEXT::Fragment, "main",
                           "sky/sky.vulkan.frag.spv",
                           bytes(kVulkanFragmentSpirV, kVulkanFragmentSpirVByteSize)),
+            ShaderCodeEXT(CNA::ShaderLanguageEXT::Wgsl, CNA::ShaderStageEXT::Vertex, "main",
+                          "sky/sky.vulkan.vert.wgsl", text(kVulkanVertexWgsl)),
+            ShaderCodeEXT(CNA::ShaderLanguageEXT::Wgsl, CNA::ShaderStageEXT::Fragment, "main",
+                          "sky/sky.vulkan.frag.wgsl", text(kVulkanFragmentWgsl)),
         },
         {CNA::ShaderStageEXT::Vertex, CNA::ShaderStageEXT::Fragment},
         {CNA::Graphics::ShaderBindingRequirementEXT(
             "texture1", 0, CNA::Graphics::ShaderBindingTypeEXT::SampledTexture2D,
             CNA::ShaderStageEXT::Fragment)});
+}
+
+/// Whether this renderer executes the GLSL ES source kFragmentBody is written in.
+///
+/// `ExecutesShaderEffectSourceEXT()` alone answers a different question. WebGPU executes
+/// shader-effect SOURCE and answers true, but the source it executes is WGSL; asking only that
+/// handed `#version 300 es` to a WGSL parser, and the street had no sky at all.
+bool RunsGlslSource(const GraphicsDevice& device)
+{
+    if (!device.ExecutesShaderEffectSourceEXT()) return false;
+    const CNA::Internal::Renderers::ShaderDialectEXT dialect = device.GetShaderDialectEXT();
+    return dialect == CNA::Internal::Renderers::ShaderDialectEXT::GlslEs ||
+           dialect == CNA::Internal::Renderers::ShaderDialectEXT::GlslDesktop;
 }
 
 Vector3 Normalise(const Vector3& v, const Vector3& fallback)
@@ -331,7 +355,7 @@ void SkySystem::build(const RenderSettings& settings)
     cloudSpeed_    = settings.cloudSpeed;
     cloudsEnabled_ = settings.clouds;
 
-    const CNA::Graphics::ShaderPackageEXT spirv = SpirVSkyPackage();
+    const CNA::Graphics::ShaderPackageEXT packaged = PackagedSkyPackage();
     packaged_ = false;
     if (!device_.SupportsCapability(CNA::GraphicsCapability::CustomEffects))
     {
@@ -339,15 +363,15 @@ void SkySystem::build(const RenderSettings& settings)
         reason_ = "the renderer runs no custom effects, so the atmospheric sky cannot be drawn";
         CNA::Logger::Warn("cna-street: " + reason_);
     }
-    else if (!device_.ExecutesShaderEffectSourceEXT())
+    else if (!RunsGlslSource(device_))
     {
-        if (spirv.selectFor(device_).isUsable())
-            effect_ = std::make_unique<ShaderEffect>(device_, spirv);
+        if (packaged.selectFor(device_).isUsable())
+            effect_ = std::make_unique<ShaderEffect>(device_, packaged);
         supported_ = effect_ != nullptr && effect_->IsEffectValid();
         packaged_ = supported_;
         if (!supported_)
         {
-            reason_ = "the renderer executes neither shader-effect source nor this sky's SPIR-V";
+            reason_ = "the renderer runs no GLSL source and none of this sky's packaged variants";
             if (effect_ != nullptr) reason_ += ": " + effect_->GetCompileErrorEXT();
             CNA::Logger::Warn("cna-street: " + reason_);
             effect_.reset();

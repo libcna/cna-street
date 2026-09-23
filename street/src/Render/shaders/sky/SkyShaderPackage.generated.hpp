@@ -22,7 +22,7 @@ struct PayloadProvenance
 };
 
 inline constexpr std::string_view kPackageName = "cna_street_sky";
-inline constexpr std::string_view kManifestSha256 = "7e8bf030901fc105833b0da6db94863de52c328b6505f214d1c58c745c10cbd5";
+inline constexpr std::string_view kManifestSha256 = "5e14bdc100d56ce61a2f7862fd3dcb5f9018158ed03b2f731eb43488c03591d6";
 inline constexpr std::string_view kCompiler = "shaderc shared library";
 inline constexpr std::string_view kCompilerSoname = "libshaderc.so.1";
 inline constexpr std::string_view kCompilerSha256 = "31400b359d2f4b4a43168978412a72913474725befb87966068cfac1922ac6c9";
@@ -30,6 +30,10 @@ inline constexpr std::uint32_t kCompilerSpirVVersion = 0x00010600u;
 inline constexpr std::uint32_t kCompilerSpirVRevision = 1u;
 inline constexpr std::string_view kCompilerTarget = "Vulkan 1.0 / SPIR-V 1.0";
 inline constexpr std::string_view kCompilerOptimization = "performance";
+inline constexpr std::string_view kWgslTranslator = "naga-cli";
+inline constexpr std::string_view kWgslTranslatorVersion = "28.0.0";
+inline constexpr std::string_view kWgslTranslatorSha256 = "6721540d62bd3f618ca4c19ab1b70033a5a286a69e34e1eeca38079bdf392481";
+inline constexpr std::string_view kWgslSourceTransform = "cna-webgpu-glsl/1";
 
 inline constexpr std::uint32_t kVulkanVertexSpirV[] = {
     0x07230203u, 0x00010000u, 0x000d000bu, 0x00000031u, 0x00000000u, 0x00020011u, 0x00000001u, 0x0006000bu,
@@ -796,9 +800,597 @@ inline constexpr std::uint32_t kVulkanFragmentSpirV[] = {
 };
 inline constexpr std::size_t kVulkanFragmentSpirVByteSize = sizeof(kVulkanFragmentSpirV);
 
-inline constexpr std::array<PayloadProvenance, 2> kPayloads = {{
+inline constexpr std::string_view kVulkanVertexWgsl =
+    R"CNA_SHADER(// sky.vulkan.vert.glsl -> cna-webgpu-glsl/1 -> shaderc -> naga. Generated; edit the Vulkan GLSL source.
+struct PushConstants {
+    viewportSize: vec2<f32>,
+}
+
+struct gl_PerVertex {
+    @builtin(position) gl_Position: vec4<f32>,
+    gl_PointSize: f32,
+    gl_ClipDistance: array<f32, 1>,
+    gl_CullDistance: array<f32, 1>,
+}
+
+struct VertexOutput {
+    @builtin(position) gl_Position: vec4<f32>,
+    @location(0) member: vec2<f32>,
+    @location(1) member_1: vec4<f32>,
+}
+
+var<private> aPos_1: vec2<f32>;
+@group(3) @binding(0) 
+var<uniform> pc: PushConstants;
+var<private> unnamed: gl_PerVertex = gl_PerVertex(vec4<f32>(0f, 0f, 0f, 1f), 1f, array<f32, 1>(), array<f32, 1>());
+var<private> TexCoord: vec2<f32>;
+var<private> aTexCoord_1: vec2<f32>;
+var<private> SpriteColor: vec4<f32>;
+var<private> aColor_1: vec4<f32>;
+
+fn main_1() {
+    var ndc: vec2<f32>;
+
+    let _e14 = aPos_1;
+    let _e16 = pc.viewportSize;
+    ndc = (((_e14 / _e16) * 2f) - vec2<f32>(1f, 1f));
+    let _e20 = ndc;
+    unnamed.gl_Position = vec4<f32>(_e20.x, _e20.y, 0f, 1f);
+    let _e25 = aTexCoord_1;
+    TexCoord = _e25;
+    let _e26 = aColor_1;
+    SpriteColor = _e26;
+    return;
+}
+
+@vertex 
+fn main(@location(0) aPos: vec2<f32>, @location(1) aTexCoord: vec2<f32>, @location(2) aColor: vec4<f32>) -> VertexOutput {
+    aPos_1 = aPos;
+    aTexCoord_1 = aTexCoord;
+    aColor_1 = aColor;
+    main_1();
+    let _e11 = unnamed.gl_Position.y;
+    unnamed.gl_Position.y = -(_e11);
+    let _e13 = unnamed.gl_Position;
+    let _e14 = TexCoord;
+    let _e15 = SpriteColor;
+    return VertexOutput(_e13, _e14, _e15);
+}
+)CNA_SHADER";
+
+inline constexpr std::string_view kVulkanFragmentWgsl =
+    R"CNA_SHADER(// sky.vulkan.frag.glsl -> cna-webgpu-glsl/1 -> shaderc -> naga. Generated; edit the Vulkan GLSL source.
+struct FloatArray {
+    uSkyScalars: array<f32, 72>,
+}
+
+struct Mat4Array {
+    uSkyMatrices: array<mat4x4<f32>, 72>,
+}
+
+struct Vec3Array {
+    uSkyVectors: array<vec3<f32>, 72>,
+}
+
+var<private> TexCoord_1: vec2<f32>;
+@group(1) @binding(12) 
+var<storage> unnamed: FloatArray;
+@group(1) @binding(15) 
+var<uniform> unnamed_1: Mat4Array;
+@group(1) @binding(14) 
+var<uniform> unnamed_2: Vec3Array;
+var<private> FragColor: vec4<f32>;
+@group(0) @binding(0) 
+var texture1_cnaTexture: texture_2d<f32>;
+@group(0) @binding(32) 
+var texture1_cnaSampler: sampler;
+var<private> SpriteColor_1: vec4<f32>;
+
+fn hash12_u0028_vf2_u003b(p: ptr<function, vec2<f32>>) -> f32 {
+    var p3_: vec3<f32>;
+
+    let _e130 = (*p);
+    p3_ = fract((_e130.xyx * 0.1031f));
+    let _e134 = p3_;
+    let _e135 = p3_;
+    let _e140 = p3_;
+    p3_ = (_e140 + vec3(dot(_e134, (_e135.yzx + vec3(33.33f)))));
+    let _e144 = p3_[0u];
+    let _e146 = p3_[1u];
+    let _e149 = p3_[2u];
+    return fract(((_e144 + _e146) * _e149));
+}
+
+fn valueNoise_u0028_vf2_u003b(p_1: ptr<function, vec2<f32>>) -> f32 {
+    var i: vec2<f32>;
+    var f: vec2<f32>;
+    var u: vec2<f32>;
+    var param: vec2<f32>;
+    var param_1: vec2<f32>;
+    var param_2: vec2<f32>;
+    var param_3: vec2<f32>;
+
+    let _e136 = (*p_1);
+    i = floor(_e136);
+    let _e138 = (*p_1);
+    f = fract(_e138);
+    let _e140 = f;
+    let _e141 = f;
+    let _e143 = f;
+    let _e145 = f;
+    let _e146 = f;
+    u = (((_e140 * _e141) * _e143) * ((_e145 * ((_e146 * 6f) - vec2(15f))) + vec2(10f)));
+    let _e154 = i;
+    param = _e154;
+    let _e155 = hash12_u0028_vf2_u003b((&param));
+    let _e156 = i;
+    param_1 = (_e156 + vec2<f32>(1f, 0f));
+    let _e158 = hash12_u0028_vf2_u003b((&param_1));
+    let _e160 = u[0u];
+    let _e162 = i;
+    param_2 = (_e162 + vec2<f32>(0f, 1f));
+    let _e164 = hash12_u0028_vf2_u003b((&param_2));
+    let _e165 = i;
+    param_3 = (_e165 + vec2<f32>(1f, 1f));
+    let _e167 = hash12_u0028_vf2_u003b((&param_3));
+    let _e169 = u[0u];
+    let _e172 = u[1u];
+    return mix(mix(_e155, _e158, _e160), mix(_e164, _e167, _e169), _e172);
+}
+
+fn fbm_u0028_vf2_u003b_i1_u003b(p_2: ptr<function, vec2<f32>>, octaves: ptr<function, i32>) -> f32 {
+    var sum: f32;
+    var amplitude: f32;
+    var total: f32;
+    var i_1: i32;
+    var param_4: vec2<f32>;
+
+    sum = 0f;
+    amplitude = 0.5f;
+    total = 0f;
+    i_1 = 0i;
+    loop {
+        let _e135 = i_1;
+        if (_e135 < 8i) {
+            let _e137 = i_1;
+            let _e138 = (*octaves);
+            if (_e137 >= _e138) {
+                break;
+            }
+            let _e140 = (*p_2);
+            param_4 = _e140;
+            let _e141 = valueNoise_u0028_vf2_u003b((&param_4));
+            let _e142 = amplitude;
+            let _e144 = sum;
+            sum = (_e144 + (_e141 * _e142));
+            let _e146 = amplitude;
+            let _e147 = total;
+            total = (_e147 + _e146);
+            let _e149 = (*p_2);
+            (*p_2) = ((_e149 * 2.03f) + vec2<f32>(17.3f, 9.1f));
+            let _e152 = amplitude;
+            amplitude = (_e152 * 0.5f);
+            continue;
+        } else {
+            break;
+        }
+        continuing {
+            let _e154 = i_1;
+            i_1 = (_e154 + 1i);
+        }
+    }
+    let _e156 = sum;
+    let _e157 = total;
+    return (_e156 / _e157);
+}
+
+fn deck_u0028_vf3_u003b_f1_u003b_f1_u003b_f1_u003b_f1_u003b_vf2_u003b(direction: ptr<function, vec3<f32>>, height: ptr<function, f32>, scale: ptr<function, f32>, coverage: ptr<function, f32>, sharpness: ptr<function, f32>, drift: ptr<function, vec2<f32>>) -> f32 {
+    var at: vec2<f32>;
+    var base: f32;
+    var param_5: vec2<f32>;
+    var param_6: i32;
+    var detail: f32;
+    var param_7: vec2<f32>;
+    var param_8: i32;
+    var density: f32;
+
+    let _e143 = (*direction)[1u];
+    if (_e143 < 0.008f) {
+        return 0f;
+    }
+    let _e145 = (*direction);
+    let _e147 = (*height);
+    let _e149 = (*direction)[1u];
+    let _e152 = (*scale);
+    let _e154 = (*drift);
+    at = (((_e145.xz * (_e147 / _e149)) * _e152) + _e154);
+    let _e156 = at;
+    param_5 = _e156;
+    param_6 = 5i;
+    let _e157 = fbm_u0028_vf2_u003b_i1_u003b((&param_5), (&param_6));
+    base = _e157;
+    let _e158 = at;
+    param_7 = ((_e158 * 3.7f) + vec2<f32>(4.2f, 1.7f));
+    param_8 = 4i;
+    let _e161 = fbm_u0028_vf2_u003b_i1_u003b((&param_7), (&param_8));
+    detail = _e161;
+    let _e162 = base;
+    let _e164 = detail;
+    density = ((_e162 * 0.78f) + (_e164 * 0.22f));
+    let _e167 = (*coverage);
+    let _e169 = (*coverage);
+    let _e171 = (*sharpness);
+    let _e173 = density;
+    density = smoothstep((1f - _e167), ((1f - _e169) + _e171), _e173);
+    let _e175 = density;
+    let _e177 = (*direction)[1u];
+    return (_e175 * smoothstep(0f, 0.16f, _e177));
+}
+
+fn cnaMiePhase_u0028_f1_u003b(cosAngle: ptr<function, f32>) -> f32 {
+    var gg: f32;
+    var d: f32;
+
+    gg = 0.5776f;
+    let _e131 = gg;
+    let _e133 = (*cosAngle);
+    d = ((1f + _e131) - (1.52f * _e133));
+    let _e136 = gg;
+    let _e139 = d;
+    let _e142 = gg;
+    return ((0.07957747f * (1f - _e136)) / max((pow(max(_e139, 0.0001f), 1.5f) * (2f + _e142)), 0.0001f));
+}
+
+fn cnaRayleighPhase_u0028_f1_u003b(cosAngle_1: ptr<function, f32>) -> f32 {
+    let _e129 = (*cosAngle_1);
+    let _e130 = (*cosAngle_1);
+    return (0.059683103f * (1f + (_e129 * _e130)));
+}
+
+fn cnaAirMass_u0028_f1_u003b(upwards: ptr<function, f32>) -> f32 {
+    var up: f32;
+    var zenithDegrees: f32;
+
+    let _e131 = (*upwards);
+    up = clamp(_e131, 0f, 1f);
+    let _e133 = up;
+    zenithDegrees = degrees(acos(_e133));
+    let _e136 = up;
+    let _e137 = zenithDegrees;
+    return (1f / max((_e136 + (0.50572f * pow(max((96.07995f - _e137), 0.001f), -1.6364f))), 0.0001f));
+}
+
+fn cnaScatteringAlongPath_u0028_vf3_u003b_vf3_u003b_f1_u003b_f1_u003b(viewDirection: ptr<function, vec3<f32>>, sunDirection: ptr<function, vec3<f32>>, turbidity: ptr<function, f32>, viewMass: ptr<function, f32>) -> vec3<f32> {
+    var view: vec3<f32>;
+    var toSun: vec3<f32>;
+    var cosAngle_2: f32;
+    var sunMass: f32;
+    var param_9: f32;
+    var mie: f32;
+    var total_1: vec3<f32>;
+    var scattered: vec3<f32>;
+    var param_10: f32;
+    var param_11: f32;
+    var alongView: vec3<f32>;
+    var sunlight: vec3<f32>;
+
+    let _e144 = (*viewDirection);
+    view = normalize(_e144);
+    let _e146 = (*sunDirection);
+    toSun = -(normalize(_e146));
+    let _e149 = view;
+    let _e150 = toSun;
+    cosAngle_2 = dot(_e149, _e150);
+    let _e153 = toSun[1u];
+    param_9 = _e153;
+    let _e154 = cnaAirMass_u0028_f1_u003b((&param_9));
+    sunMass = _e154;
+    let _e155 = (*turbidity);
+    mie = (0.021f * max((_e155 - 1f), 0f));
+    let _e159 = mie;
+    total_1 = (vec3<f32>(0.0464f, 0.1085f, 0.265f) + vec3(_e159));
+    let _e162 = cosAngle_2;
+    param_10 = _e162;
+    let _e163 = cnaRayleighPhase_u0028_f1_u003b((&param_10));
+    let _e165 = mie;
+    let _e166 = cosAngle_2;
+    param_11 = _e166;
+    let _e167 = cnaMiePhase_u0028_f1_u003b((&param_11));
+    scattered = ((vec3<f32>(0.0464f, 0.1085f, 0.265f) * _e163) + vec3((_e165 * _e167)));
+    let _e171 = total_1;
+    let _e173 = (*viewMass);
+    alongView = (vec3<f32>(1f, 1f, 1f) - exp((-(_e171) * _e173)));
+    let _e177 = total_1;
+    let _e179 = sunMass;
+    sunlight = exp((-(_e177) * _e179));
+    let _e182 = scattered;
+    let _e183 = total_1;
+    let _e185 = alongView;
+    let _e187 = sunlight;
+    return ((((_e182 / _e183) * _e185) * _e187) * 24f);
+}
+
+fn cnaSkyRadiance_u0028_vf3_u003b_vf3_u003b_f1_u003b(viewDirection_1: ptr<function, vec3<f32>>, sunDirection_1: ptr<function, vec3<f32>>, turbidity_1: ptr<function, f32>) -> vec3<f32> {
+    var param_12: f32;
+    var param_13: vec3<f32>;
+    var param_14: vec3<f32>;
+    var param_15: f32;
+    var param_16: f32;
+
+    let _e136 = (*viewDirection_1);
+    param_12 = normalize(_e136).y;
+    let _e139 = cnaAirMass_u0028_f1_u003b((&param_12));
+    let _e140 = (*viewDirection_1);
+    param_13 = _e140;
+    let _e141 = (*sunDirection_1);
+    param_14 = _e141;
+    let _e142 = (*turbidity_1);
+    param_15 = _e142;
+    param_16 = _e139;
+    let _e143 = cnaScatteringAlongPath_u0028_vf3_u003b_vf3_u003b_f1_u003b_f1_u003b((&param_13), (&param_14), (&param_15), (&param_16));
+    return _e143;
+}
+
+fn main_1() {
+    var screen: vec2<f32>;
+    var ray: vec4<f32>;
+    var direction_1: vec3<f32>;
+    var sky: vec3<f32>;
+    var param_17: vec3<f32>;
+    var param_18: vec3<f32>;
+    var param_19: f32;
+    var toSun_1: vec3<f32>;
+    var dusk: f32;
+    var up_1: f32;
+    var zenithBlue: vec3<f32>;
+    var horizonBlue: vec3<f32>;
+    var twilight: vec3<f32>;
+    var towards: f32;
+    var glow: f32;
+    var afterglow: vec3<f32>;
+    var cosAngle_3: f32;
+    var disc: f32;
+    var limb: f32;
+    var sunColour: vec3<f32>;
+    var drift_1: vec2<f32>;
+    var lower: f32;
+    var param_20: vec3<f32>;
+    var param_21: f32;
+    var param_22: f32;
+    var param_23: f32;
+    var param_24: f32;
+    var param_25: vec2<f32>;
+    var toward: vec3<f32>;
+    var shadowed: f32;
+    var param_26: vec3<f32>;
+    var param_27: f32;
+    var param_28: f32;
+    var param_29: f32;
+    var param_30: f32;
+    var param_31: vec2<f32>;
+    var thickness: f32;
+    var lit: vec3<f32>;
+    var shade: vec3<f32>;
+    var cloudColour: vec3<f32>;
+    var rim: f32;
+    var daylight: f32;
+    var high: f32;
+    var param_32: vec3<f32>;
+    var param_33: f32;
+    var param_34: f32;
+    var param_35: f32;
+    var param_36: f32;
+    var param_37: vec2<f32>;
+    var cirrus: vec3<f32>;
+    var below: f32;
+    var haze: vec3<f32>;
+    var param_38: vec3<f32>;
+    var param_39: vec3<f32>;
+    var param_40: f32;
+    var ground: vec3<f32>;
+    var c: vec3<f32>;
+
+    let _e186 = TexCoord_1[0u];
+    let _e188 = TexCoord_1[1u];
+    let _e190 = TexCoord_1[1u];
+    let _e194 = unnamed.uSkyScalars[5i];
+    screen = vec2<f32>(_e186, mix(_e188, (1f - _e190), _e194));
+    let _e199 = unnamed_1.uSkyMatrices[0i];
+    let _e200 = screen;
+    let _e203 = ((_e200 * 2f) - vec2(1f));
+    ray = (_e199 * vec4<f32>(_e203.x, _e203.y, 1f, 1f));
+    let _e208 = ray;
+    let _e211 = ray[3u];
+    direction_1 = normalize((_e208.xyz / vec3(_e211)));
+    let _e215 = direction_1;
+    param_17 = _e215;
+    let _e218 = unnamed_2.uSkyVectors[0i];
+    param_18 = _e218;
+    let _e221 = unnamed.uSkyScalars[0i];
+    param_19 = _e221;
+    let _e222 = cnaSkyRadiance_u0028_vf3_u003b_vf3_u003b_f1_u003b((&param_17), (&param_18), (&param_19));
+    let _e225 = unnamed.uSkyScalars[1i];
+    sky = (_e222 * _e225);
+    let _e229 = unnamed_2.uSkyVectors[0i];
+    toSun_1 = -(normalize(_e229));
+    let _e233 = toSun_1[1u];
+    dusk = clamp((-(_e233) * 9f), 0f, 1f);
+    let _e237 = dusk;
+    if (_e237 > 0f) {
+        let _e240 = direction_1[1u];
+        up_1 = clamp(_e240, 0f, 1f);
+        zenithBlue = vec3<f32>(0.01f, 0.02f, 0.058f);
+        horizonBlue = vec3<f32>(0.03f, 0.038f, 0.07f);
+        let _e242 = horizonBlue;
+        let _e243 = zenithBlue;
+        let _e244 = up_1;
+        let _e250 = unnamed.uSkyScalars[1i];
+        twilight = (mix(_e242, _e243, vec3(pow(_e244, 0.6f))) * _e250);
+        let _e253 = direction_1[0u];
+        let _e255 = direction_1[2u];
+        let _e259 = toSun_1[0u];
+        let _e261 = toSun_1[2u];
+        towards = clamp(dot(normalize(vec3<f32>(_e253, 0f, _e255)), normalize(vec3<f32>(_e259, 0f, _e261))), 0f, 1f);
+        let _e266 = towards;
+        let _e269 = direction_1[1u];
+        glow = (pow(_e266, 3f) * (1f - smoothstep(0f, 0.28f, _e269)));
+        let _e275 = unnamed.uSkyScalars[1i];
+        let _e277 = glow;
+        afterglow = ((vec3<f32>(0.34f, 0.14f, 0.05f) * _e275) * _e277);
+        let _e279 = sky;
+        let _e280 = twilight;
+        let _e281 = afterglow;
+        let _e283 = sky;
+        let _e286 = dusk;
+        sky = mix(_e279, ((_e280 + _e281) + (_e283 * 0.35f)), vec3(_e286));
+    }
+    let _e289 = direction_1;
+    let _e290 = toSun_1;
+    cosAngle_3 = dot(_e289, _e290);
+    let _e292 = cosAngle_3;
+    disc = smoothstep(0.99987f, 0.99994f, _e292);
+    let _e294 = cosAngle_3;
+    limb = sqrt(max((1f - pow((max((1f - _e294), 0f) / 0.00013f), 2f)), 0f));
+    sunColour = vec3<f32>(1f, 0.94f, 0.86f);
+    let _e302 = sunColour;
+    let _e303 = disc;
+    let _e305 = limb;
+    let _e312 = unnamed.uSkyScalars[1i];
+    let _e314 = sky;
+    sky = (_e314 + ((((_e302 * _e303) * (0.55f + (0.45f * _e305))) * 42f) * _e312));
+    let _e316 = sunColour;
+    let _e317 = cosAngle_3;
+    let _e324 = unnamed.uSkyScalars[1i];
+    let _e326 = sky;
+    sky = (_e326 + (((_e316 * pow(max(_e317, 0f), 480f)) * 1.6f) * _e324));
+    let _e330 = unnamed.uSkyScalars[4i];
+    if (_e330 > 0.5f) {
+        let _e334 = unnamed.uSkyScalars[2i];
+        let _e338 = unnamed.uSkyScalars[2i];
+        drift_1 = vec2<f32>((_e334 * 0.9f), (_e338 * 0.35f));
+        let _e341 = direction_1;
+        param_20 = _e341;
+        param_21 = 1500f;
+        param_22 = 0.00042f;
+        let _e344 = unnamed.uSkyScalars[3i];
+        param_23 = _e344;
+        param_24 = 0.3f;
+        let _e345 = drift_1;
+        param_25 = _e345;
+        let _e346 = deck_u0028_vf3_u003b_f1_u003b_f1_u003b_f1_u003b_f1_u003b_vf2_u003b((&param_20), (&param_21), (&param_22), (&param_23), (&param_24), (&param_25));
+        lower = _e346;
+        let _e347 = direction_1;
+        let _e348 = toSun_1;
+        toward = normalize((_e347 + (_e348 * 0.16f)));
+        let _e352 = toward;
+        param_26 = _e352;
+        param_27 = 1500f;
+        param_28 = 0.00042f;
+        let _e355 = unnamed.uSkyScalars[3i];
+        param_29 = _e355;
+        param_30 = 0.3f;
+        let _e356 = drift_1;
+        param_31 = _e356;
+        let _e357 = deck_u0028_vf3_u003b_f1_u003b_f1_u003b_f1_u003b_f1_u003b_vf2_u003b((&param_26), (&param_27), (&param_28), (&param_29), (&param_30), (&param_31));
+        shadowed = _e357;
+        let _e358 = shadowed;
+        thickness = clamp((_e358 * 1.15f), 0f, 1f);
+        lit = vec3<f32>(1.06f, 1.04f, 1.02f);
+        shade = vec3<f32>(0.44f, 0.47f, 0.55f);
+        let _e361 = lit;
+        let _e362 = shade;
+        let _e363 = thickness;
+        cloudColour = mix(_e361, _e362, vec3((_e363 * 0.85f)));
+        let _e367 = lower;
+        let _e368 = thickness;
+        rim = clamp((_e367 - _e368), 0f, 1f);
+        let _e371 = sunColour;
+        let _e372 = rim;
+        let _e374 = cosAngle_3;
+        let _e379 = cloudColour;
+        cloudColour = (_e379 + (((_e371 * _e372) * pow(max(_e374, 0f), 6f)) * 0.9f));
+        let _e382 = toSun_1[1u];
+        daylight = clamp(((_e382 * 3f) + 0.08f), 0f, 1f);
+        let _e388 = unnamed.uSkyScalars[1i];
+        let _e390 = toSun_1[1u];
+        let _e395 = cloudColour;
+        cloudColour = (_e395 * (_e388 * (0.35f + (0.75f * clamp(_e390, 0f, 1f)))));
+        let _e397 = sky;
+        let _e400 = cloudColour;
+        let _e401 = daylight;
+        cloudColour = mix(((_e397 * 1.25f) + vec3<f32>(0.002f, 0.002f, 0.002f)), _e400, vec3(_e401));
+        let _e404 = sky;
+        let _e405 = cloudColour;
+        let _e406 = lower;
+        sky = mix(_e404, _e405, vec3((clamp(_e406, 0f, 1f) * 0.96f)));
+        let _e413 = unnamed.uSkyScalars[3i];
+        let _e416 = drift_1;
+        let _e418 = direction_1;
+        param_32 = _e418;
+        param_33 = 6200f;
+        param_34 = 0.00019f;
+        param_35 = ((_e413 * 0.55f) + 0.1f);
+        param_36 = 0.55f;
+        param_37 = (_e416 * 2.4f);
+        let _e419 = deck_u0028_vf3_u003b_f1_u003b_f1_u003b_f1_u003b_f1_u003b_vf2_u003b((&param_32), (&param_33), (&param_34), (&param_35), (&param_36), (&param_37));
+        high = _e419;
+        let _e420 = sky;
+        let _e424 = unnamed.uSkyScalars[1i];
+        let _e426 = daylight;
+        cirrus = mix((_e420 * 1.15f), (vec3<f32>(1.02f, 1.01f, 1.03f) * _e424), vec3(_e426));
+        let _e429 = sky;
+        let _e430 = cirrus;
+        let _e431 = high;
+        sky = mix(_e429, _e430, vec3((_e431 * 0.32f)));
+    }
+    let _e436 = direction_1[1u];
+    below = smoothstep(0.02f, -0.06f, _e436);
+    let _e439 = direction_1[0u];
+    let _e441 = direction_1[2u];
+    param_38 = vec3<f32>(_e439, 0.03f, _e441);
+    let _e445 = unnamed_2.uSkyVectors[0i];
+    param_39 = _e445;
+    let _e448 = unnamed.uSkyScalars[0i];
+    param_40 = _e448;
+    let _e449 = cnaSkyRadiance_u0028_vf3_u003b_vf3_u003b_f1_u003b((&param_38), (&param_39), (&param_40));
+    let _e452 = unnamed.uSkyScalars[1i];
+    haze = (_e449 * _e452);
+    let _e454 = haze;
+    let _e457 = unnamed.uSkyScalars[1i];
+    ground = mix(_e454, (vec3<f32>(0.1f, 0.098f, 0.095f) * _e457), vec3(0.55f));
+    let _e461 = sky;
+    let _e462 = ground;
+    let _e463 = below;
+    sky = mix(_e461, _e462, vec3(_e463));
+    let _e468 = unnamed.uSkyScalars[6i];
+    if (_e468 > 0.5f) {
+        let _e470 = sky;
+        c = clamp(_e470, vec3(0f), vec3(1f));
+        let _e474 = c;
+        let _e476 = c;
+        let _e481 = c;
+        sky = mix((_e474 * 12.92f), ((pow(_e476, vec3<f32>(0.41666666f, 0.41666666f, 0.41666666f)) * 1.055f) - vec3(0.055f)), step(vec3(0.0031308f), _e481));
+    }
+    let _e485 = sky;
+    FragColor = vec4<f32>(_e485.x, _e485.y, _e485.z, 1f);
+    return;
+}
+
+@fragment 
+fn main(@location(0) TexCoord: vec2<f32>, @location(1) SpriteColor: vec4<f32>) -> @location(0) vec4<f32> {
+    TexCoord_1 = TexCoord;
+    SpriteColor_1 = SpriteColor;
+    main_1();
+    let _e5 = FragColor;
+    return _e5;
+}
+)CNA_SHADER";
+
+inline constexpr std::array<PayloadProvenance, 4> kPayloads = {{
     {"kVulkanVertexSpirV", "sky.vulkan.vert.glsl", "914f0b075f437d2632b1e1c7f8c29238cef7213491587752d38fea6b1f8a4aba", "spirv", "vulkan-glsl", "vertex", "spirv", "main"},
     {"kVulkanFragmentSpirV", "sky.vulkan.frag.glsl", "1c2c5950190fc37e3a9c8404d2ee3e9487c1298d87364c9ed408e98411b2fb00", "spirv", "vulkan-glsl", "fragment", "spirv", "main"},
+    {"kVulkanVertexWgsl", "sky.vulkan.vert.glsl", "914f0b075f437d2632b1e1c7f8c29238cef7213491587752d38fea6b1f8a4aba", "wgsl", "vulkan-glsl", "vertex", "wgsl", "main"},
+    {"kVulkanFragmentWgsl", "sky.vulkan.frag.glsl", "1c2c5950190fc37e3a9c8404d2ee3e9487c1298d87364c9ed408e98411b2fb00", "wgsl", "vulkan-glsl", "fragment", "wgsl", "main"},
 }};
 
 } // namespace CnaStreet::SkyShaders
