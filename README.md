@@ -23,12 +23,23 @@ the bays the cameras look at are authored models under CC-BY, and the people
 on the footway are built from MakeHuman's CC0 base mesh and wardrobe in
 Blender and driven by this project's own skeleton and clips.
 
-It exists to exercise CNA's modern graphics layer (`CNAEXT`) on something that
-is not a test scene: a cascaded shadow pass, a depth/normal prepass, an
-analytic sky feeding image-based lighting, local reflection probes captured
-from the street itself, an HDR pipeline with SSAO, bloom, height fog and tone
-mapping, instanced props, frustum culling, and a full glTF metallic-roughness
-material model.
+It exists to exercise CNA on something that is not a test scene: an analytic
+sky feeding image-based lighting, local reflection probes captured from the
+street itself, instanced props, skinned people, frustum culling, and a full
+glTF metallic-roughness material model.
+
+**Since 2026-09-27 the street draws with fewer effects.** CNA retired its
+graphics engine layer to reduce its scope, and with it went the cascaded shadow
+maps, the depth/normal prepass and SSAO, the HDR scene target with its
+post-process chain (tone mapping, bloom, FXAA, light shafts, height fog) and the
+GPU stage timers. None of that is coming back to CNA. The street keeps every
+object it had and draws it straight to the back buffer: `PbrEffect` lights and
+sRGB-encodes each surface itself, exposure is a linear scale on the light where
+a tone mapper used to roll it off, and the sky model, its IBL convolution and
+the instanced-draw helper -- which were CNA's -- are now small parts of this
+project (`AtmosphereModel`, `EnvironmentBaker`, `InstancedMesh`). The settings
+for the retired effects are still read, so old settings files load, and have
+no effect.
 
 ---
 
@@ -301,11 +312,12 @@ somewhere/
 └── meta-gl/          branch: develop
 ```
 
-**CNA's `next` branch, not `develop`.** The `CNAEXT` engine layer this project
-is built on -- `RenderPipeline`, `CascadedShadowMap`, `AtmosphericSky`,
-`EnvironmentProcessor` -- exists only on `next`; against a `develop` checkout
-the build stops at `CNA/Graphics/CascadedShadowMap.hpp: No such file`. If the
-`next` checkouts live under other names, point the build at them:
+**CNA's `next` branch, not `develop`.** The `CNAEXT` surface this project uses
+-- `ShaderEffect` with `ShaderPackageEXT`, `PbrEffect`'s extensions, the
+renderer queries -- is on `next`. A build of this project from before
+2026-09-27 needs a CNA from before the engine layer was retired (see the top of
+this file). If the `next` checkouts live under other names, point the build at
+them:
 
 ```sh
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release \
@@ -420,14 +432,13 @@ The command line, in full, is `--help`. The ones that matter:
 | `--supersample <n>` | Render a still at *n* times the size and box-filter it down, in linear light: the flagship frames are shot at 2 |
 | `--frames <n>` | Render *n* frames and exit |
 | `--sun <elev> <azimuth>` | Move the sun, in degrees |
-| `--no-shadows`, `--no-ssao`, `--no-bloom`, `--no-fog`, `--no-clouds`, `--no-ibl`, `--no-light-shafts` | Turn one thing off |
-| `--ssao-samples <n>`, `--bloom-iterations <n>` | The two post-process quality dials the pipeline exposes: samples per pixel (8-64, default 16) and the bloom pyramid's depth (1-8, default 4) |
+| `--no-fog`, `--no-clouds`, `--no-ibl` | Turn one thing off |
+| `--no-shadows`, `--no-ssao`, `--no-bloom`, `--no-light-shafts`, `--ssao-samples <n>`, `--bloom-iterations <n>` | Still accepted, and do nothing: the effects they controlled went with CNA's engine layer |
 | `--no-probes` | Sky-only reflections: no local probes are captured |
 | `--dump-probes <dir>` | Write every reflection probe's cube as a strip of six faces, which is how a capture that came out mirrored gets seen to be |
 | `--no-traffic`, `--no-pedestrians`, `--no-vegetation`, `--no-overlay` | Leave one thing out |
 | `--no-audio`, `--volume <0..1>` | Silence the street, or set its master volume; the sounds come from `scripts/prepare-audio.py` (see Assets) and a tree that has derived none runs silent |
 | `--dump-settings` | Print the effective settings as JSON and exit |
-| `--dump-shadow <file.png>` | Write the cascade atlas, which is the only way to tell an empty shadow map from a misplaced one |
 
 A capture or a one-shot screenshot runs the clock at a fixed step, so the frames
 it writes depend only on the seed and the frame count. That is what makes
@@ -449,7 +460,7 @@ different moments.
 | **R** | Back to the start |
 | **Esc** | Release the pointer |
 | **F1** | Debug overlay |
-| **F2**–**F6** | Shadows, SSAO, bloom, fog, clouds |
+| **F5**, **F6** | Fog, clouds |
 | **F9** | Screenshot |
 | **`-` / `=`** | Sun elevation |
 
@@ -536,27 +547,19 @@ The framework's own surface, used the way XNA 4.0 uses it:
 `BoundingBox`, `BoundingSphere`, `BoundingFrustum`, `Ray`, `Plane`, `Rectangle`,
 `MathHelper`, `Keyboard`, `Mouse`, `Keys`, `ContentManager`, `CNA::Logger`.
 
-The modern layer (`CNAEXT`, gated on `CNA_CNAEXT`):
+CNA's extensions to the XNA surface (`CNAEXT`):
 
 | API | What it does here |
 | --- | --- |
-| `RenderPipeline`, `RenderPipelineSettings` | The HDR scene target and the whole post chain: SSAO, bloom, height fog, tone mapping, FXAA |
-| `CascadedShadowMap` | Four cascades, driven manually so the cull can decide what goes in each |
-| `DepthNormalPrepass` | The depth and normal buffers SSAO needs |
-| `AtmosphericSky` | The analytic sky model, both as a shader and evaluated on the CPU |
-| `EnvironmentProcessor` | Irradiance, prefiltered specular and the BRDF LUT, baked from that sky |
-| `PbrEffect` | The glTF metallic-roughness material model, with `TextureTransformEXT`, `AlphaModeEXT`, `IShadowReceiverEXT` and `ImageBasedLightEXT` -- the last rebound per draw, so a car reads its environment from the probe nearest it |
-| `RenderTarget2D`, `TextureCube`, `EnvironmentProcessor` (again) | The reflection probes: the static street captured six ways into an 8-bit target from each probe point, read back, written into a cube at the sky's scale, and prefiltered by the same convolution the sky goes through |
-| `BlendState::AlphaBlend` | Glass composited as reflection plus attenuated background, set per draw inside the pipeline's transparent phase |
-| `InstancedRendererEXT` | Every prop that appears more than once |
-| `DirectionalLightEXT` | The sun |
-| `GpuTimer` | GPU time per frame in the overlay, where the renderer supports it |
-| `FullscreenPass` | The sky shader's draw |
+| `ShaderEffect`, `ShaderPackageEXT` | The sky: GLSL source where the renderer runs it, the packaged SPIR-V, WGSL or HLSL variant where it does not, drawn through `SpriteBatch` |
+| `PbrEffect` | The glTF metallic-roughness material model, with `TextureTransformEXT`, `AlphaModeEXT` and `ImageBasedLightEXT` -- the last rebound per draw, so a car reads its environment from the probe nearest it |
+| `RenderTarget2D`, `TextureCube` | The reflection probes: the static street captured six ways into an 8-bit target from each probe point, read back, written into a cube at the sky's scale, and prefiltered by the same convolution the sky goes through (`EnvironmentBaker`) |
+| `BlendState::AlphaBlend` | Glass composited as reflection plus attenuated background, drawn after the opaque pass |
+| `DrawInstancedPrimitives` | Every prop that appears more than once, through `InstancedMesh` |
 | `Model`, `ModelMesh`, `ModelMeshPart`, `ModelBone` | Imported glTF props, loaded from compiled `.cnb` through `ContentManager` |
 | `SkinningData`, `AnimationClip`, `Keyframe`, `AnimationPlayer` | The people: nineteen-bone skeletons, walk and idle clips, and a palette per figure per frame |
 | `SkinnedPbrEffect`, `VertexPositionNormalTangentTextureSkinned` | Those figures on the GPU |
 | `Model::SkinsEXT`, `Model::Tag` | An imported skeleton and its clip, read back out of a compiled model |
-| `RenderQuality`, `ShadowQuality`, `TonemappingMode`, `TransparencyMode` | The vocabulary the settings map onto |
 | `SupportsRendererFeatureEXT`, `GetRendererLimitEXT`, `GetRendererCapabilityReportEXT` | Every optional subsystem is *probed*, never assumed, and what the renderer could not provide is listed in the overlay |
 
 Every one of those is doing real work in the frame. Nothing is called to be able

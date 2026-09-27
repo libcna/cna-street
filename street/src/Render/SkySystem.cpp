@@ -1,22 +1,25 @@
 // SPDX-License-Identifier: MIT
 #include "CnaStreet/Render/SkySystem.hpp"
 
+#include "CnaStreet/Render/AtmosphereModel.hpp"
+#include "CnaStreet/Render/EnvironmentBaker.hpp"
 #include "CnaStreet/Render/RenderSettings.hpp"
 
-#include "CNA/Graphics/AtmosphericSky.hpp"
-#include "CNA/Graphics/EnvironmentProcessor.hpp"
-#include "CNA/Graphics/FullscreenPass.hpp"
 #include "CNA/Graphics/ShaderPackageEXT.hpp"
 #include "CNA/GraphicsCapability.hpp"
 #include "CNA/Logger.hpp"
 #include "Microsoft/Xna/Framework/Color.hpp"
 #include "Microsoft/Xna/Framework/Graphics/CubeMapFace.hpp"
+#include "Microsoft/Xna/Framework/Graphics/BlendState.hpp"
 #include "Microsoft/Xna/Framework/Graphics/GraphicsDevice.hpp"
 #include "Microsoft/Xna/Framework/Graphics/ShaderEffect.hpp"
+#include "Microsoft/Xna/Framework/Graphics/SpriteBatch.hpp"
+#include "Microsoft/Xna/Framework/Graphics/SpriteSortMode.hpp"
 #include "Microsoft/Xna/Framework/Graphics/SurfaceFormat.hpp"
 #include "Microsoft/Xna/Framework/Graphics/Texture2D.hpp"
 #include "Microsoft/Xna/Framework/Graphics/TextureCube.hpp"
 #include "Microsoft/Xna/Framework/MathHelper.hpp"
+#include "Microsoft/Xna/Framework/Rectangle.hpp"
 // GetShaderDialectEXT() returns CNA::Internal::Renderers::ShaderDialectEXT, whose values are
 // declared here rather than in GraphicsDevice.hpp (which forward-declares the enum only).
 #include "CNA/Internal/Renderers/Common/IGraphicsRenderer.hpp"
@@ -34,15 +37,12 @@
 
 using namespace Microsoft::Xna::Framework;
 using namespace Microsoft::Xna::Framework::Graphics;
-using CNA::Graphics::AtmosphericSky;
-using CNA::Graphics::EnvironmentProcessor;
-using CNA::Graphics::FullscreenPass;
 
 namespace CnaStreet {
 
 namespace {
 
-/// The fullscreen quad's vertex program. `FullscreenPass` draws through
+/// The fullscreen quad's vertex program. The sky is drawn through
 /// `SpriteBatch`, so the attribute layout is SpriteBatch's, not ours.
 constexpr const char* kVertexSource = R"(#version 300 es
 precision highp float;
@@ -59,8 +59,7 @@ void main() {
 
 /// Everything this project adds on top of CNA's scattering model: two animated
 /// cloud layers, a sun disc with limb darkening, and a horizon that does not end
-/// in a hard line. `cnaSkyRadiance` is prepended from
-/// `AtmosphericSky::getModelGlsl()` rather than reimplemented.
+/// in a hard line. `cnaSkyRadiance` is prepended from `Atmosphere::modelGlsl()`.
 constexpr const char* kFragmentBody = R"(
 in vec2 TexCoord;
 out vec4 FragColor;
@@ -121,11 +120,10 @@ float deck(vec3 direction, float height, float scale, float coverage, float shar
 }
 
 void main() {
-    // FullscreenPass draws through SpriteBatch, whose texture coordinate origin
-    // is the *top* left of the destination rectangle, while clip space has +1 at
-    // the top. Without this flip the sky is rendered upside down -- the ground
-    // haze ends up overhead and the zenith underfoot. CNA's own AtmosphericSky
-    // has the same omission; see docs/cna-findings.md CNA-F7.
+    // SpriteBatch's texture coordinate origin is the *top* left of the
+    // destination rectangle, while clip space has +1 at the top. Without this
+    // flip the sky is rendered upside down -- the ground haze ends up overhead
+    // and the zenith underfoot. See docs/cna-findings.md CNA-F7.
     vec2 screen = vec2(TexCoord.x, mix(TexCoord.y, 1.0 - TexCoord.y, uFlipV));
     vec4 ray = uInverseViewProjection * vec4(screen * 2.0 - 1.0, 1.0, 1.0);
     vec3 direction = normalize(ray.xyz / ray.w);
@@ -318,7 +316,7 @@ namespace {
 /// street look washed out for the first version of this project. `TextureCube`
 /// is 8-bit, so a sky whose horizon radiance is 1.25 cannot be stored in it
 /// directly. The first attempt compressed it with a Reinhard knee and then an
-/// sRGB curve; `EnvironmentProcessor` reads the texels as *linear radiance*
+/// sRGB curve; `EnvironmentBaker` reads the texels as *linear radiance*
 /// (see its `ToColor`, which clamps and scales and nothing else), so the values
 /// that came back were `srgb(reinhard(L))` where the split sum wanted `L`. That
 /// function lifts every dark direction and crushes every bright one -- a zenith
@@ -382,12 +380,10 @@ void SkySystem::build(const RenderSettings& settings)
     }
     else
     {
-        // `getModelGlsl()` is the model body only -- no version directive and no
-        // precision qualifier, because it is meant to be pasted into a shader
-        // that already has both. Supplying them here is the same two lines
-        // AtmosphericSky itself uses.
+        // `modelGlsl()` is the model body only -- no version directive and no
+        // precision qualifier, because it is pasted into a shader that has both.
         const std::string source = std::string("#version 300 es\nprecision highp float;\n")
-                                   + AtmosphericSky::getModelGlsl() + kFragmentBody;
+                                   + Atmosphere::modelGlsl() + kFragmentBody;
         effect_ = std::make_unique<ShaderEffect>(device_, kVertexSource, source);
         supported_ = effect_->IsEffectValid();
         if (!supported_)
@@ -399,7 +395,7 @@ void SkySystem::build(const RenderSettings& settings)
     }
     if (supported_)
     {
-        fullscreen_ = std::make_unique<FullscreenPass>(device_);
+        spriteBatch_ = std::make_unique<SpriteBatch>(device_);
         white_ = std::make_unique<Texture2D>(device_, 1, 1);
         const Color pixel = Color::White;
         white_->SetData(&pixel, 1);
@@ -485,7 +481,7 @@ void SkySystem::computeLighting(const RenderSettings& settings)
             const float phi = (static_cast<float>(sector) + 0.5f) / static_cast<float>(kSectors)
                               * MathHelper::TwoPi;
             const Vector3 direction(sinTheta * std::cos(phi), cosTheta, sinTheta * std::sin(phi));
-            const Vector3 sky = AtmosphericSky::radiance(direction, lightDirection(), turbidity_);
+            const Vector3 sky = Atmosphere::radiance(direction, lightDirection(), turbidity_);
             sum = sum + sky * (cosTheta * sinTheta);
             weight += cosTheta * sinTheta;
         }
@@ -500,8 +496,8 @@ void SkySystem::computeLighting(const RenderSettings& settings)
     // Logged because the numbers here decide how the whole scene is exposed, and
     // a sky that comes back an order of magnitude off is otherwise indistinguishable
     // from a tonemapping mistake.
-    const Vector3 zenith = AtmosphericSky::radiance(Vector3::Up, lightDirection(), turbidity_);
-    const Vector3 horizon = AtmosphericSky::radiance(
+    const Vector3 zenith = Atmosphere::radiance(Vector3::Up, lightDirection(), turbidity_);
+    const Vector3 horizon = Atmosphere::radiance(
         Normalise(Vector3(sunDirection_.X, 0.05f, sunDirection_.Z), Vector3::Forward),
         lightDirection(), turbidity_);
     CNA::Logger::Info(
@@ -542,7 +538,7 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
                 Vector3 radiance;
                 if (direction.Y >= 0.0f)
                 {
-                    radiance = AtmosphericSky::radiance(direction, lightDirection(), turbidity_)
+                    radiance = Atmosphere::radiance(direction, lightDirection(), turbidity_)
                                * skyIntensity_;
                     // A cloud deck seen from below is a diffuser: it raises the
                     // average and flattens the gradient. Baked here so that a
@@ -562,7 +558,7 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
                     // Downward: bounce off the street. Roughly the albedo of
                     // asphalt and paving lit by the sky above it, which is what
                     // fills in the underside of a car or a balcony.
-                    const Vector3 up = AtmosphericSky::radiance(Vector3(direction.X, 0.15f,
+                    const Vector3 up = Atmosphere::radiance(Vector3(direction.X, 0.15f,
                                                                         direction.Z),
                                                                 lightDirection(), turbidity_)
                                        * skyIntensity_;
@@ -637,14 +633,13 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
         return;
     }
 
-    EnvironmentProcessor processor(device_);
-    irradiance_  = processor.generateIrradiance(environment_.get(), 32, 64);
+    const EnvironmentBaker baker(device_);
+    irradiance_  = baker.irradiance(*environment_, 32, 64);
     // 96 px and six mips: the top mip is a mirror and the bottom is a
     // hemisphere, and the roughness ramp between them is what a car's paint,
     // a shop window and a wet kerb all read their reflection from.
-    prefiltered_ = processor.generatePrefilteredSpecular(environment_.get(), 96,
-                                                         prefilteredMips_, 64);
-    brdfLut_     = processor.generateBrdfLut(96, 128);
+    prefiltered_ = baker.prefilteredSpecular(*environment_, 96, prefilteredMips_, 64);
+    brdfLut_     = baker.brdfLut(96, 128);
 
     CNA::Logger::Info("cna-street: environment baked -- peak radiance "
                       + std::to_string(peak) + ", stored at 1/" + std::to_string(environmentScale_));
@@ -653,7 +648,7 @@ void SkySystem::bakeEnvironment(const RenderSettings& settings)
 void SkySystem::draw(const Matrix& view, const Matrix& projection, int width, int height,
                      float timeSeconds, float intensityScale, bool encodeSrgb)
 {
-    if (!supported_ || effect_ == nullptr || fullscreen_ == nullptr) return;
+    if (!supported_ || effect_ == nullptr || spriteBatch_ == nullptr) return;
     if (width <= 0 || height <= 0) return;
 
     const Matrix inverse = Matrix::Invert(RotationOnly(view) * projection);
@@ -673,7 +668,7 @@ void SkySystem::draw(const Matrix& view, const Matrix& projection, int width, in
         effect_->SetUniformVec3Array("uSkyVectors", sun.data(), 1);
         effect_->SetUniformFloatArray("uSkyScalars", scalars.data(),
                                       static_cast<int>(scalars.size()));
-        fullscreen_->drawOverCurrentTarget(white_.get(), effect_.get(), width, height);
+        drawFullscreen(width, height);
         return;
     }
     effect_->SetUniformMat4("uInverseViewProjection", &inverse.M11);
@@ -686,7 +681,17 @@ void SkySystem::draw(const Matrix& view, const Matrix& projection, int width, in
     effect_->SetUniformFloat("uFlipV", flipV_ ? 1.0f : 0.0f);
     effect_->SetUniformFloat("uEncodeSrgb", encodeSrgb ? 1.0f : 0.0f);
 
-    fullscreen_->drawOverCurrentTarget(white_.get(), effect_.get(), width, height);
+    drawFullscreen(width, height);
+}
+
+void SkySystem::drawFullscreen(int width, int height)
+{
+    // Opaque: the sky replaces whatever the target held rather than blending
+    // over it. The white texel is only there because SpriteBatch draws a texture.
+    spriteBatch_->Begin(SpriteSortMode::Deferred, BlendState::Opaque, nullptr, nullptr, nullptr,
+                        effect_.get());
+    spriteBatch_->Draw(*white_, Rectangle(0, 0, width, height), Color::White);
+    spriteBatch_->End();
 }
 
 }  // namespace CnaStreet

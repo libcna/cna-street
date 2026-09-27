@@ -28,17 +28,10 @@ namespace Microsoft::Xna::Framework::Graphics {
     class TextureCube;
 }
 
-namespace CNA::Graphics {
-    class CascadedShadowMap;
-    class DepthNormalPrepass;
-    class GpuTimer;
-    class InstancedRendererEXT;
-    class RenderPipeline;
-}
-
 namespace CnaStreet {
 
 class GpuMesh;
+class InstancedMesh;
 class SkinnedGpuMesh;
 class MaterialLibrary;
 struct Material;
@@ -73,7 +66,7 @@ struct SkinnedItem
  * actually reflects is the street: the facade opposite, the kerb, the parked
  * cars, a strip of sky between the eaves. A probe is that view, captured once
  * at scene build by rendering the static scene six ways from a point on the
- * carriageway, convolved by `EnvironmentProcessor` exactly as the sky is, and
+ * carriageway, convolved by `EnvironmentBaker` exactly as the sky is, and
  * handed to every draw near it through `ImageBasedLightEXT` -- the same field
  * the sky arrives through, so the effect never knows the difference.
  *
@@ -157,17 +150,24 @@ struct InstanceGroup
 /**
  * @brief Draws the city.
  *
- * Owns the frame: the cascaded shadow pass, the depth/normal prepass SSAO needs,
- * the sky, the HDR scene target and post-process chain, and the sorted opaque
- * and transparent draws in between. Everything it draws was registered before
- * the first frame (static geometry and instance groups) or submitted this frame
+ * Owns the frame: the sky, then the sorted opaque and transparent draws, all
+ * straight into the back buffer. Everything it draws was registered before the
+ * first frame (static geometry and instance groups) or submitted this frame
  * (vehicles and pedestrians, which move).
  *
- * Every EXT subsystem is optional and is probed rather than assumed: on a
- * renderer without float render targets the pipeline resolves straight to the
- * back buffer, without shadow sampling the cascades are skipped, without
- * instancing `InstancedRendererEXT` falls back to a loop. The scene still
- * renders; it renders with less.
+ * CNA retired the graphics engine layer this frame used to be built on, and
+ * with it the cascaded shadow maps, the SSAO prepass, the HDR scene target and
+ * its post-process chain (tone mapping, bloom, FXAA, light shafts) and the GPU
+ * stage timers. The street draws the same scene without them: `PbrEffect`
+ * lights and sRGB-encodes each surface itself, image-based lighting and the
+ * reflection probes remain, and `RenderSettings::exposure` scales the light
+ * linearly where a tone mapper used to compress it. The settings for the
+ * retired effects are still read and have no effect; their statistics report
+ * zero, and the GPU times -1.
+ *
+ * What remains optional is still probed rather than assumed: without instancing
+ * `InstancedMesh` falls back to a loop, without image-based lighting the ambient
+ * is a hemisphere term. The scene still renders; it renders with less.
  */
 class SceneRenderer
 {
@@ -203,8 +203,10 @@ public:
         double gpuFrameMs = -1.0;
 
         /// What the **GPU** spent on each stage, in the same order and with
-        /// the same boundaries as the CPU numbers above, or -1 where the
-        /// renderer has no timer query.
+        /// the same boundaries as the CPU numbers above, or -1 where there is
+        /// no timer query -- which is always, since CNA retired its GPU timer.
+        /// Kept, with the fields below that also describe retired stages, so
+        /// the benchmark's output keeps one shape.
         ///
         /// Two clocks rather than one, because a frame this size has two
         /// possible shapes and the CPU numbers alone cannot tell them apart.
@@ -273,12 +275,9 @@ public:
     SceneRenderer(const SceneRenderer&) = delete;
     SceneRenderer& operator=(const SceneRenderer&) = delete;
 
-    /// Creates the subsystems the settings ask for and reports what the renderer
-    /// could not provide. Call once after the device exists, and again whenever
-    /// a setting that changes an allocation (cascade count, shadow quality)
-    /// moves.
+    /// Creates the effects and the sky and reports what the renderer could not
+    /// provide. Call once after the device exists.
     void initialise(const RenderSettings& settings);
-    void applySettings(const RenderSettings& settings);
     void resize(int width, int height);
 
     [[nodiscard]] SkySystem& sky() { return sky_; }
@@ -303,10 +302,6 @@ public:
     /// A human-readable list of what the renderer could not do, for the overlay.
     [[nodiscard]] const std::vector<std::string>& limitations() const { return limitations_; }
     [[nodiscard]] std::size_t geometryBytes() const { return geometryBytes_; }
-
-    /// Writes the cascade atlas to a PNG. The only way to tell an empty shadow
-    /// map from a correct one that is being sampled wrongly, and worth keeping.
-    void dumpShadowAtlas(const std::string& path) const;
 
     // --- reflection probes --------------------------------------------------
     /// Captures the registered static scene from each of @p positions and
@@ -358,44 +353,9 @@ public:
     /// @p limit 0 means every family.
     [[nodiscard]] std::vector<BatchCost> costReport(std::size_t limit) const;
 
-    /// Turns on the by-name shadow-draw breakdown @ref shadowReport reads.
-    /// Off by default: it is a hash-map insert per shadow draw call, which is
-    /// not something a frame anybody is timing should pay for free.
-    void setShadowReportEnabled(bool enabled) { shadowReportEnabled_ = enabled; }
     /// Turns on the apply-versus-draw split in @ref Stats. Two clock reads per
     /// opaque draw; a profiling run pays it, an ordinary frame does not.
     void setDrawTimingEnabled(bool enabled) { drawTimingEnabled_ = enabled; }
-
-    /// Whether a caster has to be written into one cascade at all.
-    ///
-    /// The receiver picks its cascade by view depth, so a caster only needs
-    /// to be in the cascade covering `[nearDepth, farDepth]` if something it
-    /// can shade lies at those depths. Everything a caster can shade lies in
-    /// the sphere swept from it along the light until the whole sphere has
-    /// passed below the lowest receiver (@p groundY): the caster's own
-    /// position, the ground its shadow lands on, and every wall and roof in
-    /// between. This tests that swept volume's view-depth range against the
-    /// cascade's, padded by @p margin for the receiver's blend band. It is
-    /// what stops the far cascade -- whose fit sphere contains most of the
-    /// near street -- being written with every bollard, person and parked car
-    /// beside the camera, none of whose shadows it will ever be asked for.
-    /// A sun near the horizon throws every shadow to the edge of the world,
-    /// and the test says yes to everything. Public and pure so it can be
-    /// checked against hand-worked cases.
-    [[nodiscard]] static bool casterShadowReachesSlice(
-        const Microsoft::Xna::Framework::Vector3& eye,
-        const Microsoft::Xna::Framework::Vector3& forward, float nearDepth, float farDepth,
-        const Microsoft::Xna::Framework::Vector3& lightDirection,
-        const Microsoft::Xna::Framework::Vector3& centre, float radius, float groundY,
-        float margin);
-    /// What the *last frame's shadow pass* drew, by the name each caster was
-    /// registered under, heaviest first -- across every cascade, since a
-    /// caster near the camera is often written into more than one. This is
-    /// the table that answers "where do the shadow pass's triangles actually
-    /// come from", which a per-cascade total cannot: a cascade's triangle
-    /// count says how much a slice of the frustum cost, not which content
-    /// family is paying for it.
-    [[nodiscard]] std::vector<BatchCost> shadowReport(std::size_t limit) const;
 
     /// The same breakdown over the set that survived the *last* frame's cull,
     /// which is the one that actually cost anything. `batches` is draw calls
@@ -408,8 +368,6 @@ private:
     void drawOpaque(const Camera& camera, const RenderSettings& settings);
     void drawSkinned(const Camera& camera, const RenderSettings& settings);
     void drawTransparent(const Camera& camera, const RenderSettings& settings);
-    void drawShadows(const Camera& camera, const RenderSettings& settings);
-    void drawPrepass(const Camera& camera, const RenderSettings& settings);
     void cull(const Camera& camera, const RenderSettings& settings);
     void applyMaterial(const Material& material, const Microsoft::Xna::Framework::Matrix& world,
                        const Microsoft::Xna::Framework::Matrix& view,
@@ -419,35 +377,6 @@ private:
     /// Binds @p probe's cubes -- or the sky's, for null -- as the effect's
     /// image-based light, skipping the upload when they are already bound.
     void applyEnvironment(const ReflectionProbe* probe, const RenderSettings& settings);
-    /// The ground one cascade covers: the bounding sphere of a slice of the
-    /// camera frustum, grown by how far a caster outside it can still reach
-    /// into it. What a cascade needs is this, not a disc around the camera.
-    struct CascadeVolume
-    {
-        Microsoft::Xna::Framework::Vector3 eye;
-        Microsoft::Xna::Framework::Vector3 centre;
-        float radius = 0.0f;
-        /// How far down the camera's own view this cascade reaches. The
-        /// sphere says *where*, this says *how far*, and a caster has to
-        /// satisfy both: the sphere alone lets the near cascade take in
-        /// everything beside the camera, which is where a street is densest.
-        float split = 0.0f;
-        /// Where the slice starts, and the camera's forward, for the
-        /// per-cascade test in @ref casterShadowReachesSlice. `slice` is
-        /// false for a probe capture, which is a sphere about a point and not
-        /// a slice of anything.
-        float nearSplit = 0.0f;
-        Microsoft::Xna::Framework::Vector3 forward{0.0f, 0.0f, -1.0f};
-        bool  slice = false;
-        /// The ground one texel of this cascade covers, in metres. A caster
-        /// narrower than one is under the map's resolution and is not drawn.
-        float texel = 0.0f;
-    };
-    [[nodiscard]] CascadeVolume cascadeVolume(const Camera& camera, float nearSplit,
-                                              float farSplit) const;
-    /// Everything that casts into @p volume, written into the cascade
-    /// currently open. Shared by the frame's shadow pass and the probe capture.
-    void drawCasters(const CascadeVolume& volume, float propShadowLimit);
     /// One face of a probe: the sky, then the static scene, from @p view.
     void drawProbeFace(const Microsoft::Xna::Framework::Vector3& eye,
                        const Microsoft::Xna::Framework::Matrix& view,
@@ -463,23 +392,6 @@ private:
 
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::PbrEffect> effect_;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::SkinnedPbrEffect> skinnedEffect_;
-    std::unique_ptr<CNA::Graphics::RenderPipeline>     pipeline_;
-    std::unique_ptr<CNA::Graphics::CascadedShadowMap>  shadows_;
-    std::unique_ptr<CNA::Graphics::DepthNormalPrepass> prepass_;
-    /// One timer per stage. They are opened and closed in sequence and never
-    /// nested, because `GL_TIME_ELAPSED` allows exactly one open query at a
-    /// time; the post-process chain measures its own passes, so the frame's
-    /// post stage is the sum of those rather than a timer wrapped round them.
-    enum class GpuStage { Shadow, Prepass, Sky, Opaque, Count };
-    std::array<std::unique_ptr<CNA::Graphics::GpuTimer>,
-               static_cast<std::size_t>(GpuStage::Count)> gpuStage_;
-    std::array<double, static_cast<std::size_t>(GpuStage::Count)> gpuStageMs_{};
-    bool gpuTimingAvailable_ = false;
-    /// Triangles written into the cascade atlas this frame, for the per-
-    /// cascade table: a cascade's cost is its draws and its triangles, and
-    /// the two do not move together.
-    long long shadowTriangles_ = 0;
-
     std::vector<SceneItem>    items_;
     std::vector<InstanceGroup> groups_;
     std::vector<SceneItem>    dynamic_;
@@ -505,26 +417,21 @@ private:
     /// apply count in Stats. Reset with the lighting.
     const Material*        appliedMaterial_ = nullptr;
     const ReflectionProbe* appliedProbe_    = nullptr;
-    /// Multiplies the sun, the ambient and the sky while a probe is being
-    /// captured into an 8-bit target, and 1 for the frame. See captureProbe.
+    /// Multiplies the sun, the ambient and the sky: half while a probe is
+    /// being captured into an 8-bit target (see captureProbe), and the
+    /// settings' exposure for the frame, which has no tone mapper to apply it.
     float lightScale_ = 1.0f;
     bool  capturingProbe_ = false;
 
     int  width_  = 1280;
     int  height_ = 720;
     bool sceneSorted_ = false;
-    /// Whether this frame renders into the pipeline's float scene target, which
-    /// decides who owns the sRGB encode.
-    bool usingSceneTarget_ = false;
-    mutable bool loggedCascades_ = false;
     std::size_t geometryBytes_ = 0;
 
     Stats stats_;
     std::vector<std::string> limitations_;
 
-    bool shadowReportEnabled_ = false;
     bool drawTimingEnabled_ = false;
-    mutable std::unordered_map<std::string, BatchCost> shadowByName_;
 
     /// One instanced renderer per mesh, kept across frames. It used to be
     /// built on the stack for every group every frame, and a fresh one has
@@ -533,9 +440,8 @@ private:
     /// at the end of the loop body -- fifty-odd GPU buffer allocations and
     /// frees a frame for transform lists that mostly did not change size.
     /// Kept, the buffer is reused and only grows.
-    [[nodiscard]] CNA::Graphics::InstancedRendererEXT& instancedFor(const GpuMesh* mesh);
-    std::unordered_map<const GpuMesh*, std::unique_ptr<CNA::Graphics::InstancedRendererEXT>>
-        instancedByMesh_;
+    [[nodiscard]] InstancedMesh& instancedFor(const GpuMesh* mesh);
+    std::unordered_map<const GpuMesh*, std::unique_ptr<InstancedMesh>> instancedByMesh_;
 };
 
 }  // namespace CnaStreet

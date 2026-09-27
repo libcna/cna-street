@@ -1,22 +1,12 @@
 // SPDX-License-Identifier: MIT
 #include "CnaStreet/Render/SceneRenderer.hpp"
 
+#include "CnaStreet/Render/EnvironmentBaker.hpp"
 #include "CnaStreet/Render/GpuMesh.hpp"
+#include "CnaStreet/Render/InstancedMesh.hpp"
 #include "CnaStreet/Render/SkinnedGpuMesh.hpp"
 #include "CnaStreet/Render/MaterialLibrary.hpp"
 
-#include "CNA/Graphics/CascadedShadowMap.hpp"
-#include "CNA/Graphics/DepthNormalPrepass.hpp"
-#include "CNA/Graphics/DirectionalLightEXT.hpp"
-#include "CNA/Graphics/EnvironmentProcessor.hpp"
-#include "CNA/Graphics/GpuTimer.hpp"
-#include "CNA/Graphics/InstancedRendererEXT.hpp"
-#include "CNA/Graphics/RenderPipeline.hpp"
-#include "CNA/Graphics/RenderPipelineSettings.hpp"
-#include "CNA/Graphics/RenderQuality.hpp"
-#include "CNA/Graphics/ShadowQuality.hpp"
-#include "CNA/Graphics/TonemappingMode.hpp"
-#include "CNA/Graphics/TransparencyMode.hpp"
 #include "CNA/GraphicsCapability.hpp"
 #include "CNA/Logger.hpp"
 #include "Microsoft/Xna/Framework/Color.hpp"
@@ -48,55 +38,11 @@
 
 using namespace Microsoft::Xna::Framework;
 using namespace Microsoft::Xna::Framework::Graphics;
-using CNA::Graphics::CascadedShadowMap;
-using CNA::Graphics::DepthNormalPrepass;
-using CNA::Graphics::DirectionalLightEXT;
-using CNA::Graphics::EnvironmentProcessor;
-using CNA::Graphics::GpuTimer;
-using CNA::Graphics::InstancedRendererEXT;
-using CNA::Graphics::RenderPipeline;
-using CNA::Graphics::RenderQuality;
-using CNA::Graphics::ShadowQuality;
-using CNA::Graphics::TonemappingMode;
-using CNA::Graphics::TransparencyMode;
 using System::Diagnostics::Stopwatch;
 
 namespace CnaStreet {
 
 namespace {
-
-ShadowQuality ToShadowQuality(int level)
-{
-    switch (std::clamp(level, 0, 3))
-    {
-        case 0:  return ShadowQuality::Low;
-        case 1:  return ShadowQuality::Medium;
-        case 2:  return ShadowQuality::High;
-        default: return ShadowQuality::Ultra;
-    }
-}
-
-TonemappingMode ToTonemappingMode(int mode)
-{
-    switch (std::clamp(mode, 0, 3))
-    {
-        case 0:  return TonemappingMode::None;
-        case 1:  return TonemappingMode::Reinhard;
-        case 2:  return TonemappingMode::Aces;
-        default: return TonemappingMode::Filmic;
-    }
-}
-
-RenderQuality ToRenderQuality(int shadowQuality)
-{
-    switch (std::clamp(shadowQuality, 0, 3))
-    {
-        case 0:  return RenderQuality::Low;
-        case 1:  return RenderQuality::Medium;
-        case 2:  return RenderQuality::High;
-        default: return RenderQuality::Ultra;
-    }
-}
 
 /// .NET ticks are 100 ns, so this is what turns a Stopwatch reading into the
 /// milliseconds the overlay shows.
@@ -206,156 +152,30 @@ void SceneRenderer::initialise(const RenderSettings& settings)
         skinnedEffect_.reset();
     }
 
-    pipeline_ = std::make_unique<RenderPipeline>(device_);
-    pipeline_->resize(std::max(1, width_), std::max(1, height_));
-
-    if (settings.shadows)
-    {
-        if (device_.SupportsShadowSamplingEXT())
-        {
-            // Two is the floor, not one: CascadedShadowMap requires 2..4 and
-            // throws otherwise, and a settings file asking for one cascade
-            // should cost a cascade rather than the whole street.
-            try
-            {
-                shadows_ = std::make_unique<CascadedShadowMap>(
-                    device_, ToShadowQuality(settings.shadowQuality),
-                    std::clamp(settings.shadowCascades, 2, CascadedShadowMap::kMaxCascades));
-            }
-            catch (const std::exception& failure)
-            {
-                limitations_.emplace_back(std::string("no shadow map: ") + failure.what());
-                shadows_.reset();
-            }
-            if (shadows_ != nullptr && !shadows_->isSupported())
-            {
-                limitations_.emplace_back("cascaded shadow maps are unavailable on this renderer");
-                shadows_.reset();
-            }
-        }
-        else
-        {
-            limitations_.emplace_back("the renderer cannot sample a shadow map");
-        }
-    }
-
-    if (settings.ssao)
-    {
-        prepass_ = std::make_unique<DepthNormalPrepass>(device_, std::max(1, width_),
-                                                        std::max(1, height_));
-        if (prepass_->getPrepassEffect() == nullptr
-            || !prepass_->getPrepassEffect()->IsEffectValid())
-        {
-            limitations_.emplace_back("the depth/normal prepass did not compile, so SSAO is off");
-            prepass_.reset();
-        }
-    }
-
-    // One timer per stage. The frame's CPU breakdown has been the only clock
-    // this project had, and a CPU clock round a run of draw calls measures how
-    // long the *driver* took to accept them -- which is the right number when
-    // a frame is submission-bound and says nothing at all when it is not.
-    // These say which it is.
-    gpuTimingAvailable_ = false;
-    for (auto& timer : gpuStage_)
-    {
-        timer = std::make_unique<GpuTimer>(device_);
-        if (!timer->isSupported())
-        {
-            CNA::Logger::Info("cna-street: GPU timing unavailable -- "
-                              + timer->getUnsupportedReason());
-            for (auto& other : gpuStage_) other.reset();
-            break;
-        }
-        gpuTimingAvailable_ = true;
-    }
-    gpuStageMs_.fill(-1.0);
+    // CNA retired the engine layer these came from; the settings still name
+    // them, so say once that they are not drawn rather than leave a user
+    // wondering why a switch does nothing.
+    if (settings.shadows || settings.ssao || settings.hdr || settings.bloom || settings.fxaa
+        || settings.lightShafts || settings.ssr || settings.depthOfField)
+        limitations_.emplace_back("no shadows, SSAO, HDR tone mapping or post-processing: CNA "
+                                  "retired the engine layer that drew them");
 
     if (!device_.SupportsCapability(CNA::GraphicsCapability::Instancing))
         limitations_.emplace_back("no hardware instancing; repeated props fall back to a loop");
-    if (!device_.SupportsCapability(CNA::GraphicsCapability::FloatRenderTargets)
-        && !device_.SupportsCapability(CNA::GraphicsCapability::HalfFloatRenderTargets))
-        limitations_.emplace_back("no float render targets; HDR resolves straight to the back "
-                                  "buffer");
 
     sky_.build(settings);
     if (!sky_.isSupported()) limitations_.emplace_back(sky_.unsupportedReason());
     if (!sky_.hasImageBasedLighting())
         limitations_.emplace_back("no image based lighting; ambient is a hemisphere term");
 
-    applySettings(settings);
-
     for (const std::string& limitation : limitations_)
         CNA::Logger::Warn("cna-street: " + limitation);
-}
-
-void SceneRenderer::applySettings(const RenderSettings& settings)
-{
-    if (pipeline_ == nullptr) return;
-    auto& p = pipeline_->getSettings();
-
-    p.setHDREnabled(settings.hdr);
-    p.setExposure(settings.exposure);
-    p.setTonemappingMode(ToTonemappingMode(settings.tonemap));
-    p.setRenderQuality(ToRenderQuality(settings.shadowQuality));
-
-    p.setBloomEnabled(settings.bloom);
-    p.setBloomIntensity(settings.bloomIntensity);
-    p.setBloomThreshold(settings.bloomThreshold);
-    p.setBloomIterations(settings.bloomIterations);
-
-    p.setSSAOEnabled(settings.ssao && prepass_ != nullptr);
-    p.setSSAORadius(settings.ssaoRadius);
-    p.setSSAOIntensity(settings.ssaoIntensity);
-    p.setSSAOSampleCount(settings.ssaoSamples);
-
-    p.setFXAAEnabled(settings.fxaa);
-    p.setSSREnabled(settings.ssr);
-    p.setDOFEnabled(settings.depthOfField);
-
-    p.setHeightFogDensity(settings.heightFog ? settings.fogDensity : 0.0f);
-    p.setHeightFogFalloff(settings.fogFalloff);
-    p.setHeightFogBaseHeight(0.0f);
-
-    // Light shafts, tuned to be shafts rather than ghosts. The pass has a fixed
-    // sample count, so a decay of 0.965 spreads those samples over most of the
-    // screen and each one lands as a discrete smeared copy of whatever seeded
-    // it: at 0.82 the threshold caught the bright window frames of a sunlit
-    // façade, and a row of ghost windows climbed diagonally across the sky. The
-    // sun disc and the hottest speculars are what should seed a shaft, and the
-    // shaft should be short enough for the samples to overlap.
-    p.setLightShaftIntensity(settings.lightShafts ? 0.32f : 0.0f);
-    p.setLightShaftThreshold(0.995f);
-    p.setLightShaftDecay(0.86f);
-
-    // Sorted rather than order-independent: the transparent set here iswindow glass
-    // and car glazing, which is convex, sparse and already sorted well by
-    // distance. Weighted-blended would cost two more targets to solve a problem
-    // this scene does not have.
-    p.setTransparencyMode(TransparencyMode::Sorted);
-    p.setShadowsEnabled(settings.shadows && shadows_ != nullptr);
-    p.setShadowQuality(ToShadowQuality(settings.shadowQuality));
-
-    if (shadows_ != nullptr)
-    {
-        shadows_->setSplitLambda(settings.shadowSplitLambda);
-        shadows_->setBlendBand(settings.shadowBlendBand);
-        shadows_->setDebugTintEnabled(settings.shadowDebugTint);
-    }
 }
 
 void SceneRenderer::resize(int width, int height)
 {
     width_  = std::max(1, width);
     height_ = std::max(1, height);
-    if (pipeline_ != nullptr) pipeline_->resize(width_, height_);
-    if (prepass_ != nullptr)
-    {
-        prepass_ = std::make_unique<DepthNormalPrepass>(device_, width_, height_);
-        if (prepass_->getPrepassEffect() == nullptr
-            || !prepass_->getPrepassEffect()->IsEffectValid())
-            prepass_.reset();
-    }
 }
 
 void SceneRenderer::addItem(SceneItem item)
@@ -380,15 +200,12 @@ void SceneRenderer::addInstances(InstanceGroup group)
     groups_.push_back(std::move(group));
 }
 
-InstancedRendererEXT& SceneRenderer::instancedFor(const GpuMesh* mesh)
+InstancedMesh& SceneRenderer::instancedFor(const GpuMesh* mesh)
 {
     auto found = instancedByMesh_.find(mesh);
     if (found == instancedByMesh_.end())
-    {
-        auto renderer = std::make_unique<InstancedRendererEXT>(device_, mesh->part());
-        renderer->setFallbackEnabled(true);
-        found = instancedByMesh_.emplace(mesh, std::move(renderer)).first;
-    }
+        found = instancedByMesh_.emplace(mesh, std::make_unique<InstancedMesh>(device_, mesh->part()))
+                    .first;
     return *found->second;
 }
 
@@ -590,17 +407,6 @@ void SceneRenderer::applyLighting(const RenderSettings& settings)
     {
         effect.setFogEnabledProperty(false);
     }
-
-    if (shadows_ != nullptr && settings.shadows)
-    {
-        shadows_->applyToReceiver(effect);
-        effect.setShadowsEnabledEXT(true);
-        effect.setShadowDepthBiasEXT(settings.shadowDepthBias);
-    }
-    else
-    {
-        effect.setShadowsEnabledEXT(false);
-    }
 }
 
 void SceneRenderer::applyEnvironment(const ReflectionProbe* probe, const RenderSettings& settings)
@@ -687,13 +493,11 @@ void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
     effect.setIorEXTProperty(material.ior);
     effect.setSpecularFactorEXTProperty(material.specular);
 
-    // PbrEffect sRGB-encodes its own output by default, which is right when a
-    // shaded fragment lands straight in the back buffer and badly wrong when it
-    // lands in a float scene target that a tonemapper will read as linear
-    // radiance: every dark surface is lifted (asphalt at 0.05 becomes 0.25) and
-    // the whole frame flattens. Encode only when nothing downstream will.
-    // See docs/cna-findings.md CNA-F8.
-    effect.setEncodeOutputToSrgbEXTProperty(!usingSceneTarget_);
+    // Every draw lands straight in the back buffer (or an 8-bit probe target),
+    // so the effect owns the sRGB encode. It must not when a float scene
+    // target and a tonemapper follow -- see docs/cna-findings.md CNA-F8 -- but
+    // this frame no longer has either.
+    effect.setEncodeOutputToSrgbEXTProperty(true);
 
     effect.setAlphaModeEXTProperty(material.alphaMode);
     effect.setAlphaCutoffEXTProperty(material.alphaCutoff);
@@ -718,63 +522,6 @@ void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
     effect.Apply();
 }
 
-bool SceneRenderer::casterShadowReachesSlice(const Vector3& eye, const Vector3& forward,
-                                             float nearDepth, float farDepth,
-                                             const Vector3& lightDirection, const Vector3& centre,
-                                             float radius, float groundY, float margin)
-{
-    // The light travels along lightDirection; -Y of it is how steeply it
-    // falls. Near the horizon a shadow is as long as the world and the
-    // question has no useful answer, so everything is a caster.
-    const float down = -lightDirection.Y;
-    if (down < 0.05f) return true;
-    // Sweep the sphere along the light until its top has passed below the
-    // lowest receiver. Everything the caster can shade is inside that sweep.
-    const float travel = std::max(0.0f, (centre.Y + radius - groundY) / down);
-    const Vector3 end = centre + lightDirection * travel;
-    const float d0 = Vector3::Dot(centre - eye, forward);
-    const float d1 = Vector3::Dot(end - eye, forward);
-    const float lo = std::min(d0, d1) - radius - margin;
-    const float hi = std::max(d0, d1) + radius + margin;
-    return hi >= nearDepth && lo <= farDepth;
-}
-
-SceneRenderer::CascadeVolume SceneRenderer::cascadeVolume(const Camera& camera, float nearSplit,
-                                                          float farSplit) const
-{
-    // The bounding sphere of one slice of the camera frustum, which is what a
-    // cascade is fitted to. Its eight corners, their centroid, the furthest of
-    // them: the same construction the cascade fit uses, so the sphere and the
-    // shadow map cover the same ground.
-    const Vector3 eye = camera.position();
-    const Vector3 forward = camera.forward();
-    const Vector3 right = camera.right();
-    const Vector3 up = camera.up();
-    const float tanHalf = std::tan(camera.verticalFov() * 0.5f);
-    Vector3 sum = Vector3::Zero;
-    Vector3 corners[8];
-    int count = 0;
-    for (const float depth : {nearSplit, farSplit})
-    {
-        const float half = depth * tanHalf;
-        const float wide = half * camera.aspect();
-        for (const float sx : {-1.0f, 1.0f})
-            for (const float sy : {-1.0f, 1.0f})
-            {
-                corners[count] = eye + forward * depth + right * (wide * sx) + up * (half * sy);
-                sum = sum + corners[count];
-                ++count;
-            }
-    }
-    CascadeVolume volume;
-    volume.eye = eye;
-    volume.split = farSplit;
-    volume.centre = sum * (1.0f / static_cast<float>(count));
-    for (int i = 0; i < count; ++i)
-        volume.radius = std::max(volume.radius, Vector3::Distance(volume.centre, corners[i]));
-    return volume;
-}
-
 // Sampler state is device state, and in XNA it is whoever drew last's: a
 // SpriteBatch leaves LinearClamp in slot 0, a post pass PointClamp. Every
 // surface here tiles, so a pass that samples materials says so itself --
@@ -785,235 +532,23 @@ void SceneRenderer::useMaterialSamplers()
     for (int slot = 0; slot < 5; ++slot) samplers[slot] = SamplerState::LinearWrap;
 }
 
-void SceneRenderer::drawShadows(const Camera& camera, const RenderSettings& settings)
-{
-    stats_.drewShadows = false;
-    if (shadows_ == nullptr || !settings.shadows) return;
-    useMaterialSamplers();
-
-    DirectionalLightEXT light;
-    light.Direction = sky_.lightDirection();
-    light.Color     = sky_.sunColour();
-
-    // Fit the cascades to a *shorter* frustum than the camera's: a 620 m far
-    // plane would spread the cascades over ground nobody can resolve a shadow
-    // on, and the near cascade is what the eye actually judges.
-    const Matrix shadowProjection =
-        camera.projectionForRange(settings.nearPlane, std::min(settings.shadowDistance,
-                                                               settings.farPlane));
-    shadows_->update(light, camera.view(), shadowProjection);
-
-    ShaderEffect* caster = shadows_->getCasterEffect();
-    if (caster == nullptr) return;
-
-    if (!loggedCascades_)
-    {
-        loggedCascades_ = true;
-        std::string splits;
-        for (int i = 0; i < shadows_->getCascadeCount(); ++i)
-            splits += std::to_string(shadows_->getSplitDistance(i)) + " ";
-        CNA::Logger::Info("cna-street: shadow cascades " + std::to_string(shadows_->getCascadeCount())
-                          + " at " + std::to_string(shadows_->getCascadeSize()) + " px, splits "
-                          + splits);
-    }
-
-    const float propShadowLimit = settings.propShadowDistance;
-
-    // State first, then the pass: CNA's own cascade example sets the render
-    // states before begin(), and applying the caster effect is the last thing
-    // begin() does.
-    device_.setRasterizerStateProperty(RasterizerState::CullCounterClockwise);
-    device_.setDepthStencilStateProperty(DepthStencilState::Default);
-    device_.setBlendStateProperty(BlendState::Opaque);
-
-    stats_.cascades.assign(static_cast<std::size_t>(shadows_->getCascadeCount()),
-                           Stats::CascadeWork{});
-    float near = settings.nearPlane;
-    for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
-    {
-        const float far = shadows_->getSplitDistance(cascade);
-        const int drawsBefore = stats_.shadowDrawCalls;
-        const long long trianglesBefore = shadowTriangles_;
-        CascadeVolume volume = cascadeVolume(camera, near, far);
-        volume.nearSplit = near;
-        volume.forward   = camera.forward();
-        volume.slice     = true;
-        // The fit is sphere-based: the map's side is the sphere's diameter.
-        volume.texel = shadows_->getCascadeSize() > 0
-                           ? 2.0f * volume.radius / static_cast<float>(shadows_->getCascadeSize())
-                           : 0.0f;
-        shadows_->begin(cascade);
-        drawCasters(volume, propShadowLimit);
-        shadows_->end();
-        Stats::CascadeWork& work = stats_.cascades[static_cast<std::size_t>(cascade)];
-        work.draws     = stats_.shadowDrawCalls - drawsBefore;
-        work.triangles = shadowTriangles_ - trianglesBefore;
-        work.split     = far;
-        work.radius    = volume.radius;
-        near = far;
-    }
-
-    stats_.drewShadows = stats_.shadowDrawCalls > 0;
-}
-
-void SceneRenderer::drawCasters(const CascadeVolume& volume, float propShadowLimit)
-{
-    ShaderEffect* caster = shadows_->getCasterEffect();
-    if (caster == nullptr) return;
-
-    // Diagnostic only: attributes this cascade's draws to the name each
-    // caster was registered under. See setShadowReportEnabled.
-    const auto record = [this](const std::string& fullName, long long triangles) {
-        if (!shadowReportEnabled_) return;
-        const std::size_t hash = fullName.find('#');
-        const std::string name = hash == std::string::npos ? fullName : fullName.substr(0, hash);
-        BatchCost& cost = shadowByName_[name];
-        if (cost.name.empty()) cost.name = name;
-        ++cost.batches;
-        cost.triangles += triangles;
-    };
-
-    // Everything a cascade could cast into it, and nothing else. A cascade
-    // covers *a slice of the camera frustum*, not a disc around the camera,
-    // and the difference is most of the pass: the far cascade's slice starts
-    // forty-six metres ahead, so the dense hundred metres of street behind
-    // and beside the camera -- every bollard, every window frame, every
-    // parked car -- was being rasterised into it four times over to cast
-    // nothing. @ref volume is that slice as a sphere, grown by how far a
-    // caster outside it can still reach into it with the sun where it is.
-    // How far outside the slice a caster can still throw a shadow into it is
-    // a property of the caster, not a constant: the sun on this street stands
-    // about fifty degrees up, so a shadow is about as long as the thing
-    // casting it. Three times its own radius covers a building leaning its
-    // shadow into the slice and does not let a bollard nine metres behind the
-    // camera into the near cascade, which a fixed margin did -- and that made
-    // the pass *bigger*, because the near cascade used to be clamped to its
-    // own seven metres.
-    const auto reaches = [&volume](const Vector3& centre, float radius) {
-        return Vector3::Distance(volume.centre, centre) <= volume.radius + radius * 3.0f;
-    };
-
-    // And whether this cascade will ever be *asked* for the caster's shadow.
-    // The sphere above says the caster is near the slice; this says the
-    // shadow it throws lands at a depth the receiver reads from this cascade
-    // and not from a nearer one. The far cascade's fit sphere is 250 m across
-    // and contains most of the street, so without this every caster in front
-    // of the camera was rasterised into it as well as into its own cascade --
-    // and the receiver, which picks a cascade by view depth, never sampled
-    // those texels. Measured on the flagship view: the far cascade was half
-    // the pass's draws and triangles, most of them the near street.
-    //
-    // Padded by the receiver's blend band, over which it reads two cascades,
-    // and a metre for the ground the swept sphere is closed against.
-    const Vector3 light  = sky_.lightDirection();
-    const float   margin = (shadows_ != nullptr ? shadows_->getBlendBand() : 0.0f) + 1.0f;
-    const float   groundY = -0.10f;
-    const auto inSlice = [&](const Vector3& centre, float radius) {
-        if (!volume.slice) return true;
-        if (radius * 2.0f < volume.texel)
-        {
-            ++stats_.shadowTexelSkips;
-            return false;
-        }
-        if (!casterShadowReachesSlice(volume.eye, volume.forward, volume.nearSplit,
-                                      volume.split, light, centre, radius, groundY, margin))
-        {
-            ++stats_.shadowSliceSkips;
-            return false;
-        }
-        return true;
-    };
-
-    for (const SceneItem& item : items_)
-    {
-        if (!item.material->castsShadow) continue;
-        if (!reaches(item.worldSphere.Center, item.worldSphere.Radius)) continue;
-        const float away = DistanceToBox(volume.eye, item.worldBounds);
-        if (away > volume.split + item.worldSphere.Radius) continue;
-        if (item.shadowDistance > 0.0f && away > item.shadowDistance) continue;
-        if (!inSlice(item.worldSphere.Center, item.worldSphere.Radius)) continue;
-        caster->SetUniformMat4("uWorld", &item.world.M11);
-        item.mesh->draw(device_);
-        ++stats_.shadowDrawCalls;
-        shadowTriangles_ += item.mesh->triangleCount();
-        record(item.mesh->name(), item.mesh->triangleCount());
-    }
-
-    for (const SceneItem& item : dynamic_)
-    {
-        if (!item.material->castsShadow) continue;
-        if (!reaches(item.worldSphere.Center, item.worldSphere.Radius)) continue;
-        if (DistanceToBox(volume.eye, item.worldBounds)
-            > volume.split + item.worldSphere.Radius)
-            continue;
-        if (!inSlice(item.worldSphere.Center, item.worldSphere.Radius)) continue;
-        caster->SetUniformMat4("uWorld", &item.world.M11);
-        item.mesh->draw(device_);
-        ++stats_.shadowDrawCalls;
-        shadowTriangles_ += item.mesh->triangleCount();
-        if (item.shadowOnly) ++stats_.characterShadowDrawCalls;
-        if (item.family == DrawFamily::Vehicle) ++stats_.vehicleShadowDrawCalls;
-        record(item.mesh->name(), item.mesh->triangleCount());
-    }
-
-    // Instanced props are drawn one at a time here. CNA's shadow caster
-    // program takes its world matrix from a uniform and has no instanced
-    // variant, so a batch cannot be cast in one call; see
-    // docs/cna-findings.md CNA-F6. The distance limit keeps that honest:
-    // past ~70 m a bollard's shadow is a pixel.
-    for (std::size_t g = 0; g < groups_.size(); ++g)
-    {
-        const InstanceGroup& group = groups_[g];
-        if (!group.castsShadow || !group.material->castsShadow) continue;
-        const float limit = std::min(group.shadowDistance > 0.0f ? group.shadowDistance
-                                                                 : propShadowLimit,
-                                     volume.split);
-        // The far level of detail, if this group has one, unconditionally --
-        // not only past the opaque pass's own switch distance. A shadow is a
-        // soft-edged silhouette on the ground, filtered by PCF and quantised
-        // to a cascade texel that is centimetres wide even in the nearest
-        // cascade; the leaf-level geometry a tree three metres away is drawn
-        // with for the eye to see contributes nothing to the shape its shadow
-        // casts. This project already draws its *far-ring* trees' shadows
-        // from exactly this mesh (`CityScene::buildVegetation`'s "-far"
-        // groups); this is that same choice applied to the near ring's
-        // shadow only, with the opaque draw untouched. Measured on the
-        // flagship viewpoint: the three hero tree species alone were 7.3M of
-        // the shadow pass's typical 13M triangles, more than half of it, for
-        // a silhouette a viewer never resolves at cascade resolution.
-        const GpuMesh* casterMesh = group.lodMesh != nullptr ? group.lodMesh : group.mesh;
-        for (std::size_t i = 0; i < group.transforms.size(); ++i)
-        {
-            const BoundingSphere& sphere = group.spheres[i];
-            if (Vector3::Distance(volume.eye, sphere.Center) - sphere.Radius > limit) continue;
-            if (!reaches(sphere.Center, sphere.Radius)) continue;
-            if (!inSlice(sphere.Center, sphere.Radius)) continue;
-            caster->SetUniformMat4("uWorld", &group.transforms[i].M11);
-            casterMesh->draw(device_);
-            ++stats_.shadowDrawCalls;
-            shadowTriangles_ += casterMesh->triangleCount();
-            record(group.name, casterMesh->triangleCount());
-        }
-    }
-}
-
 void SceneRenderer::drawSkinned(const Camera& camera, const RenderSettings& settings)
 {
     if (skinnedEffect_ == nullptr || visibleSkinned_.empty()) return;
     SkinnedPbrEffect& effect = *skinnedEffect_;
 
-    // The same lighting the rest of the frame has. Set once, because the whole
-    // crowd shares it and a per-character upload of the environment cube would
-    // be the single most expensive thing in the pass.
+    // The same lighting the rest of the frame has, exposure included. Set once,
+    // because the whole crowd shares it and a per-character upload of the
+    // environment cube would be the single most expensive thing in the pass.
     effect.setLightingEnabledProperty(true);
     auto& sun = effect.getDirectionalLight0Property();
     sun.setEnabledProperty(true);
     sun.setDirectionProperty(sky_.lightDirection());
-    sun.setDiffuseColorProperty(sky_.sunColour());
-    sun.setSpecularColorProperty(sky_.sunColour());
+    sun.setDiffuseColorProperty(sky_.sunColour() * lightScale_);
+    sun.setSpecularColorProperty(sky_.sunColour() * lightScale_);
     effect.getDirectionalLight1Property().setEnabledProperty(false);
     effect.getDirectionalLight2Property().setEnabledProperty(false);
-    effect.setAmbientLightColorProperty(sky_.ambientColour());
+    effect.setAmbientLightColorProperty(sky_.ambientColour() * lightScale_);
     if (sky_.hasImageBasedLighting() && settings.imageBasedLighting)
     {
         ImageBasedLightEXT environment;
@@ -1021,7 +556,8 @@ void SceneRenderer::drawSkinned(const Camera& camera, const RenderSettings& sett
         environment.PrefilteredSpecular = sky_.prefiltered();
         environment.BrdfLut             = sky_.brdfLut();
         environment.PrefilteredMipCount = sky_.prefilteredMipCount();
-        environment.Intensity           = sky_.environmentScale() * settings.iblIntensity;
+        environment.Intensity           = sky_.environmentScale() * settings.iblIntensity
+                                          * lightScale_;
         effect.setImageBasedLightEXT(environment);
     }
     if (settings.heightFog)
@@ -1035,19 +571,9 @@ void SceneRenderer::drawSkinned(const Camera& camera, const RenderSettings& sett
     {
         effect.setFogEnabledProperty(false);
     }
-    if (shadows_ != nullptr && settings.shadows)
-    {
-        shadows_->applyToReceiver(effect);
-        effect.setShadowsEnabledEXT(true);
-        effect.setShadowDepthBiasEXT(settings.shadowDepthBias);
-    }
-    else
-    {
-        effect.setShadowsEnabledEXT(false);
-    }
     effect.setViewProperty(camera.view());
     effect.setProjectionProperty(camera.projection());
-    effect.setEncodeOutputToSrgbEXTProperty(!usingSceneTarget_);
+    effect.setEncodeOutputToSrgbEXTProperty(true);
     effect.setBaseColorTextureIsSrgbEXTProperty(true);
     effect.setEmissiveTextureIsSrgbEXTProperty(true);
 
@@ -1088,42 +614,8 @@ void SceneRenderer::drawSkinned(const Camera& camera, const RenderSettings& sett
     }
 }
 
-void SceneRenderer::drawPrepass(const Camera& camera, const RenderSettings& settings)
-{
-    if (prepass_ == nullptr || pipeline_ == nullptr || !settings.ssao) return;
-
-    ShaderEffect* prepassEffect = prepass_->getPrepassEffect();
-    if (prepassEffect == nullptr || !prepassEffect->IsEffectValid()) return;
-    useMaterialSamplers();
-
-    for (int pass = 0; pass < prepass_->getPassCount(); ++pass)
-    {
-        prepass_->begin(pass, camera.view(), camera.projection(), settings.nearPlane,
-                        settings.farPlane);
-        device_.setRasterizerStateProperty(RasterizerState::CullCounterClockwise);
-        device_.setDepthStencilStateProperty(DepthStencilState::Default);
-        device_.setBlendStateProperty(BlendState::Opaque);
-
-        // Only the large opaque surfaces. The prepass program takes its world
-        // matrix from a uniform, so instanced props would all land at the
-        // origin; SSAO's job here is the contact darkening where façades meet
-        // the footway, which these carry.
-        for (std::size_t index : visibleOpaque_)
-        {
-            const SceneItem& item = items_[index];
-            if (!item.material->writesDepth) continue;
-            prepassEffect->setWorldProperty(item.world);
-            prepassEffect->Apply();
-            item.mesh->draw(device_);
-        }
-        prepass_->end();
-    }
-    pipeline_->setDepthNormalInputs(prepass_->getDepthTexture(), prepass_->getNormalTexture());
-}
-
 void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& settings)
 {
-    usingSceneTarget_ = pipeline_ != nullptr && pipeline_->isUsingSceneTarget();
     device_.setDepthStencilStateProperty(DepthStencilState::Default);
     device_.setBlendStateProperty(BlendState::Opaque);
     useMaterialSamplers();
@@ -1188,12 +680,12 @@ void SceneRenderer::drawOpaque(const Camera& camera, const RenderSettings& setti
         applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
                       nullptr);
         lap(applyTicks);
-        InstancedRendererEXT& instanced = instancedFor(mesh);
+        InstancedMesh& instanced = instancedFor(mesh);
         instanced.setInstances(visible);
         instanced.draw(*effect_);
         lap(drawTicks);
-        stats_.instancedDrawCalls += instanced.getLastDrawCallCount();
-        stats_.drawCalls += instanced.getLastDrawCallCount();
+        stats_.instancedDrawCalls += instanced.lastDrawCallCount();
+        stats_.drawCalls += instanced.lastDrawCallCount();
         stats_.triangles += static_cast<std::size_t>(mesh->triangleCount()) * visible.size();
     }
 
@@ -1243,52 +735,11 @@ void SceneRenderer::drawTransparent(const Camera& camera, const RenderSettings& 
         if (mesh == nullptr) continue;
         applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
                       nullptr);
-        InstancedRendererEXT& instanced = instancedFor(mesh);
+        InstancedMesh& instanced = instancedFor(mesh);
         instanced.setInstances(visible);
         instanced.draw(*effect_);
-        stats_.drawCalls += instanced.getLastDrawCallCount();
+        stats_.drawCalls += instanced.lastDrawCallCount();
     }
-}
-
-void SceneRenderer::dumpShadowAtlas(const std::string& path) const
-{
-    if (shadows_ == nullptr) { CNA::Logger::Warn("cna-street: no shadow map to dump"); return; }
-    Texture2D* atlas = shadows_->getShadowTexture();
-    if (atlas == nullptr) { CNA::Logger::Warn("cna-street: the shadow atlas is null"); return; }
-    // Read it back rather than SaveAsPng: a render target holds no CPU-side copy
-    // of what the GPU wrote into it, so the direct save reports there is nothing
-    // to write.
-    const int width = atlas->getWidthProperty();
-    const int height = atlas->getHeightProperty();
-    std::vector<Color> pixels(static_cast<std::size_t>(width) * static_cast<std::size_t>(height),
-                              Color::Black);
-    atlas->GetData(pixels.data(), static_cast<int>(pixels.size()));
-
-    int darkest = 255, brightest = 0;
-    double mean = 0.0;
-    for (const Color& pixel : pixels)
-    {
-        const int red = static_cast<int>(pixel.getRProperty());
-        darkest = std::min(darkest, red);
-        brightest = std::max(brightest, red);
-        mean += static_cast<double>(red);
-    }
-    mean /= static_cast<double>(pixels.size());
-
-    std::vector<std::uint8_t> rgba(pixels.size() * 4u);
-    for (std::size_t i = 0; i < pixels.size(); ++i)
-    {
-        rgba[i * 4 + 0] = static_cast<std::uint8_t>(pixels[i].getRProperty());
-        rgba[i * 4 + 1] = static_cast<std::uint8_t>(pixels[i].getGProperty());
-        rgba[i * 4 + 2] = static_cast<std::uint8_t>(pixels[i].getBProperty());
-        rgba[i * 4 + 3] = 255;
-    }
-    Texture2D copy = Texture2D::CreateFromPixels(device_, width, height, rgba);
-    copy.SaveAsPng(path);
-    CNA::Logger::Info("cna-street: shadow atlas " + std::to_string(width) + "x"
-                      + std::to_string(height) + " -> " + path + "  range "
-                      + std::to_string(darkest) + ".." + std::to_string(brightest) + ", mean "
-                      + std::to_string(mean));
 }
 
 // ---------------------------------------------------------------------------
@@ -1328,8 +779,6 @@ void SceneRenderer::drawProbeFace(const Vector3& eye, const Matrix& view, const 
 
     device_.setDepthStencilStateProperty(DepthStencilState::Default);
     device_.setBlendStateProperty(BlendState::Opaque);
-    // Into an 8-bit target directly, so the effect's own sRGB encode is wanted.
-    usingSceneTarget_ = false;
     useMaterialSamplers();
     applyLighting(settings);
 
@@ -1378,8 +827,7 @@ void SceneRenderer::drawProbeFace(const Vector3& eye, const Matrix& view, const 
                                   : group.mesh;
         applyMaterial(*group.material, Matrix::getIdentityProperty(), view, projection, settings,
                       nullptr);
-        InstancedRendererEXT instanced(device_, mesh->part());
-        instanced.setFallbackEnabled(true);
+        InstancedMesh instanced(device_, mesh->part());
         instanced.setInstances(visible);
         instanced.draw(*effect_);
     }
@@ -1406,41 +854,6 @@ void SceneRenderer::captureProbe(ReflectionProbe& probe, RenderTarget2D& target,
     // steps. Both are undone when the texel is written into the cube.
     lightScale_     = 0.5f;
     capturingProbe_ = true;
-
-    // Shadows for the capture: the cascades are re-fitted to a camera looking
-    // straight down at the probe from 55 m, whose frustum covers the block
-    // around it. Every surface in the street then falls in the same one or two
-    // cascades whichever face is being drawn, because the receiver selects a
-    // cascade by depth along the *fitting* camera, not the drawing one -- and
-    // that is what makes one shadow pass serve six faces. The sunlit side of
-    // the street and the shaded side are the whole point of a reflection.
-    if (shadows_ != nullptr && settings.shadows)
-    {
-        DirectionalLightEXT light;
-        light.Direction = sky_.lightDirection();
-        light.Color     = sky_.sunColour();
-        const Vector3 above = probe.position + Vector3(0.0f, 55.0f, 0.0f);
-        const Matrix fitView = Matrix::CreateLookAt(above, probe.position, Vector3(0.0f, 0.0f, -1.0f));
-        const Matrix fitProjection =
-            Matrix::CreatePerspectiveFieldOfView(MathHelper::ToRadians(100.0f), 1.0f, 1.0f, 72.0f);
-        shadows_->update(light, fitView, fitProjection);
-        device_.setRasterizerStateProperty(RasterizerState::CullCounterClockwise);
-        device_.setDepthStencilStateProperty(DepthStencilState::Default);
-        device_.setBlendStateProperty(BlendState::Opaque);
-        for (int cascade = 0; cascade < shadows_->getCascadeCount(); ++cascade)
-        {
-            shadows_->begin(cascade);
-            // A probe sees six ways from one point, so its casters are a
-            // sphere about that point rather than a frustum slice.
-            CascadeVolume around;
-            around.eye = probe.position;
-            around.centre = probe.position;
-            around.radius = 80.0f;
-            around.split = 80.0f;
-            drawCasters(around, std::min(settings.propShadowDistance, 60.0f));
-            shadows_->end();
-        }
-    }
 
     probe.environment = std::make_unique<TextureCube>(device_, size, false, SurfaceFormat::Color);
     // The capture again, brighter, for the irradiance alone. What the probe
@@ -1553,7 +966,7 @@ void SceneRenderer::bakeReflectionProbes(std::vector<Vector3> positions,
         sceneSorted_ = true;
     }
 
-    EnvironmentProcessor processor(device_);
+    const EnvironmentBaker baker(device_);
     // Fewer samples than the sky's convolution: a probe face is a quarter the
     // size and there are thirty of them, and the reflection of a parked car
     // does not need the sky's smoothness.
@@ -1578,12 +991,12 @@ void SceneRenderer::bakeReflectionProbes(std::vector<Vector3> positions,
         try
         {
             captureProbe(*probe, *target, size, settings);
-            probe->prefiltered = processor.generatePrefilteredSpecular(
-                probe->environment.get(), size, probe->prefilteredMips, prefilterSamples);
+            probe->prefiltered = baker.prefilteredSpecular(*probe->environment, size,
+                                                           probe->prefilteredMips,
+                                                           prefilterSamples);
             if (settings.probeIrradiance)
-                probe->irradiance = processor.generateIrradiance(
-                    probe->bounced != nullptr ? probe->bounced.get() : probe->environment.get(),
-                    16, 24);
+                probe->irradiance = baker.irradiance(
+                    probe->bounced != nullptr ? *probe->bounced : *probe->environment, 16, 24);
         }
         catch (const std::exception& failure)
         {
@@ -1673,8 +1086,13 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     stats_.shadowSliceSkips = 0;
     stats_.shadowTexelSkips = 0;
     stats_.opaqueApplyMs = stats_.opaqueDrawMs = stats_.skinnedMs = -1.0f;
-    if (shadowReportEnabled_) shadowByName_.clear();
-    shadowTriangles_ = 0;
+    stats_.drewShadows = false;
+    stats_.cascades.clear();
+
+    // No tone mapper follows the frame any more, so exposure is applied the
+    // only way left: as a linear scale on every light, the sky included.
+    // Highlights past 1.0 clip where they used to roll off.
+    lightScale_ = std::max(settings.exposure, 0.0f);
 
     // One clock for the whole frame, and every stage a slice of it. The stages
     // used to be timed by separate stopwatches whose spans overlapped, so
@@ -1683,103 +1101,44 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     // five times the frame they were measuring.
     Stopwatch watch = Stopwatch::StartNew();
 
-    // Last frame's GPU answers, collected before this frame opens a range.
-    // `poll` never blocks -- a result arrives a frame or two after the range
-    // closed, which is the whole reason it is worth having.
-    const auto openStage = [this](GpuStage stage) {
-        auto& timer = gpuStage_[static_cast<std::size_t>(stage)];
-        if (timer == nullptr) return;
-        // Collect *last* frame's answer before reopening the query, not after
-        // closing it: a timer object holds one result, `poll` never blocks,
-        // and polling immediately after `end` asks the GPU for a number it
-        // cannot have yet -- which is how the first version of this reported
-        // "GPU timing unavailable" on a card that has it.
-        if (timer->poll())
-            gpuStageMs_[static_cast<std::size_t>(stage)] = timer->getLastMilliseconds();
-        timer->begin();
-    };
-    const auto closeStage = [this](GpuStage stage) {
-        auto& timer = gpuStage_[static_cast<std::size_t>(stage)];
-        if (timer != nullptr) timer->end();
-    };
-
     cull(camera, settings);
     const float afterCull = Milliseconds(watch);
-    openStage(GpuStage::Shadow);
-    drawShadows(camera, settings);
-    closeStage(GpuStage::Shadow);
-    const float afterShadow = Milliseconds(watch);
-    openStage(GpuStage::Prepass);
-    drawPrepass(camera, settings);
-    closeStage(GpuStage::Prepass);
-    const float afterPrepass = Milliseconds(watch);
 
-    // The post chain times its own passes, which is finer than one number for
-    // the lot: bloom, the SSAO resolve, the tone map and FXAA are four
-    // different decisions and they cost four different amounts. No timer of
-    // this class wraps `pipeline_->end()`, because a GL_TIME_ELAPSED query
-    // inside another is not a query.
-    if (gpuTimingAvailable_) pipeline_->setGpuTimingEnabledEXT(true);
+    // The retired pipeline cleared its own scene target; the back buffer is
+    // the target now.
+    device_.Clear(Color::Black);
 
-    pipeline_->setTransparentScene([&] { drawTransparent(camera, settings); });
-    pipeline_->begin(Color::Black);
-
-    // The sky first, with depth writes off so every later draw covers it. Drawn
-    // here rather than through the pipeline's own skybox hook because that hook
-    // takes a cubemap and this sky is a shader.
+    // The sky first, with depth writes off so every later draw covers it,
+    // sRGB-encoded because nothing downstream will encode it.
     device_.setDepthStencilStateProperty(DepthStencilState::None);
     device_.setBlendStateProperty(BlendState::Opaque);
-    openStage(GpuStage::Sky);
-    sky_.draw(camera.view(), camera.projection(), width_, height_, timeSeconds);
-    closeStage(GpuStage::Sky);
+    sky_.draw(camera.view(), camera.projection(), width_, height_, timeSeconds, lightScale_,
+              true);
 
     const float afterSky = Milliseconds(watch);
-    openStage(GpuStage::Opaque);
     drawOpaque(camera, settings);
-    closeStage(GpuStage::Opaque);
     const float afterOpaque = Milliseconds(watch);
-    pipeline_->end();
+    drawTransparent(camera, settings);
+    device_.setBlendStateProperty(BlendState::Opaque);
 
-    const auto pipelineStats = pipeline_->getStatistics();
-    stats_.postPasses = pipelineStats.passesRun;
-    stats_.usedSceneTarget = pipelineStats.usedSceneTarget;
+    stats_.postPasses = 0;
+    stats_.usedSceneTarget = false;
 
     stats_.cullMs    = afterCull;
-    stats_.shadowMs  = afterShadow - afterCull;
-    stats_.prepassMs = afterPrepass - afterShadow;
-    stats_.skyMs     = afterSky - afterPrepass;
+    stats_.shadowMs  = 0.0f;
+    stats_.prepassMs = 0.0f;
+    stats_.skyMs     = afterSky - afterCull;
     stats_.opaqueMs  = afterOpaque - afterSky;
     stats_.postMs    = Milliseconds(watch) - afterOpaque;
     stats_.frameMs   = Milliseconds(watch);
 
-    stats_.gpuShadowMs  = gpuStageMs_[static_cast<std::size_t>(GpuStage::Shadow)];
-    stats_.gpuPrepassMs = gpuStageMs_[static_cast<std::size_t>(GpuStage::Prepass)];
-    stats_.gpuSkyMs     = gpuStageMs_[static_cast<std::size_t>(GpuStage::Sky)];
-    stats_.gpuOpaqueMs  = gpuStageMs_[static_cast<std::size_t>(GpuStage::Opaque)];
+    stats_.gpuShadowMs  = -1.0;
+    stats_.gpuPrepassMs = -1.0;
+    stats_.gpuSkyMs     = -1.0;
+    stats_.gpuOpaqueMs  = -1.0;
+    stats_.gpuPostMs    = -1.0;
     stats_.gpuPostPasses.clear();
-    stats_.gpuPostMs = -1.0;
-    if (pipeline_->isGpuTimingEnabledEXT())
-    {
-        double post = 0.0;
-        for (const auto& pass : pipeline_->getPassTimingsEXT())
-        {
-            stats_.gpuPostPasses.emplace_back(pass.Name, pass.Milliseconds);
-            post += pass.Milliseconds;
-        }
-        if (!stats_.gpuPostPasses.empty()) stats_.gpuPostMs = post;
-    }
     stats_.gpuFrameMs = -1.0;
-    if (gpuTimingAvailable_)
-    {
-        // The sum of the ranges, not a range round the frame: the frame's own
-        // range would have to contain the others, and it cannot.
-        double total = 0.0;
-        bool any = false;
-        for (const double stage : gpuStageMs_)
-            if (stage >= 0.0) { total += stage; any = true; }
-        if (stats_.gpuPostMs >= 0.0) { total += stats_.gpuPostMs; any = true; }
-        if (any) stats_.gpuFrameMs = total;
-    }
 }
 
 
@@ -1840,18 +1199,6 @@ std::vector<SceneRenderer::BatchCost> SceneRenderer::costReport(std::size_t limi
     return report;
 }
 
-
-std::vector<SceneRenderer::BatchCost> SceneRenderer::shadowReport(std::size_t limit) const
-{
-    std::vector<BatchCost> report;
-    report.reserve(shadowByName_.size());
-    for (const auto& entry : shadowByName_) report.push_back(entry.second);
-    std::sort(report.begin(), report.end(), [](const BatchCost& a, const BatchCost& b) {
-        return a.triangles > b.triangles;
-    });
-    if (limit > 0 && report.size() > limit) report.resize(limit);
-    return report;
-}
 
 std::vector<SceneRenderer::BatchCost> SceneRenderer::visibleReport(std::size_t limit) const
 {

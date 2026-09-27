@@ -1,8 +1,8 @@
 #version 450
 // cna-street's sky, the Vulkan variant of SkySystem.cpp's kFragmentBody, compiled offline to SPIR-V by
 // CNA's tools/shader_package/generate_shader_package.py (see package.json beside this file). The
-// body below main()'s declarations is kFragmentBody verbatim, and the scattering model is CNA's own
-// (AtmosphericSky::getModelGlsl()); keep all three in step. A renderer that runs SPIR-V rather than
+// body below main()'s declarations is kFragmentBody verbatim, and the scattering model is
+// Atmosphere::modelGlsl() (AtmosphereModel.cpp); keep all three in step. A renderer that runs SPIR-V rather than
 // GLSL source addresses uniforms by type, not by name, so the named uniforms of the GLSL variant are
 // the elements of three typed arrays here, in the order SkySystem::draw fills them.
 

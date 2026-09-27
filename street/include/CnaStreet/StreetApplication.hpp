@@ -191,7 +191,6 @@ private:
     /// only one that settles leaf cards, wheel spokes and shutter rails
     /// smaller than a pixel. Stills only; the window is not shown at it.
     int         supersample_     = 1;
-    std::string shadowDumpPath_;
     std::string probeDumpPath_;
     /// The sun moved this session and the reflection probes have not followed
     /// it yet. Re-baked on the first frame the sun holds still.

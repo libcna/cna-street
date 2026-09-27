@@ -218,7 +218,6 @@ bool StreetApplication::configure(int argc, char** argv)
         else if (arg == "--shadow-distance") { const char* v = next(i); if (v) settings_.shadowDistance = static_cast<float>(std::atof(v)); }
         else if (arg == "--cascades")      { const char* v = next(i); if (v) settings_.shadowCascades = std::atoi(v); }
         else if (arg == "--shadow-bias")   { const char* v = next(i); if (v) settings_.shadowDepthBias = static_cast<float>(std::atof(v)); }
-        else if (arg == "--dump-shadow")  { const char* v = next(i); if (v) shadowDumpPath_ = v; }
         else if (arg == "--dump-probes")  { const char* v = next(i); if (v) probeDumpPath_ = v; }
         else if (arg == "--no-probes")      settings_.reflectionProbes = false;
         else if (arg == "--no-shadows")     settings_.shadows = false;
@@ -406,7 +405,6 @@ void StreetApplication::LoadContent()
     // The shadow-by-name breakdown costs a hash-map insert per shadow draw
     // call, which a `--frames` profiling run should pay for and an ordinary
     // one flying the camera should not.
-    renderer_->setShadowReportEnabled(frameBudget_ > 0);
     renderer_->setDrawTimingEnabled(frameBudget_ > 0);
 
     // The overlay before the scene, not after: it owns the font and the sprite
@@ -481,26 +479,8 @@ void StreetApplication::LoadContent()
 void StreetApplication::handleHotkeys(const KeyboardState& keyboard, const KeyboardState& previous)
 {
     if (Pressed(keyboard, previous, Keys::F1)) settings_.debugOverlay = !settings_.debugOverlay;
-    if (Pressed(keyboard, previous, Keys::F2))
-    {
-        settings_.shadows = !settings_.shadows;
-        renderer_->applySettings(settings_);
-    }
-    if (Pressed(keyboard, previous, Keys::F3))
-    {
-        settings_.ssao = !settings_.ssao;
-        renderer_->applySettings(settings_);
-    }
-    if (Pressed(keyboard, previous, Keys::F4))
-    {
-        settings_.bloom = !settings_.bloom;
-        renderer_->applySettings(settings_);
-    }
-    if (Pressed(keyboard, previous, Keys::F5))
-    {
-        settings_.heightFog = !settings_.heightFog;
-        renderer_->applySettings(settings_);
-    }
+    // F2-F4 toggled shadows, SSAO and bloom, which went with CNA's engine layer.
+    if (Pressed(keyboard, previous, Keys::F5)) settings_.heightFog = !settings_.heightFog;
     if (Pressed(keyboard, previous, Keys::F6))
     {
         settings_.clouds = !settings_.clouds;
@@ -625,11 +605,6 @@ void StreetApplication::Draw(const GameTime& gameTime)
     ++framesDrawn_;
     recordFrame();
 
-    if (!shadowDumpPath_.empty() && framesDrawn_ >= 3)
-    {
-        renderer_->dumpShadowAtlas(shadowDumpPath_);
-        shadowDumpPath_.clear();
-    }
     if (!probeDumpPath_.empty())
     {
         renderer_->dumpReflectionProbes(probeDumpPath_);
@@ -748,6 +723,7 @@ void StreetApplication::reportProfile()
                       + "  p95 " + fixed(at(0.95), 2)
                       + "  min " + fixed(sorted.front(), 2)
                       + "  max " + fixed(sorted.back(), 2) + " ms");
+
     CNA::Logger::Info("cna-street:   cull " + fixed(profile_.cullMs / n, 2)
                       + "  shadow " + fixed(profile_.shadowMs / n, 2)
                       + "  prepass " + fixed(profile_.prepassMs / n, 2)
@@ -880,8 +856,6 @@ void StreetApplication::reportProfile()
     dump("heaviest batch families as registered, by triangle:", renderer_->costReport(14));
     dump("most expensive families in the last frame, by draw call:",
          renderer_->visibleReport(16));
-    dump("the shadow pass's own triangles, by family, last frame:",
-         renderer_->shadowReport(14));
 
     if (benchmark_ != nullptr)
         writeBenchmark(mean, at(0.5), at(0.95), sorted.front(), sorted.back());

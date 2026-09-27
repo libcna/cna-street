@@ -251,7 +251,7 @@ void DebugOverlay::draw(const SceneRenderer& renderer, const CityScene& scene, c
                            scene.materialsConst().textureCount(),
                            scene.materialsConst().textureBytes() / (1024u * 1024u),
                            static_cast<double>(build.buildSeconds)));
-    lines.push_back("F1 overlay  F2 shadows  F3 ssao  F4 bloom  F5 fog  F6 clouds  F9 screenshot"
+    lines.push_back("F1 overlay  F5 fog  F6 clouds  F9 screenshot"
                     "   [ ] sun  - = elevation");
     lines.push_back("WASD move  mouse look  Q/E down/up  shift fast  ctrl slow  tab walk/fly  "
                     "c cinematic  1-8 viewpoints  r reset");

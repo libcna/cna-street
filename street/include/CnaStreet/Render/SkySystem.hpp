@@ -11,13 +11,9 @@
 namespace Microsoft::Xna::Framework::Graphics {
     class GraphicsDevice;
     class ShaderEffect;
+    class SpriteBatch;
     class Texture2D;
     class TextureCube;
-}
-
-namespace CNA::Graphics {
-    class FullscreenPass;
-    class EnvironmentProcessor;
 }
 
 namespace CnaStreet {
@@ -27,19 +23,17 @@ struct RenderSettings;
 /**
  * @brief The sky: atmosphere, sun disc, two cloud layers, and the light they give.
  *
- * Built on CNA's `AtmosphericSky` rather than beside it. That class exposes its
- * scattering model as GLSL through the static `getModelGlsl()`, so this system
- * compiles a `ShaderEffect` whose fragment program is *CNA's own sky radiance
- * function* plus a cloud layer and a sun disc on top. The alternative — writing
- * a second atmosphere model — would have meant the sky the camera sees and the
- * sky the scene is lit by disagreeing, which is exactly the sort of thing that
- * makes a render look wrong without anyone being able to say why.
- *
- * The same model then runs on the CPU (`AtmosphericSky::radiance`) to bake a
- * small environment cubemap, which `EnvironmentProcessor` turns into the
+ * One scattering model (`Atmosphere::radiance`, and the same function as GLSL
+ * in `Atmosphere::modelGlsl()`) drives both halves: the fragment program draws
+ * it with a cloud layer and a sun disc on top, and the CPU bakes a small
+ * environment cubemap from it, which `EnvironmentBaker` turns into the
  * irradiance, prefiltered specular and BRDF LUT that `PbrEffect` uses for image
- * based lighting. So the ambient light in the street really is the light of the
- * sky above it.
+ * based lighting. The sky the camera sees and the sky the street is lit by
+ * therefore cannot disagree.
+ *
+ * The model, the fullscreen draw and the convolution were CNA's
+ * (`AtmosphericSky`, `FullscreenPass`, `EnvironmentProcessor`) until CNA
+ * retired its graphics engine layer; they are the street's own now.
  */
 class SkySystem
 {
@@ -132,11 +126,12 @@ public:
 private:
     void bakeEnvironment(const RenderSettings& settings);
     void computeLighting(const RenderSettings& settings);
+    void drawFullscreen(int width, int height);
 
     Microsoft::Xna::Framework::Graphics::GraphicsDevice& device_;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::ShaderEffect> effect_;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::Texture2D>    white_;
-    std::unique_ptr<CNA::Graphics::FullscreenPass>                     fullscreen_;
+    std::unique_ptr<Microsoft::Xna::Framework::Graphics::SpriteBatch> spriteBatch_;
 
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> environment_;
     std::unique_ptr<Microsoft::Xna::Framework::Graphics::TextureCube> irradiance_;
