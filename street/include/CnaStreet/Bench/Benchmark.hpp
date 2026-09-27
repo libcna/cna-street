@@ -80,6 +80,10 @@ struct BenchmarkResult
     double loadAverage = -1.0;
 
     double cpuMeanMs = 0.0, cpuMedianMs = 0.0, cpuP95Ms = 0.0, cpuMinMs = 0.0, cpuMaxMs = 0.0;
+    /// Draw to Draw on the wall clock, present included. The cpu* numbers are
+    /// the scene renderer's own clock, which stops before a renderer that
+    /// replays its recorded draws at present has done most of its work.
+    double frameIntervalMeanMs = 0.0, frameIntervalMedianMs = 0.0, frameIntervalP95Ms = 0.0;
     double cullMs = 0.0, shadowMs = 0.0, prepassMs = 0.0, skyMs = 0.0, opaqueMs = 0.0, postMs = 0.0;
     double opaqueApplyMs = -1.0, opaqueDrawMs = -1.0, skinnedMs = -1.0;
 

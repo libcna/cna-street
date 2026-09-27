@@ -9,6 +9,7 @@
 #include "Microsoft/Xna/Framework/Input/KeyboardState.hpp"
 #include "Microsoft/Xna/Framework/Input/MouseState.hpp"
 
+#include <chrono>
 #include <memory>
 #include <string>
 #include <utility>
@@ -120,6 +121,11 @@ private:
     struct FrameProfile
     {
         std::vector<float> frameMs;
+        /// Wall clock from one Draw to the next: the whole frame, present
+        /// included. `frameMs` is only what `SceneRenderer::render` took, and
+        /// a renderer that records draws and replays them at present does
+        /// most of its work after that clock has stopped.
+        std::vector<float> intervalMs;
         double cullMs = 0.0, shadowMs = 0.0, prepassMs = 0.0;
         double skyMs = 0.0, opaqueMs = 0.0, postMs = 0.0;
         long long draws = 0, shadowDraws = 0, triangles = 0;
@@ -157,13 +163,17 @@ private:
     int profileWarmup_ = kProfileWarmup;
     void recordFrame();
     void reportProfile();
+    /// When the previous Draw began, for FrameProfile::intervalMs.
+    std::chrono::steady_clock::time_point previousDrawStart_{};
+    bool haveDrawStart_ = false;
     /// `--benchmark <preset>`: a fixed camera, a fixed sun, a fixed clock, and
     /// the profile written out in a form a comparison can read. See
     /// `Bench/Benchmark.hpp` for why the presets are their own table.
     const BenchmarkPreset* benchmark_ = nullptr;
     std::string benchmarkOutput_;
     void writeBenchmark(double meanMs, double medianMs, double p95Ms, double minMs,
-                        double maxMs);
+                        double maxMs, double intervalMeanMs, double intervalMedianMs,
+                        double intervalP95Ms);
 
     /// `--capture DIR` renders every named viewpoint into DIR and exits. This is
     /// the mechanism behind the screenshot set in the README and the visual

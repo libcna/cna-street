@@ -136,6 +136,10 @@ std::string benchmarkToJson(const BenchmarkResult& r)
     num("cpuMinMs", r.cpuMinMs);
     num("cpuMaxMs", r.cpuMaxMs);
     num("fps", r.cpuMeanMs > 0.0 ? 1000.0 / r.cpuMeanMs : 0.0, 2);
+    num("frameIntervalMeanMs", r.frameIntervalMeanMs);
+    num("frameIntervalMedianMs", r.frameIntervalMedianMs);
+    num("frameIntervalP95Ms", r.frameIntervalP95Ms);
+    num("presentedFps", r.frameIntervalMeanMs > 0.0 ? 1000.0 / r.frameIntervalMeanMs : 0.0, 2);
     num("cullMs", r.cullMs);
     num("shadowMs", r.shadowMs);
     num("prepassMs", r.prepassMs);
@@ -192,7 +196,8 @@ std::string benchmarkCsvHeader(const BenchmarkResult& shape)
         "gpuFrameMs,gpuShadowMs,gpuPrepassMs,gpuSkyMs,gpuOpaqueMs,gpuPostMs,"
         "draws,shadowDraws,instancedDraws,skinnedDraws,triangles,shadowTriangles,"
         "materialApplies,repeatedMaterialApplies,visibleCharacters,vehicleDraws,driverDraws,"
-        "characterShadowDraws,staticBatches,instanceGroups,instances,meshBytes,textureBytes";
+        "characterShadowDraws,staticBatches,instanceGroups,instances,meshBytes,textureBytes,"
+        "frameIntervalMeanMs,frameIntervalMedianMs,frameIntervalP95Ms,presentedFps";
     for (const auto& pass : shape.gpuPostPasses) header += ",gpuPost_" + Key(pass.first) + "Ms";
     for (std::size_t i = 0; i < shape.cascades.size(); ++i)
     {
@@ -229,7 +234,10 @@ std::string benchmarkToCsv(const BenchmarkResult& r)
         << Number(r.repeatedMaterialApplies, 1) << ',' << Number(r.visibleCharacters, 1) << ','
         << Number(r.vehicleDraws, 1) << ',' << Number(r.driverDraws, 1) << ','
         << Number(r.characterShadowDraws, 1) << ',' << r.staticBatches << ','
-        << r.instanceGroups << ',' << r.instances << ',' << r.meshBytes << ',' << r.textureBytes;
+        << r.instanceGroups << ',' << r.instances << ',' << r.meshBytes << ',' << r.textureBytes
+        << ',' << Number(r.frameIntervalMeanMs) << ',' << Number(r.frameIntervalMedianMs) << ','
+        << Number(r.frameIntervalP95Ms) << ','
+        << Number(r.frameIntervalMeanMs > 0.0 ? 1000.0 / r.frameIntervalMeanMs : 0.0, 2);
     for (const auto& pass : r.gpuPostPasses) out << ',' << Number(pass.second);
     for (const BenchmarkResult::Cascade& cascade : r.cascades)
         out << ',' << Number(cascade.draws, 1) << ',' << Number(cascade.triangles, 0);

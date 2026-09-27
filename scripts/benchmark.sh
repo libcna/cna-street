@@ -54,7 +54,8 @@ for preset in $presets; do
         python3 - "$preset" "$line" <<'EOF' 2>/dev/null || echo "$preset: $line"
 import json, sys
 r = json.loads(sys.argv[2])
-print(f"{sys.argv[1]:<9} cpu {r['cpuMeanMs']:6.2f} ms  gpu {r['gpuFrameMs']:6.2f} ms  "
+print(f"{sys.argv[1]:<9} frame {r['frameIntervalMeanMs']:6.2f} ms  "
+      f"cpu {r['cpuMeanMs']:6.2f} ms  gpu {r['gpuFrameMs']:6.2f} ms  "
       f"shadow {r['gpuShadowMs']:5.2f}  opaque {r['gpuOpaqueMs']:5.2f}  post {r['gpuPostMs']:5.2f}  "
       f"draws {r['draws']:6.0f}  shadow draws {r['shadowDraws']:6.0f}  tris {r['triangles']/1e6:5.2f} M  "
       f"load {r['loadAverage']:.1f}")

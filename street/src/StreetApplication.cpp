@@ -575,6 +575,14 @@ void StreetApplication::Draw(const GameTime& gameTime)
     (void)gameTime;
     GraphicsDevice& device = getGraphicsDeviceProperty();
 
+    // The whole previous frame, present and all: see FrameProfile::intervalMs.
+    const auto drawStart = std::chrono::steady_clock::now();
+    if (haveDrawStart_ && frameBudget_ > 0 && framesDrawn_ > profileWarmup_)
+        profile_.intervalMs.push_back(std::chrono::duration<float, std::milli>(
+                                          drawStart - previousDrawStart_).count());
+    previousDrawStart_ = drawStart;
+    haveDrawStart_ = true;
+
     if (renderer_ == nullptr || scene_ == nullptr)
     {
         device.Clear(Color::Black);
@@ -723,7 +731,25 @@ void StreetApplication::reportProfile()
                       + "  p95 " + fixed(at(0.95), 2)
                       + "  min " + fixed(sorted.front(), 2)
                       + "  max " + fixed(sorted.back(), 2) + " ms");
-
+    // What the frame really costs, present included; the line above is only
+    // the scene renderer's own clock. See FrameProfile::intervalMs.
+    std::vector<float> intervals = profile_.intervalMs;
+    std::sort(intervals.begin(), intervals.end());
+    double intervalMean = 0.0;
+    for (const float ms : intervals) intervalMean += static_cast<double>(ms);
+    if (!intervals.empty()) intervalMean /= static_cast<double>(intervals.size());
+    const auto intervalAt = [&](double q) {
+        if (intervals.empty()) return 0.0;
+        const std::size_t i = static_cast<std::size_t>(
+            q * static_cast<double>(intervals.size() - 1) + 0.5);
+        return static_cast<double>(intervals[i]);
+    };
+    if (!intervals.empty())
+        CNA::Logger::Info("cna-street:   frame interval (present included) mean "
+                          + fixed(intervalMean, 2) + " ms ("
+                          + fixed(1000.0 / std::max(intervalMean, 0.001), 1) + " fps)"
+                          + "  median " + fixed(intervalAt(0.5), 2)
+                          + "  p95 " + fixed(intervalAt(0.95), 2) + " ms");
     CNA::Logger::Info("cna-street:   cull " + fixed(profile_.cullMs / n, 2)
                       + "  shadow " + fixed(profile_.shadowMs / n, 2)
                       + "  prepass " + fixed(profile_.prepassMs / n, 2)
@@ -858,11 +884,15 @@ void StreetApplication::reportProfile()
          renderer_->visibleReport(16));
 
     if (benchmark_ != nullptr)
-        writeBenchmark(mean, at(0.5), at(0.95), sorted.front(), sorted.back());
+    {
+        writeBenchmark(mean, at(0.5), at(0.95), sorted.front(), sorted.back(), intervalMean,
+                       intervalAt(0.5), intervalAt(0.95));
+    }
 }
 
 void StreetApplication::writeBenchmark(double meanMs, double medianMs, double p95Ms, double minMs,
-                                       double maxMs)
+                                       double maxMs, double intervalMeanMs,
+                                       double intervalMedianMs, double intervalP95Ms)
 {
     const double n = static_cast<double>(std::max(1, profile_.samples));
     BenchmarkResult r;
@@ -888,6 +918,9 @@ void StreetApplication::writeBenchmark(double meanMs, double medianMs, double p9
 
     r.cpuMeanMs = meanMs;  r.cpuMedianMs = medianMs;  r.cpuP95Ms = p95Ms;
     r.cpuMinMs  = minMs;   r.cpuMaxMs = maxMs;
+    r.frameIntervalMeanMs   = intervalMeanMs;
+    r.frameIntervalMedianMs = intervalMedianMs;
+    r.frameIntervalP95Ms    = intervalP95Ms;
     r.cullMs    = profile_.cullMs / n;    r.shadowMs = profile_.shadowMs / n;
     r.prepassMs = profile_.prepassMs / n; r.skyMs    = profile_.skyMs / n;
     r.opaqueMs  = profile_.opaqueMs / n;  r.postMs   = profile_.postMs / n;

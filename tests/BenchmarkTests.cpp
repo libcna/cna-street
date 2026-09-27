@@ -57,6 +57,7 @@ BenchmarkResult Sample()
     r.warmupFrames = 12; r.measuredFrames = 60;
     r.loadAverage = 9.5;
     r.cpuMeanMs = 48.75; r.cpuMedianMs = 48.0; r.cpuP95Ms = 55.0; r.cpuMinMs = 44.0; r.cpuMaxMs = 61.0;
+    r.frameIntervalMeanMs = 50.0; r.frameIntervalMedianMs = 49.5; r.frameIntervalP95Ms = 56.0;
     r.gpuFrameMs = 40.1; r.gpuShadowMs = 9.8; r.gpuOpaqueMs = 20.0; r.gpuPostMs = 7.4;
     r.gpuPostPasses = {{"SSAO", 2.4}, {"LightShafts", 2.1}, {"Bloom", 0.8}};
     r.draws = 1436; r.shadowDraws = 1892; r.triangles = 7550000; r.shadowTriangles = 6500000;
@@ -125,6 +126,11 @@ int main()
             // A renderer without timers writes -1, not nothing, so a column
             // is never missing.
             CHECK(root.TryGetProperty("gpuSkyMs", value) && value.GetDouble() < 0.0);
+            // The whole frame, present included, next to the renderer's own clock.
+            CHECK(root.TryGetProperty("frameIntervalMeanMs", value)
+                  && std::fabs(value.GetDouble() - 50.0) < 0.001);
+            CHECK(root.TryGetProperty("presentedFps", value)
+                  && std::fabs(value.GetDouble() - 20.0) < 0.001);
         }
     }
 
