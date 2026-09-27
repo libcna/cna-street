@@ -22,6 +22,7 @@
 #include "CNA/Internal/Renderers/Common/IGraphicsRenderer.hpp"
 
 #include "shaders/sky/SkyShaderPackage.generated.hpp"
+#include "shaders/sky/SkyHlsl.generated.hpp"
 
 #include <algorithm>
 #include <array>
@@ -225,11 +226,9 @@ void main() {
 }
 )";
 
-/// The same sky for a renderer that does not run GLSL source: SPIR-V for Vulkan, WGSL for
-/// WebGPU. `shaders/sky/sky.vulkan.frag.glsl` is kFragmentBody over CNA's model, and both
-/// payloads are generated from that one source by CNA's shader-package generator, so the
-/// variants cannot drift apart. Such a renderer binds uniforms by type, not name, so they
-/// read them from three typed arrays.
+/// The same sky for renderers that do not run GLSL source: SPIR-V for Vulkan, WGSL for
+/// WebGPU, and HLSL for Direct3D. Each variant derives from its Vulkan GLSL stage, and
+/// the fragment variants read their uniforms from the same three typed arrays.
 CNA::Graphics::ShaderPackageEXT PackagedSkyPackage()
 {
     using CNA::Graphics::ShaderCodeEXT;
@@ -252,6 +251,10 @@ CNA::Graphics::ShaderPackageEXT PackagedSkyPackage()
                           "sky/sky.vulkan.vert.wgsl", text(kVulkanVertexWgsl)),
             ShaderCodeEXT(CNA::ShaderLanguageEXT::Wgsl, CNA::ShaderStageEXT::Fragment, "main",
                           "sky/sky.vulkan.frag.wgsl", text(kVulkanFragmentWgsl)),
+            ShaderCodeEXT(CNA::ShaderLanguageEXT::Hlsl, CNA::ShaderStageEXT::Vertex, "main",
+                          "sky/sky.vulkan.vert.spv -> hlsl", text(kDirectXVertexHlsl)),
+            ShaderCodeEXT(CNA::ShaderLanguageEXT::Hlsl, CNA::ShaderStageEXT::Fragment, "main",
+                          "sky/sky.vulkan.frag.spv -> hlsl", text(kDirectXFragmentHlsl)),
         },
         {CNA::ShaderStageEXT::Vertex, CNA::ShaderStageEXT::Fragment},
         {CNA::Graphics::ShaderBindingRequirementEXT(
