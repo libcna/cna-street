@@ -1244,7 +1244,8 @@ fn main_1() {
         let _e286 = dusk;
         sky = mix(_e279, ((_e280 + _e281) + (_e283 * 0.35f)), vec3(_e286));
     }
-    let _e289 = direction_1;
+)CNA_SHADER"
+    R"CNA_SHADER(    let _e289 = direction_1;
     let _e290 = toSun_1;
     cosAngle_3 = dot(_e289, _e290);
     let _e292 = cosAngle_3;
