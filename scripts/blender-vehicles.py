@@ -36,7 +36,7 @@
 #     as many as it had objects;
 #   * textures capped at --max-texture, or at the car's own `texture` where
 #     the table raises it: the content build now compiles every model image
-#     with a mip chain (the workaround for docs/cna-findings.md GLTF-206), so
+#     with a mip chain, so
 #     the cap is texture memory rather than shimmer;
 #   * decimated to the near and far budgets and exported twice as GLB;
 #   * the GLB's JSON patched: glass materials BLEND with a sensible alpha,
@@ -503,8 +503,8 @@ def flip_winding(document, binary):
     """Swaps the second and third corner of every triangle, in place.
 
     glTF winds a front face counter-clockwise and CNA's importer keeps that
-    order, but CNA's default cull (RasterizerState::CullCounterClockwise,
-    docs/cna-findings.md CNA-F5) drops exactly those faces. Every model this
+    order, but the default CullCounterClockwise state drops exactly those
+    faces. Every model this
     project imported before the cars was double-sided, which is why nobody
     saw it: the first single-sided body drew inside out, its far flank
     through its near one. Reversing the index order is the whole fix -- the

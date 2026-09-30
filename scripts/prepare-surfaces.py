@@ -127,7 +127,7 @@ def prepare(surface: dict, downloads: pathlib.Path, staging: pathlib.Path) -> tu
     # catalogue's generator writes. Poly Haven publishes OpenGL-convention
     # maps (green up the image), so those are inverted here. This was settled
     # by rendering a map of hemispherical bumps under a low sun and seeing
-    # them come out as bowls the other way round; see docs/design-notes.md.
+    # them come out as bowls the other way round.
     normal = load("normal")
     if surface.get("normalConvention", "opengl") == "opengl":
         r, g, b = normal.split()

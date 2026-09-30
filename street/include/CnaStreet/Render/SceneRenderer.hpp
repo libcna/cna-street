@@ -155,19 +155,13 @@ struct InstanceGroup
  * first frame (static geometry and instance groups) or submitted this frame
  * (vehicles and pedestrians, which move).
  *
- * CNA retired the graphics engine layer this frame used to be built on, and
- * with it the cascaded shadow maps, the SSAO prepass, the HDR scene target and
- * its post-process chain (tone mapping, bloom, FXAA, light shafts) and the GPU
- * stage timers. The street draws the same scene without them: `PbrEffect`
- * lights and sRGB-encodes each surface itself, image-based lighting and the
- * reflection probes remain, and `RenderSettings::exposure` scales the light
- * linearly where a tone mapper used to compress it. The settings for the
- * retired effects are still read and have no effect; their statistics report
- * zero, and the GPU times -1.
+ * `PbrEffect` lights and sRGB-encodes each surface. Image-based lighting and
+ * local reflection probes supply the environment, while
+ * `RenderSettings::exposure` scales the light linearly.
  *
- * What remains optional is still probed rather than assumed: without instancing
- * `InstancedMesh` falls back to a loop, without image-based lighting the ambient
- * is a hemisphere term. The scene still renders; it renders with less.
+ * Optional capabilities are probed: without instancing `InstancedMesh` falls
+ * back to a loop, and without image-based lighting the ambient is a hemisphere
+ * term.
  */
 class SceneRenderer
 {
@@ -204,9 +198,8 @@ public:
 
         /// What the **GPU** spent on each stage, in the same order and with
         /// the same boundaries as the CPU numbers above, or -1 where there is
-        /// no timer query -- which is always, since CNA retired its GPU timer.
-        /// Kept, with the fields below that also describe retired stages, so
-        /// the benchmark's output keeps one shape.
+        /// no timer query. The benchmark uses the same output shape on every
+        /// renderer.
         ///
         /// Two clocks rather than one, because a frame this size has two
         /// possible shapes and the CPU numbers alone cannot tell them apart.

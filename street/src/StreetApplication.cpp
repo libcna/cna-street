@@ -75,10 +75,9 @@ StreetApplication::StreetApplication()
     : graphics_(std::make_unique<GraphicsDeviceManager>(this))
 {
     // GraphicsDeviceManager defaults to GraphicsProfile::Reach, which forbids
-    // non-power-of-two cube textures among other HiDef-only features this scene
-    // relies on throughout: HDR render targets, MRT, cascaded shadows and the
-    // 96 px IBL environment cubemap SkySystem bakes (96 is not a power of two,
-    // deliberately, for prefiltered-specular quality). Reach only goes unnoticed
+    // non-power-of-two cube textures among other HiDef-only features. SkySystem
+    // bakes a 96 px IBL environment cubemap for prefiltered-specular quality.
+    // Reach only goes unnoticed
     // when the content root does not resolve and everything falls back to the
     // procedural path; with real content loaded it throws
     // "Non-power-of-two TextureCube resources are not supported by the Reach
@@ -136,11 +135,7 @@ bool StreetApplication::configure(int argc, char** argv)
                 "  --supersample <n>                 render stills at n times the size and\n"
                 "                                    filter them down (1-4); stills only\n"
                 "  --exposure <v>                    exposure multiplier\n"
-                "  --shadow-debug                    tint each shadow cascade\n"
-                "  --no-shadows --no-bloom --no-ssao --no-fog --no-clouds --no-ibl\n"
-                "  --no-light-shafts                 leave the light-shaft pass out\n"
-                "  --ssao-samples <n>                SSAO samples per pixel (8-64, default 16)\n"
-                "  --bloom-iterations <n>            bloom pyramid depth (1-8, default 4)\n"
+                "  --no-fog --no-clouds --no-ibl     disable individual sky/lighting effects\n"
                 "  --no-probes                       sky-only reflections, no local probes\n"
                 "  --dump-probes <dir>               write each reflection probe as a face strip\n"
                 "  --no-traffic --no-pedestrians --no-vegetation --no-overlay\n"
@@ -254,9 +249,8 @@ bool StreetApplication::configure(int argc, char** argv)
             // One flag rather than three, because the three go together. The
             // sun is 4 degrees below the horizon -- civil twilight, when a
             // street is lit by its own lamps and the sky is still a colour
-            // rather than black -- and the exposure follows, because a scene
-            // lit at a hundredth of the irradiance needs the aperture opened
-            // and no amount of tone mapping substitutes for that. Everything
+            // rather than black. A scene lit at a hundredth of the irradiance
+            // needs a higher exposure. Everything
             // else that changes at night follows from the sun's elevation
             // through `RenderSettings::nightLighting`.
             settings_.sunElevationDegrees = -4.0f;
@@ -270,8 +264,6 @@ bool StreetApplication::configure(int argc, char** argv)
             // probes now light the street from what it actually sees at night,
             // which is darker than an open sky, and the half stop follows.
             settings_.exposure            = 1.5f;
-            settings_.bloomThreshold      = 0.72f;
-            settings_.bloomIntensity      = 0.55f;
         }
         else if (arg == "--dump-settings")
         {
@@ -479,7 +471,6 @@ void StreetApplication::LoadContent()
 void StreetApplication::handleHotkeys(const KeyboardState& keyboard, const KeyboardState& previous)
 {
     if (Pressed(keyboard, previous, Keys::F1)) settings_.debugOverlay = !settings_.debugOverlay;
-    // F2-F4 toggled shadows, SSAO and bloom, which went with CNA's engine layer.
     if (Pressed(keyboard, previous, Keys::F5)) settings_.heightFog = !settings_.heightFog;
     if (Pressed(keyboard, previous, Keys::F6))
     {

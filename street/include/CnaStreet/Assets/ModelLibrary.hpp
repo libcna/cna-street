@@ -158,7 +158,7 @@ public:
     [[nodiscard]] std::size_t triangleCount() const { return triangles_; }
     /// How many material maps arrived with one mip level rather than a
     /// chain, over every model loaded. Zero when the content build compiled
-    /// them all; see docs/cna-findings.md GLTF-206.
+    /// them all.
     [[nodiscard]] int singleLevelMaps() const { return singleLevelMaps_; }
     [[nodiscard]] const std::vector<std::string>& failures() const { return failures_; }
 

@@ -13,9 +13,6 @@ namespace CnaStreet::Atmosphere {
  * attenuated along its own path. The sky the camera sees and the environment
  * the street is lit by both come from this one model, so they cannot disagree.
  *
- * It used to be CNA's `AtmosphericSky`; CNA retired its graphics engine layer,
- * and the model now lives here, where the street's shaders already carried it.
- *
  * @param viewDirection The direction looked in; need not be normalised.
  * @param sunTravelDirection The direction sunlight *travels*, i.e. away from the sun.
  * @param turbidity Atmospheric turbidity; 1 is air with no aerosol in it at all.

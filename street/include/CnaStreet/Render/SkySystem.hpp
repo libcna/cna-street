@@ -31,9 +31,6 @@ struct RenderSettings;
  * based lighting. The sky the camera sees and the sky the street is lit by
  * therefore cannot disagree.
  *
- * The model, the fullscreen draw and the convolution were CNA's
- * (`AtmosphericSky`, `FullscreenPass`, `EnvironmentProcessor`) until CNA
- * retired its graphics engine layer; they are the street's own now.
  */
 class SkySystem
 {
@@ -66,7 +63,7 @@ public:
               float timeSeconds, float intensityScale = 1.0f, bool encodeSrgb = false);
 
     /// World direction of a cube-map texel, in the face layout `TextureCube`
-    /// and `EnvironmentProcessor` use. Public because the reflection probes
+    /// uses. Public because the reflection probes
     /// have to write their captures into the same layout.
     [[nodiscard]] static Microsoft::Xna::Framework::Vector3 cubeDirection(
         Microsoft::Xna::Framework::Graphics::CubeMapFace face, float u, float v);

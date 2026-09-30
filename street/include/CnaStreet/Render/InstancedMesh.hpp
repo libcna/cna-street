@@ -25,8 +25,6 @@ namespace CnaStreet {
  * `DrawInstancedPrimitives`. Where the renderer cannot instance, each copy is
  * drawn on its own with the effect's world matrix set to it.
  *
- * CNA used to carry this as `InstancedRendererEXT` in its graphics engine
- * layer; that layer was retired, and nothing here needs more than the XNA API.
  */
 class InstancedMesh
 {

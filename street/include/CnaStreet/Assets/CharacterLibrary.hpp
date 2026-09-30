@@ -31,8 +31,8 @@ class MaterialLibrary;
  * distance switch to a far copy, the same rigid stand-in for the shadow pass.
  *
  * Its own format rather than glTF, because an imported *skinned* glTF part
- * still draws nothing through CNA's skinned path (docs/cna-findings.md
- * GLTF-208) while the generator's own skinned meshes draw fine; feeding the
+ * still draws nothing through the skinned path while the generator's own
+ * skinned meshes draw fine; feeding the
  * authored figure through the path that works is the whole trick. Nothing
  * here parses glTF: the Blender script already did the reading, and what it
  * wrote is a memory image of what `SkinnedGpuMesh` uploads.

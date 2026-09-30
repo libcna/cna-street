@@ -96,8 +96,7 @@ void MeshBuilder::addTriangleIndices(std::uint32_t a, std::uint32_t b, std::uint
     // when cross(b-a, c-a) points *away* from the viewer. Every helper in this
     // file takes corners counter-clockwise from the front -- the readable,
     // glTF-shaped convention -- and this one function is where that becomes
-    // CNA's winding. Determined empirically against the OPENGL33 renderer, not
-    // assumed; see docs/cna-findings.md CNA-F5.
+    // CNA's winding, checked against the OPENGL33 renderer.
     if (flipWinding_)
     {
         mesh_.indices.push_back(a);

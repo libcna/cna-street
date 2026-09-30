@@ -66,8 +66,7 @@ endif()
 # --- Upstream workaround 1: SDL's prebuilt cache ---------------------------
 # CNA caches its vendored SDL build inside its own source checkout by default,
 # which writes into a dependency this project treats as read-only. Keep it in
-# our build tree, keyed by toolchain so two toolchains do not fight. See
-# docs/cna-findings.md CNA-F3.
+# our build tree, keyed by toolchain so two toolchains do not fight.
 if(NOT DEFINED CNA_SDL_PREBUILT_ROOT)
     set(CNA_SDL_PREBUILT_ROOT
         "${CMAKE_BINARY_DIR}/cna-sdl-prebuilt-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}-${CMAKE_CXX_COMPILER_ID}"
@@ -80,7 +79,6 @@ endif()
 # when CNA is a subdirectory, so the build dies with "cgltf.h: No such file".
 # INCLUDE_DIRECTORIES is inherited by subdirectories, so setting the correct
 # paths before add_subdirectory() repairs the search without touching CNA.
-# See docs/cna-findings.md CNA-F1.
 foreach(_vendored IN ITEMS cgltf stb)
     if(EXISTS "${CNA_ROOT_DIR}/third_party/${_vendored}")
         include_directories("${CNA_ROOT_DIR}/third_party/${_vendored}")

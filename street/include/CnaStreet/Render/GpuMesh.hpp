@@ -21,8 +21,8 @@ namespace CnaStreet {
 /**
  * @brief One uploaded mesh: a vertex buffer, an index buffer and its bounds.
  *
- * The `ModelMeshPart` is kept because that is what `InstancedRendererEXT` draws
- * through; ordinary draws go through the device directly, which avoids the
+ * The `ModelMeshPart` is kept for `InstancedMesh`; ordinary draws go through
+ * the device directly, which avoids the
  * `Model`/`ModelMesh` machinery for geometry that was never a model file.
  */
 class GpuMesh

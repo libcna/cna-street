@@ -64,7 +64,7 @@ Matrix AbsoluteTransform(const ModelMesh& mesh)
 /// written into it and `GetDataRawEXT` hands back a window of it, so the box
 /// is measured from the positions rather than inferred from a sphere. This is
 /// a read of already-resident memory, not a GPU read-back: it costs a memcpy
-/// per part at load and nothing per frame. See docs/cna-findings.md CNA-F18.
+/// per part at load and nothing per frame.
 ///
 /// Returns false when the buffer will not give its bytes up -- a write-only
 /// buffer, a declaration with no position element -- and the caller keeps the
@@ -398,7 +398,7 @@ const ModelLibrary::Imported* ModelLibrary::load(const std::string& asset)
     // And whether they arrived with a mip chain: the content build compiles
     // every model image under its own name so they do, and an image that
     // came in loose instead carries one level and shimmers from a few
-    // metres (docs/cna-findings.md GLTF-206). Counted per material rather
+    // metres. Counted per material rather
     // than per image, which is enough to see a build that missed them.
     int textured = 0, normalMapped = 0, singleLevel = 0;
     for (const Part& part : result->parts)
@@ -479,7 +479,7 @@ const ModelLibrary::ImportedRig* ModelLibrary::loadRig(const std::string& asset)
     // and leaves `SkinsEXT` empty. So the same file, imported the same way,
     // exposes its skeleton through a different API depending on whether it was
     // compiled first, and a caller written against either one finds nothing
-    // through the other. See docs/cna-findings.md GLTF-207.
+    // through the other.
     //
     // Both are checked here, `SkinsEXT` first because when it is populated it
     // says which meshes belong to the skin and `Tag` does not.

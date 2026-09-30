@@ -142,7 +142,7 @@ if(DEFINED GLTF_COMPILER AND NOT GLTF_COMPILER STREQUAL "" AND DEFINED GLTF_SOUR
         # also compiled under its own full name through the same mip-chain
         # compiler the catalogue's surfaces go through, in the colour space
         # scripts/model-textures.py reads off the model. The loose image
-        # would arrive with one mip level (docs/cna-findings.md GLTF-206)
+        # would arrive with one mip level
         # and shimmer from a few metres; the compiled one arrives with the
         # chain. The loose copy stays beside it for a runtime without the
         # compiled one.

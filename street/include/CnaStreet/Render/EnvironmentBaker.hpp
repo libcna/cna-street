@@ -21,9 +21,6 @@ namespace CnaStreet {
  * caller keeps in `ImageBasedLightEXT::Intensity`; nothing here encodes or
  * decodes a curve.
  *
- * This is the convolution CNA's retired `EnvironmentProcessor` ran, kept
- * texel for texel: the effect that consumes the products is still in CNA, the
- * code that made them is not.
  */
 class EnvironmentBaker
 {

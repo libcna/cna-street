@@ -3,8 +3,7 @@
  * @file
  * @brief The mip chain the content pipeline depends on.
  *
- * `GenerateRgba8MipChain` is a change to CNA rather than to this project (see
- * docs/cna-findings.md, CNA-F12), and it ships with GTest cases in CNA's own
+ * `GenerateRgba8MipChain` lives in CNA and ships with GTest cases in its own
  * suite. It is exercised here as well, and deliberately: the street's compiled
  * content set is unusable without it -- a texture with one level aliases on
  * every surface seen at a grazing angle, which is most of a street -- so a

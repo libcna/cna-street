@@ -10,8 +10,7 @@ decoded before its levels are averaged; a normal, a metallic-roughness or an
 occlusion map holds numbers, not light, and is averaged as stored. The
 content build reads this to compile every imported model's images through
 the same mip-chain compiler the catalogue's own surfaces go through, which
-is what stands in for the mip chain CNA's importer does not build
-(docs/cna-findings.md GLTF-206).
+is what supplies the mip chain for imported images.
 """
 import json
 import sys

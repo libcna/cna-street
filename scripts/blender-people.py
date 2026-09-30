@@ -374,7 +374,7 @@ def export_part(o, bone_index, group_to_bone):
     for tri in mesh.loop_triangles:
         # Second and third corner swapped: Blender winds a front face
         # counter-clockwise and the renderer's cull keeps clockwise ones
-        # (docs/cna-findings.md CNA-F5, CNA-F15). The normals are the
+        # under the default cull state. The normals are the
         # author's either way.
         for li in (tri.loops[0], tri.loops[2], tri.loops[1]):
             loop = loops[li]

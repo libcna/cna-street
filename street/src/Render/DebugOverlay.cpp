@@ -221,29 +221,25 @@ void DebugOverlay::draw(const SceneRenderer& renderer, const CityScene& scene, c
                            smoothedMs_ > 0.0f ? 1000.0 / static_cast<double>(smoothedMs_) : 0.0,
                            static_cast<double>(smoothedMs_),
                            static_cast<double>(stats.frameMs)));
-    lines.push_back(Format(
-        "cull %.2f  shadow %.2f  prepass %.2f  sky %.2f  opaque %.2f  post %.2f",
-        static_cast<double>(stats.cullMs), static_cast<double>(stats.shadowMs),
-        static_cast<double>(stats.prepassMs), static_cast<double>(stats.skyMs),
-        static_cast<double>(stats.opaqueMs), static_cast<double>(stats.postMs)));
-    lines.push_back(Format("draws %d (+%d shadow, %d instanced)   tris %zu",
-                           stats.drawCalls, stats.shadowDrawCalls, stats.instancedDrawCalls,
+    lines.push_back(Format("cull %.2f  sky %.2f  opaque %.2f  transparent %.2f",
+                           static_cast<double>(stats.cullMs), static_cast<double>(stats.skyMs),
+                           static_cast<double>(stats.opaqueMs), static_cast<double>(stats.postMs)));
+    lines.push_back(Format("draws %d (%d instanced)   tris %zu",
+                           stats.drawCalls, stats.instancedDrawCalls,
                            stats.triangles));
-    lines.push_back(Format("visible %d/%d batches   %d/%d instances   %d post passes",
+    lines.push_back(Format("visible %d/%d batches   %d/%d instances",
                            stats.visibleItems, stats.totalItems, stats.visibleInstances,
-                           stats.totalInstances, stats.postPasses));
+                           stats.totalInstances));
     lines.push_back(Format("camera %.1f %.1f %.1f   dir %.2f %.2f %.2f   fov %.0f   %s",
                            static_cast<double>(position.X), static_cast<double>(position.Y),
                            static_cast<double>(position.Z), static_cast<double>(forward.X),
                            static_cast<double>(forward.Y), static_cast<double>(forward.Z),
                            static_cast<double>(MathHelper::ToDegrees(camera.verticalFov())),
                            controller.modeName()));
-    lines.push_back(Format("sun %.0f deg elev  %.0f deg az   exposure %.2f   %s   %s",
+    lines.push_back(Format("sun %.0f deg elev  %.0f deg az   exposure %.2f",
                            static_cast<double>(settings.sunElevationDegrees),
                            static_cast<double>(settings.sunAzimuthDegrees),
-                           static_cast<double>(settings.exposure),
-                           settings.shadows ? "shadows on" : "shadows off",
-                           stats.usedSceneTarget ? "hdr target" : "direct to back buffer"));
+                           static_cast<double>(settings.exposure)));
     lines.push_back(Format("scene %d plots  %d batches  %zu tris  %zu MiB geometry  %zu textures "
                            "(%zu MiB)   built in %.2f s",
                            build.plots, build.staticBatches, build.triangles,

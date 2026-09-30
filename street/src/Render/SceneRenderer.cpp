@@ -152,14 +152,6 @@ void SceneRenderer::initialise(const RenderSettings& settings)
         skinnedEffect_.reset();
     }
 
-    // CNA retired the engine layer these came from; the settings still name
-    // them, so say once that they are not drawn rather than leave a user
-    // wondering why a switch does nothing.
-    if (settings.shadows || settings.ssao || settings.hdr || settings.bloom || settings.fxaa
-        || settings.lightShafts || settings.ssr || settings.depthOfField)
-        limitations_.emplace_back("no shadows, SSAO, HDR tone mapping or post-processing: CNA "
-                                  "retired the engine layer that drew them");
-
     if (!device_.SupportsCapability(CNA::GraphicsCapability::Instancing))
         limitations_.emplace_back("no hardware instancing; repeated props fall back to a loop");
 
@@ -493,10 +485,8 @@ void SceneRenderer::applyMaterial(const Material& material, const Matrix& world,
     effect.setIorEXTProperty(material.ior);
     effect.setSpecularFactorEXTProperty(material.specular);
 
-    // Every draw lands straight in the back buffer (or an 8-bit probe target),
-    // so the effect owns the sRGB encode. It must not when a float scene
-    // target and a tonemapper follow -- see docs/cna-findings.md CNA-F8 -- but
-    // this frame no longer has either.
+    // Every draw lands in the back buffer or an 8-bit probe target, so the
+    // effect owns the sRGB encode.
     effect.setEncodeOutputToSrgbEXTProperty(true);
 
     effect.setAlphaModeEXTProperty(material.alphaMode);
@@ -1089,9 +1079,8 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     stats_.drewShadows = false;
     stats_.cascades.clear();
 
-    // No tone mapper follows the frame any more, so exposure is applied the
-    // only way left: as a linear scale on every light, the sky included.
-    // Highlights past 1.0 clip where they used to roll off.
+    // Exposure scales every light and the sky before drawing to the back buffer.
+    // Highlights above 1.0 are clipped.
     lightScale_ = std::max(settings.exposure, 0.0f);
 
     // One clock for the whole frame, and every stage a slice of it. The stages
@@ -1104,8 +1093,7 @@ void SceneRenderer::render(const Camera& camera, const RenderSettings& settings,
     cull(camera, settings);
     const float afterCull = Milliseconds(watch);
 
-    // The retired pipeline cleared its own scene target; the back buffer is
-    // the target now.
+    // Draw directly to the back buffer.
     device_.Clear(Color::Black);
 
     // The sky first, with depth writes off so every later draw covers it,

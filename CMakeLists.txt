@@ -1,11 +1,8 @@
 # =============================================================================
 # cna-street -- a realistic 3D city street rendered with the CNA framework.
 # =============================================================================
-# Layout note: application sources live under street/ rather than the
-# conventional src/ + include/ at the repository root. CNA's module-layout
-# validator tests ${CMAKE_SOURCE_DIR}/src, which is *this* project's root when
-# CNA is consumed with add_subdirectory(), and aborts the configure with a
-# message about CNA's own history. See docs/cna-findings.md CNA-F2.
+# Application sources live under street/ so CNA's module-layout validation
+# sees its own source tree when it is added as a subdirectory.
 cmake_minimum_required(VERSION 3.23)
 
 project(CnaStreet

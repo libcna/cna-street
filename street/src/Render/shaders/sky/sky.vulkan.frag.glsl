@@ -160,11 +160,9 @@ float deck(vec3 direction, float height, float scale, float coverage, float shar
 }
 
 void main() {
-    // FullscreenPass draws through SpriteBatch, whose texture coordinate origin
-    // is the *top* left of the destination rectangle, while clip space has +1 at
-    // the top. Without this flip the sky is rendered upside down -- the ground
-    // haze ends up overhead and the zenith underfoot. CNA's own AtmosphericSky
-    // has the same omission; see docs/cna-findings.md CNA-F7.
+    // SpriteBatch's texture coordinate origin is the top left of the
+    // destination rectangle, while clip space has +1 at the top. Flip Y when
+    // required so the ground haze stays below the zenith.
     vec2 screen = vec2(TexCoord.x, mix(TexCoord.y, 1.0 - TexCoord.y, uFlipV));
     vec4 ray = uInverseViewProjection * vec4(screen * 2.0 - 1.0, 1.0, 1.0);
     vec3 direction = normalize(ray.xyz / ray.w);

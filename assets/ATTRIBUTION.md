@@ -228,8 +228,8 @@ it is generated.
 | Hydrants, cabinets, benches, planters, cafe seating, A-boards, deliveries, manhole covers, the covered car, the hero trees, the hero cafe's fittings and food, the cameras and condenser units on the walls | Poly Haven models, via CNA's glTF importer | Each with a generated stand-in where the model is not fetched. |
 | Engines, a horn, wind, birds, footsteps and voices | NOX Sound's Essentials packs (CC0), a manual download derived by `scripts/prepare-audio.py` | Played through CNA's XNA audio with `Apply3D` (see `SoundScape`); a tree with no derived sounds runs silent. |
 | Shop-window props | Khronos sample models, via CNA's glTF importer | A bare plinth where a model is not fetched. |
-| Sky and clouds | `CNA::Graphics::AtmosphericSky` plus this project's cloud shader | Analytic; no sky photograph or HDRI. |
-| Environment lighting | `CNA::Graphics::EnvironmentProcessor` | Irradiance, prefiltered specular and BRDF LUT baked at start-up from the same analytic sky, and from the street's own reflection probes. |
+| Sky and clouds | `CnaStreet::SkySystem` and `CnaStreet::Atmosphere` | Analytic; no sky photograph or HDRI. |
+| Environment lighting | `CnaStreet::EnvironmentBaker` | Irradiance, prefiltered specular and BRDF LUT baked at start-up from the same analytic sky, and from the street's own reflection probes. |
 
 ## A note on the traffic signs
 

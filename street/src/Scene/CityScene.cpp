@@ -1481,8 +1481,7 @@ CityScene::PropMesh CityScene::mergedByMaterial(const PropMesh& prop, const std:
         // hands each mesh part its own Texture2D objects even where two parts
         // reference the same image, so two parts that would draw identically
         // hold maps this side cannot tell apart short of hashing their
-        // pixels. Recorded in docs/cna-findings.md; the merge waits for the
-        // loader to share, and says so once.
+        // pixels. The merge waits for the loader to share them, and says so once.
         CNA::Logger::Info("cna-street: " + name + " keeps its " + std::to_string(prop.parts.size())
                           + " parts: no two share a material (each part carries maps of its own)");
         return prop;
@@ -4061,8 +4060,7 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
     }
 
     // --- the imported rig ----------------------------------------------------
-    // Loaded, and deliberately not placed. See docs/cna-findings.md GLTF-207
-    // and GLTF-208: the skeleton and the clip come back out of the compiled
+    // Loaded, and deliberately not placed. The skeleton and the clip come out of the compiled
     // model correctly -- nineteen bones, one named clip, a well-formed
     // nineteen-matrix palette from `AnimationPlayer` -- and the mesh still
     // draws nothing through this application's skinned path, with a vertex
@@ -4081,7 +4079,7 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
         CNA::Logger::Info("cna-street: imported rig round-trip verified -- "
                           + std::to_string(importedWalker_->parts.size()) + " skinned part(s), "
                           + std::to_string(importedWalker_->skinning->BoneCount)
-                          + " bones, clip(s): " + clips + "; not placed, see cna-findings GLTF-208");
+                          + " bones, clip(s): " + clips + "; not placed: skinned draw unavailable");
     }
 
     // --- the people ---------------------------------------------------------
@@ -4240,8 +4238,8 @@ void CityScene::buildTrafficAndPeople(const RenderSettings& settings)
 
         // A rigid stand-in for the shadow pass. CNA's cascade caster takes its
         // world matrix from a uniform and knows nothing about bones, so a
-        // skinned figure cannot cast its own shadow; see docs/cna-findings.md
-        // CNA-F14. This is the same figure in its bind pose at half the ring
+        // skinned figure cannot cast its own shadow. This is the same figure
+        // in its bind pose at half the ring
         // count, which at the sun angles a street is lit by is a long thin blob
         // on the pavement either way -- and a person with no shadow at all
         // floats.
