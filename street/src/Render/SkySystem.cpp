@@ -20,9 +20,7 @@
 #include "Microsoft/Xna/Framework/Graphics/TextureCube.hpp"
 #include "Microsoft/Xna/Framework/MathHelper.hpp"
 #include "Microsoft/Xna/Framework/Rectangle.hpp"
-// GetShaderDialectEXT() returns CNA::Internal::Renderers::ShaderDialectEXT, whose values are
-// declared here rather than in GraphicsDevice.hpp (which forward-declares the enum only).
-#include "CNA/Internal/Renderers/Common/IGraphicsRenderer.hpp"
+#include "CNA/ShaderDialectEXT.hpp"
 
 #include "shaders/sky/SkyShaderPackage.generated.hpp"
 #include "shaders/sky/SkyHlsl.generated.hpp"
@@ -268,9 +266,9 @@ CNA::Graphics::ShaderPackageEXT PackagedSkyPackage()
 bool RunsGlslSource(const GraphicsDevice& device)
 {
     if (!device.ExecutesShaderEffectSourceEXT()) return false;
-    const CNA::Internal::Renderers::ShaderDialectEXT dialect = device.GetShaderDialectEXT();
-    return dialect == CNA::Internal::Renderers::ShaderDialectEXT::GlslEs ||
-           dialect == CNA::Internal::Renderers::ShaderDialectEXT::GlslDesktop;
+    const CNA::ShaderDialectEXT dialect = device.GetShaderDialectEXT();
+    return dialect == CNA::ShaderDialectEXT::GlslEs ||
+           dialect == CNA::ShaderDialectEXT::GlslDesktop;
 }
 
 Vector3 Normalise(const Vector3& v, const Vector3& fallback)
